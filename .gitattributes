@@ -1,0 +1,2 @@
+# Golden frames are byte-exact terminal captures: keep LF and trailing spaces untouched.
+internal/tui/testdata/*.txt -text

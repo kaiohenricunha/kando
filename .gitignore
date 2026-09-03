@@ -1,0 +1,7 @@
+/kando
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+.claude/worktrees/

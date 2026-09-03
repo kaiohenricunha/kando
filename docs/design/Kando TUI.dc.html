@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body { margin: 0; background: #e9e6df; }
+a { color: #1f7a6d; } a:hover { color: #b5532b; }
+</style>
+</helmet>
+
+<section style="padding:48px;display:flex;flex-direction:column;gap:40px;font-family:'IBM Plex Mono',Iosevka,monospace">
+  <div style="display:flex;align-items:baseline;gap:16px;color:#1b1b1b">
+    <span style="font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase">Turn 2</span>
+    <span style="font-size:13px;color:#7a736b">Focus lane (<a href="#1c">1c</a>) with bordered columns and cards (<a href="#1a">1a</a>). Adaptive theme: <a href="#2a">2a</a> Paper on light terminals, <a href="#2b">2b</a> Ember on dark.</span>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start">
+    <div id="2a" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#1b1b1b"><span style="background:#1b1b1b;color:#ffffff;padding:2px 7px;border-radius:3px;font-weight:600">2a</span><span>Paper · light terminal background</span></div>
+      <div style="width:120ch;height:800px;box-sizing:border-box;padding:0 1ch;font-size:13px;line-height:20px;background:#f6f1e8;color:#2b2622;border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.14);display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;gap:2ch;height:20px"><span style="font-weight:600">kando</span><span style="color:#8f8579">life</span><span style="margin-left:auto;color:#8f8579">Thu 3 Sep</span></div>
+        <div style="height:20px"></div>
+        <div style="flex:1;display:grid;grid-template-columns:22ch minmax(0,1fr) 22ch 22ch;gap:2ch;min-height:0">
+          <sc-for list="{{ cols }}" as="col" hint-placeholder-count="4">
+            <sc-if value="{{ col.active }}" hint-placeholder-val="{{ false }}">
+              <div style="border:1px solid #1f7a6d;border-radius:4px;padding:0 1ch;display:flex;flex-direction:column;gap:20px;min-height:0">
+                <div style="display:flex;justify-content:space-between;color:#1f7a6d;font-weight:600;text-transform:uppercase;letter-spacing:.08em"><span>{{ col.name }}</span><span>{{ col.count }}</span></div>
+                <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="3">
+                  <sc-if value="{{ card.sel }}" hint-placeholder-val="{{ false }}">
+                    <div style="border:1px solid #1f7a6d;background:#ece4d6;border-radius:3px;padding:0 2ch">
+                      <div style="display:flex;gap:1ch"><span style="font-weight:600">{{ card.title }}</span><span style="margin-left:auto;color:#8f8579">{{ card.age }}</span></div>
+                      <div style="color:#8f8579;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ card.notesPreview }}</div>
+                      <div style="display:flex;gap:2ch;color:#8f8579"><span style="color:#1f7a6d">{{ card.tag }}</span><span>{{ card.check }}</span><sc-if value="{{ card.blocked }}" hint-placeholder-val="{{ false }}"><span style="color:#b5532b">⊘ {{ card.blockedNote }}</span></sc-if></div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ card.plain }}" hint-placeholder-val="{{ true }}">
+                    <div style="border:1px solid #d9cfc0;border-radius:3px;padding:0 2ch">
+                      <div style="display:flex;gap:1ch"><span>{{ card.title }}</span><span style="margin-left:auto;color:#8f8579">{{ card.age }}</span></div>
+                      <div style="color:#8f8579;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ card.notesPreview }}</div>
+                      <div style="display:flex;gap:2ch;color:#8f8579"><span style="color:#1f7a6d">{{ card.tag }}</span><span>{{ card.check }}</span><sc-if value="{{ card.blocked }}" hint-placeholder-val="{{ false }}"><span style="color:#b5532b">⊘ {{ card.blockedNote }}</span></sc-if></div>
+                    </div>
+                  </sc-if>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ col.inactive }}" hint-placeholder-val="{{ true }}">
+              <div style="border:1px solid #d9cfc0;border-radius:4px;padding:0 1ch;display:flex;flex-direction:column;min-height:0;color:#8f8579">
+                <div style="display:flex;justify-content:space-between;text-transform:uppercase;letter-spacing:.08em;margin-bottom:20px"><span>{{ col.name }}</span><span>{{ col.count }}</span></div>
+                <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="3">
+                  <sc-if value="{{ card.done }}" hint-placeholder-val="{{ false }}"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="color:#1f7a6d">✓</span> {{ card.title }}</div></sc-if>
+                  <sc-if value="{{ card.notDone }}" hint-placeholder-val="{{ true }}"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#2b2622">• {{ card.title }}</div></sc-if>
+                </sc-for>
+              </div>
+            </sc-if>
+          </sc-for>
+        </div>
+        <div style="height:20px"></div>
+        <div style="display:flex;gap:2ch;height:20px;color:#8f8579;white-space:nowrap;overflow:hidden"><span><b style="color:#2b2622;font-weight:500">j/k</b> move</span><span><b style="color:#2b2622;font-weight:500">h/l tab</b> lane</span><span><b style="color:#2b2622;font-weight:500">a</b> add</span><span><b style="color:#2b2622;font-weight:500">enter</b> open</span><span><b style="color:#2b2622;font-weight:500">H/L</b> move card</span><span><b style="color:#2b2622;font-weight:500">d</b> done</span><span><b style="color:#2b2622;font-weight:500">/</b> filter</span><span><b style="color:#2b2622;font-weight:500">?</b> help</span><span><b style="color:#2b2622;font-weight:500">q</b> quit</span><span style="margin-left:auto">11 cards</span></div>
+      </div>
+    </div>
+    <div id="2b" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#1b1b1b"><span style="background:#1b1b1b;color:#ffffff;padding:2px 7px;border-radius:3px;font-weight:600">2b</span><span>Ember · dark terminal background</span></div>
+      <div style="width:120ch;height:800px;box-sizing:border-box;padding:0 1ch;font-size:13px;line-height:20px;background:#1a1512;color:#ead9c8;border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.3);display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;gap:2ch;height:20px"><span style="font-weight:600">kando</span><span style="color:#7d6b5c">life</span><span style="margin-left:auto;color:#7d6b5c">Thu 3 Sep</span></div>
+        <div style="height:20px"></div>
+        <div style="flex:1;display:grid;grid-template-columns:22ch minmax(0,1fr) 22ch 22ch;gap:2ch;min-height:0">
+          <sc-for list="{{ cols }}" as="col" hint-placeholder-count="4">
+            <sc-if value="{{ col.active }}" hint-placeholder-val="{{ false }}">
+              <div style="border:1px solid #e0a458;border-radius:4px;padding:0 1ch;display:flex;flex-direction:column;gap:20px;min-height:0">
+                <div style="display:flex;justify-content:space-between;color:#e0a458;font-weight:600;text-transform:uppercase;letter-spacing:.08em"><span>{{ col.name }}</span><span>{{ col.count }}</span></div>
+                <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="3">
+                  <sc-if value="{{ card.sel }}" hint-placeholder-val="{{ false }}">
+                    <div style="border:1px solid #e0a458;background:#2a211a;border-radius:3px;padding:0 2ch">
+                      <div style="display:flex;gap:1ch"><span style="font-weight:600">{{ card.title }}</span><span style="margin-left:auto;color:#7d6b5c">{{ card.age }}</span></div>
+                      <div style="color:#7d6b5c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ card.notesPreview }}</div>
+                      <div style="display:flex;gap:2ch;color:#7d6b5c"><span style="color:#e0a458">{{ card.tag }}</span><span>{{ card.check }}</span><sc-if value="{{ card.blocked }}" hint-placeholder-val="{{ false }}"><span style="color:#8fb98a">⊘ {{ card.blockedNote }}</span></sc-if></div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ card.plain }}" hint-placeholder-val="{{ true }}">
+                    <div style="border:1px solid #33291f;border-radius:3px;padding:0 2ch">
+                      <div style="display:flex;gap:1ch"><span>{{ card.title }}</span><span style="margin-left:auto;color:#7d6b5c">{{ card.age }}</span></div>
+                      <div style="color:#7d6b5c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ card.notesPreview }}</div>
+                      <div style="display:flex;gap:2ch;color:#7d6b5c"><span style="color:#e0a458">{{ card.tag }}</span><span>{{ card.check }}</span><sc-if value="{{ card.blocked }}" hint-placeholder-val="{{ false }}"><span style="color:#8fb98a">⊘ {{ card.blockedNote }}</span></sc-if></div>
+                    </div>
+                  </sc-if>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ col.inactive }}" hint-placeholder-val="{{ true }}">
+              <div style="border:1px solid #33291f;border-radius:4px;padding:0 1ch;display:flex;flex-direction:column;min-height:0;color:#7d6b5c">
+                <div style="display:flex;justify-content:space-between;text-transform:uppercase;letter-spacing:.08em;margin-bottom:20px"><span>{{ col.name }}</span><span>{{ col.count }}</span></div>
+                <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="3">
+                  <sc-if value="{{ card.done }}" hint-placeholder-val="{{ false }}"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="color:#e0a458">✓</span> {{ card.title }}</div></sc-if>
+                  <sc-if value="{{ card.notDone }}" hint-placeholder-val="{{ true }}"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ead9c8">• {{ card.title }}</div></sc-if>
+                </sc-for>
+              </div>
+            </sc-if>
+          </sc-for>
+        </div>
+        <div style="height:20px"></div>
+        <div style="display:flex;gap:2ch;height:20px;color:#7d6b5c;white-space:nowrap;overflow:hidden"><span><b style="color:#ead9c8;font-weight:500">j/k</b> move</span><span><b style="color:#ead9c8;font-weight:500">h/l tab</b> lane</span><span><b style="color:#ead9c8;font-weight:500">a</b> add</span><span><b style="color:#ead9c8;font-weight:500">enter</b> open</span><span><b style="color:#ead9c8;font-weight:500">H/L</b> move card</span><span><b style="color:#ead9c8;font-weight:500">d</b> done</span><span><b style="color:#ead9c8;font-weight:500">/</b> filter</span><span><b style="color:#ead9c8;font-weight:500">?</b> help</span><span><b style="color:#ead9c8;font-weight:500">q</b> quit</span><span style="margin-left:auto">11 cards</span></div>
+      </div>
+    </div>
+    
+  </div>
+</section>
+
+<section style="padding:48px;display:flex;flex-direction:column;gap:40px;font-family:'IBM Plex Mono',Iosevka,monospace">
+  <div style="display:flex;align-items:baseline;gap:16px;color:#2b2622">
+    <span style="font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase">Turn 1</span>
+    <span style="font-size:13px;color:#7a736b">kando · Bubble Tea TUI · 120×40 · truecolor. Board layouts (<a href="#1a">1a</a>–<a href="#1c">1c</a>) and secondary screens (<a href="#1d">1d</a>–<a href="#1f">1f</a>). Themes are interchangeable across layouts.</span>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start">
+
+    <!-- 1a Bordered board · Paper -->
+    <div id="1a" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#2b2622"><span style="background:#2b2622;color:#f6f1e8;padding:2px 7px;border-radius:3px;font-weight:600">1a</span><span>Bordered board · Paper theme · lipgloss RoundedBorder on columns and cards</span></div>
+      <div style="width:120ch;height:800px;box-sizing:border-box;padding:0 1ch;font-size:13px;line-height:20px;background:#f6f1e8;color:#2b2622;border-radius:8px;box-shadow:0 1px 0 rgba(0,0,0,.05),0 12px 32px rgba(40,30,20,.12);display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;gap:2ch;height:20px"><span style="font-weight:600">kando</span><span style="color:#8f8579">life</span><span style="margin-left:auto;color:#8f8579">Thu 3 Sep</span></div>
+        <div style="height:20px"></div>
+        <div style="flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:2ch;min-height:0">
+          <sc-for list="{{ cols }}" as="col" hint-placeholder-count="4">
+            <div style="border:1px solid #d9cfc0;border-radius:4px;padding:0 1ch;display:flex;flex-direction:column;gap:20px;min-height:0">
+              <sc-if value="{{ col.active }}" hint-placeholder-val="{{ false }}"><div style="display:flex;justify-content:space-between;color:#1f7a6d;font-weight:600;text-transform:uppercase;letter-spacing:.08em"><span>{{ col.name }}</span><span>{{ col.count }}</span></div></sc-if>
+              <sc-if value="{{ col.inactive }}" hint-placeholder-val="{{ true }}"><div style="display:flex;justify-content:space-between;color:#8f8579;text-transform:uppercase;letter-spacing:.08em"><span>{{ col.name }}</span><span>{{ col.count }}</span></div></sc-if>
+              <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="2">
+                <sc-if value="{{ card.sel }}" hint-placeholder-val="{{ false }}">
+                  <div style="border:1px solid #1f7a6d;background:#ece4d6;border-radius:3px;padding:0 1ch;margin:-20px 0 0">
+                    <div style="font-weight:600">{{ card.title }}</div>
+                    <div style="display:flex;gap:1ch;color:#8f8579"><span style="color:#1f7a6d">{{ card.tag }}</span><span>{{ card.check }}</span><span style="margin-left:auto">{{ card.age }}</span></div>
+                    <sc-if value="{{ card.blocked }}" hint-placeholder-val="{{ false }}"><div style="color:#b5532b">⊘ {{ card.blockedNote }}</div></sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ card.plain }}" hint-placeholder-val="{{ true }}">
+                  <div style="border:1px solid #d9cfc0;border-radius:3px;padding:0 1ch;margin:-20px 0 0">
+                    <div>{{ card.title }}</div>
+                    <div style="display:flex;gap:1ch;color:#8f8579"><span style="color:#1f7a6d">{{ card.tag }}</span><span>{{ card.check }}</span><span style="margin-left:auto">{{ card.age }}</span></div>
+                    <sc-if value="{{ card.blocked }}" hint-placeholder-val="{{ false }}"><div style="color:#b5532b">⊘ {{ card.blockedNote }}</div></sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ card.done }}" hint-placeholder-val="{{ false }}">
+                  <div style="border:1px dashed #d9cfc0;border-radius:3px;padding:0 1ch;color:#8f8579">
+                    <div><span style="color:#1f7a6d">✓</span> <span style="text-decoration:line-through">{{ card.title }}</span></div>
+                    <div style="display:flex;gap:1ch"><span>{{ card.tag }}</span><span style="margin-left:auto">{{ card.age }}</span></div>
+                  </div>
+                </sc-if>
+              </sc-for>
+              
+            </div>
+          </sc-for>
+        </div>
+        <div style="height:20px"></div>
+        <div style="display:flex;gap:2ch;height:20px;color:#8f8579;white-space:nowrap;overflow:hidden"><span><b style="color:#2b2622;font-weight:500">j/k ↑↓</b> move</span><span><b style="color:#2b2622;font-weight:500">h/l ←→</b> column</span><span><b style="color:#2b2622;font-weight:500">a</b> add</span><span><b style="color:#2b2622;font-weight:500">enter</b> open</span><span><b style="color:#2b2622;font-weight:500">m</b> move</span><span><b style="color:#2b2622;font-weight:500">d</b> done</span><span><b style="color:#2b2622;font-weight:500">/</b> filter</span><span><b style="color:#2b2622;font-weight:500">?</b> help</span><span><b style="color:#2b2622;font-weight:500">q</b> quit</span><span style="margin-left:auto">11 cards</span></div>
+      </div>
+    </div>
+
+    <!-- 1b Borderless notepad · Slate -->
+    <div id="1b" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#2b2622"><span style="background:#2b2622;color:#f6f1e8;padding:2px 7px;font-weight:600;border-radius:3px">1b</span><span>Borderless notepad · Slate theme · bullets, whitespace columns, reverse-video selection</span></div>
+      <div style="width:120ch;height:800px;box-sizing:border-box;padding:0 2ch;font-size:13px;line-height:20px;background:#14181f;color:#d6dae2;border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.25);display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;gap:2ch;height:20px"><span style="font-weight:600;color:#7cc4ff">kando</span><span style="color:#6b7280">life</span><span style="margin-left:auto;color:#6b7280">Thu 3 Sep</span></div>
+        <div style="height:20px"></div>
+        <div style="flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:3ch;min-height:0">
+          <sc-for list="{{ cols }}" as="col" hint-placeholder-count="4">
+            <div style="display:flex;flex-direction:column;gap:20px;min-height:0">
+              <sc-if value="{{ col.active }}" hint-placeholder-val="{{ false }}"><div style="display:flex;gap:1ch;color:#d6dae2;font-weight:600;border-bottom:1px solid #7cc4ff;padding-bottom:0"><span>{{ col.name }}</span><span style="color:#7cc4ff">{{ col.count }}</span></div></sc-if>
+              <sc-if value="{{ col.inactive }}" hint-placeholder-val="{{ true }}"><div style="display:flex;gap:1ch;color:#6b7280;border-bottom:1px solid #2a313d"><span>{{ col.name }}</span><span>{{ col.count }}</span></div></sc-if>
+              <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="2">
+                <sc-if value="{{ card.sel }}" hint-placeholder-val="{{ false }}">
+                  <div style="background:#1f2733;border-radius:3px;margin:0 -1ch;padding:0 1ch">
+                    <div style="font-weight:600"><span style="color:#7cc4ff">▸</span> {{ card.title }}</div>
+                    <div style="padding-left:2ch;display:flex;gap:1ch;color:#6b7280"><span style="color:#7cc4ff">{{ card.tag }}</span><span>{{ card.check }}</span><span style="margin-left:auto">{{ card.age }}</span></div>
+                    <sc-if value="{{ card.blocked }}" hint-placeholder-val="{{ false }}"><div style="padding-left:2ch;color:#ffb17a">⊘ {{ card.blockedNote }}</div></sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ card.plain }}" hint-placeholder-val="{{ true }}">
+                  <div style="margin:-20px 0 0">
+                    <div><span style="color:#6b7280">•</span> {{ card.title }}</div>
+                    <div style="padding-left:2ch;display:flex;gap:1ch;color:#6b7280"><span style="color:#7cc4ff">{{ card.tag }}</span><span>{{ card.check }}</span><span style="margin-left:auto">{{ card.age }}</span></div>
+                    <sc-if value="{{ card.blocked }}" hint-placeholder-val="{{ false }}"><div style="padding-left:2ch;color:#ffb17a">⊘ {{ card.blockedNote }}</div></sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ card.done }}" hint-placeholder-val="{{ false }}">
+                  <div style="color:#6b7280">
+                    <div><span style="color:#7cc4ff">✓</span> <span style="text-decoration:line-through">{{ card.title }}</span></div>
+                    <div style="padding-left:2ch;display:flex;gap:1ch"><span>{{ card.tag }}</span><span style="margin-left:auto">{{ card.age }}</span></div>
+                  </div>
+                </sc-if>
+              </sc-for>
+              
+            </div>
+          </sc-for>
+        </div>
+        <div style="height:20px"></div>
+        <div style="display:flex;gap:2ch;height:20px;color:#6b7280;white-space:nowrap;overflow:hidden"><span><b style="color:#d6dae2;font-weight:500">j/k ↑↓</b> move</span><span><b style="color:#d6dae2;font-weight:500">h/l ←→</b> column</span><span><b style="color:#d6dae2;font-weight:500">a</b> add</span><span><b style="color:#d6dae2;font-weight:500">enter</b> open</span><span><b style="color:#d6dae2;font-weight:500">m</b> move</span><span><b style="color:#d6dae2;font-weight:500">d</b> done</span><span><b style="color:#d6dae2;font-weight:500">/</b> filter</span><span><b style="color:#d6dae2;font-weight:500">?</b> help</span><span><b style="color:#d6dae2;font-weight:500">q</b> quit</span><span style="margin-left:auto">11 cards</span></div>
+      </div>
+    </div>
+
+    <!-- 1c Focus lane · Ember -->
+    <div id="1c" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#2b2622"><span style="background:#2b2622;color:#f6f1e8;padding:2px 7px;font-weight:600;border-radius:3px">1c</span><span>Focus lane · Ember theme · active column expanded with notes, others collapsed to titles</span></div>
+      <div style="width:120ch;height:800px;box-sizing:border-box;padding:0 2ch;font-size:13px;line-height:20px;background:#1a1512;color:#ead9c8;border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.3);display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;gap:2ch;height:20px"><span style="font-weight:600;color:#e0a458">kando</span><span style="color:#7d6b5c">life</span><span style="margin-left:auto;color:#7d6b5c">Thu 3 Sep</span></div>
+        <div style="height:20px"></div>
+        <div style="display:flex;gap:3ch;height:20px;color:#7d6b5c">
+          <sc-for list="{{ cols }}" as="col" hint-placeholder-count="4">
+            <sc-if value="{{ col.active }}" hint-placeholder-val="{{ false }}"><span style="color:#1a1512;background:#e0a458;padding:0 1ch;border-radius:3px;font-weight:600">{{ col.name }} {{ col.count }}</span></sc-if>
+            <sc-if value="{{ col.inactive }}" hint-placeholder-val="{{ true }}"><span>{{ col.name }} {{ col.count }}</span></sc-if>
+          </sc-for>
+        </div>
+        <div style="height:20px"></div>
+        <div style="flex:1;display:grid;grid-template-columns:22ch minmax(0,1fr) 22ch 22ch;gap:3ch;min-height:0">
+          <sc-for list="{{ cols }}" as="col" hint-placeholder-count="4">
+            <sc-if value="{{ col.active }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:20px;min-height:0">
+                <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="3">
+                  <sc-if value="{{ card.sel }}" hint-placeholder-val="{{ false }}">
+                    <div style="border:1px solid #e0a458;background:#2a211a;border-radius:4px;padding:0 2ch">
+                      <div style="display:flex;gap:1ch"><span style="font-weight:600">{{ card.title }}</span><span style="margin-left:auto;color:#7d6b5c">{{ card.age }}</span></div>
+                      <div style="color:#7d6b5c">{{ card.notesPreview }}</div>
+                      <div style="display:flex;gap:2ch;color:#7d6b5c"><span style="color:#e0a458">{{ card.tag }}</span><span>{{ card.check }}</span><sc-if value="{{ card.blocked }}" hint-placeholder-val="{{ false }}"><span style="color:#8fb98a">⊘ {{ card.blockedNote }}</span></sc-if></div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ card.plain }}" hint-placeholder-val="{{ true }}">
+                    <div style="border:1px solid #33291f;border-radius:4px;padding:0 2ch">
+                      <div style="display:flex;gap:1ch"><span>{{ card.title }}</span><span style="margin-left:auto;color:#7d6b5c">{{ card.age }}</span></div>
+                      <div style="color:#7d6b5c">{{ card.notesPreview }}</div>
+                      <div style="display:flex;gap:2ch;color:#7d6b5c"><span style="color:#e0a458">{{ card.tag }}</span><span>{{ card.check }}</span><sc-if value="{{ card.blocked }}" hint-placeholder-val="{{ false }}"><span style="color:#8fb98a">⊘ {{ card.blockedNote }}</span></sc-if></div>
+                    </div>
+                  </sc-if>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ col.inactive }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;flex-direction:column;color:#7d6b5c;border-left:1px solid #33291f;padding-left:1ch">
+                <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="3">
+                  <sc-if value="{{ card.done }}" hint-placeholder-val="{{ false }}"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="color:#8fb98a">✓</span> {{ card.title }}</div></sc-if>
+                  <sc-if value="{{ card.notDone }}" hint-placeholder-val="{{ true }}"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">• {{ card.title }}</div></sc-if>
+                </sc-for>
+              </div>
+            </sc-if>
+          </sc-for>
+        </div>
+        <div style="height:20px"></div>
+        <div style="display:flex;gap:2ch;height:20px;color:#7d6b5c;white-space:nowrap;overflow:hidden"><span><b style="color:#ead9c8;font-weight:500">j/k</b> move</span><span><b style="color:#ead9c8;font-weight:500">h/l tab</b> lane</span><span><b style="color:#ead9c8;font-weight:500">a</b> add</span><span><b style="color:#ead9c8;font-weight:500">enter</b> open</span><span><b style="color:#ead9c8;font-weight:500">H/L</b> move card</span><span><b style="color:#ead9c8;font-weight:500">d</b> done</span><span><b style="color:#ead9c8;font-weight:500">/</b> filter</span><span><b style="color:#ead9c8;font-weight:500">?</b> help</span><span><b style="color:#ead9c8;font-weight:500">q</b> quit</span><span style="margin-left:auto">11 cards</span></div>
+      </div>
+    </div>
+
+    <!-- 1d Card detail · Slate -->
+    <div id="1d" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#2b2622"><span style="background:#2b2622;color:#f6f1e8;padding:2px 7px;font-weight:600;border-radius:3px">1d</span><span>Card detail / edit · split pane, column list stays on the left</span></div>
+      <div style="width:120ch;height:800px;box-sizing:border-box;padding:0 2ch;font-size:13px;line-height:20px;background:#14181f;color:#d6dae2;border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.25);display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;gap:2ch;height:20px"><span style="font-weight:600;color:#7cc4ff">kando</span><span style="color:#6b7280">life</span><span style="color:#6b7280">›</span><span style="color:#6b7280">Todo</span><span style="color:#6b7280">›</span><span>{{ detail.title }}</span><span style="margin-left:auto;color:#6b7280">Thu 3 Sep</span></div>
+        <div style="height:20px"></div>
+        <div style="flex:1;display:grid;grid-template-columns:30ch 1fr;gap:4ch;min-height:0">
+          <div style="display:flex;flex-direction:column;color:#6b7280">
+            <div style="display:flex;gap:1ch;color:#d6dae2;font-weight:600;border-bottom:1px solid #7cc4ff;margin-bottom:20px"><span>Todo</span><span style="color:#7cc4ff">{{ activeCount }}</span></div>
+            <sc-for list="{{ activeCards }}" as="card" hint-placeholder-count="3">
+              <sc-if value="{{ card.sel }}" hint-placeholder-val="{{ false }}"><div style="background:#1f2733;margin:0 -1ch;padding:0 1ch;border-radius:3px;color:#d6dae2;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="color:#7cc4ff">▸</span> {{ card.title }}</div></sc-if>
+              <sc-if value="{{ card.plain }}" hint-placeholder-val="{{ true }}"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">• {{ card.title }}</div></sc-if>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-direction:column;border-left:1px solid #2a313d;padding-left:3ch">
+            <div style="font-weight:600;font-size:13px">{{ detail.title }}</div>
+            <div style="display:flex;gap:2ch;color:#6b7280"><span style="color:#7cc4ff">{{ detail.tag }}</span><span>created {{ detail.created }}</span><span>in Todo since {{ detail.moved }}</span></div>
+            <div style="height:20px"></div>
+            <div style="color:#6b7280;text-transform:uppercase;letter-spacing:.08em">Notes</div>
+            <div style="max-width:64ch;text-wrap:pretty">{{ detail.notes }}</div>
+            <div style="height:20px"></div>
+            <div style="color:#6b7280;text-transform:uppercase;letter-spacing:.08em">Checklist <span style="color:#7cc4ff">{{ detail.check }}</span></div>
+            <sc-for list="{{ detail.items }}" as="it" hint-placeholder-count="4">
+              <sc-if value="{{ it.done }}" hint-placeholder-val="{{ false }}"><div style="color:#6b7280"><span style="color:#7cc4ff">▣</span> <span style="text-decoration:line-through">{{ it.text }}</span></div></sc-if>
+              <sc-if value="{{ it.cur }}" hint-placeholder-val="{{ false }}"><div style="background:#1f2733;margin:0 -1ch;padding:0 1ch;border-radius:3px">▢ {{ it.text }}<span style="display:inline-block;width:1ch;height:16px;background:#7cc4ff;vertical-align:-3px;margin-left:1px"></span></div></sc-if>
+              <sc-if value="{{ it.open }}" hint-placeholder-val="{{ true }}"><div>▢ {{ it.text }}</div></sc-if>
+            </sc-for>
+            <div style="height:20px"></div>
+            <div style="color:#6b7280;text-transform:uppercase;letter-spacing:.08em">Blocked</div>
+            <div style="color:#6b7280">— not blocked. <b style="color:#d6dae2;font-weight:500">b</b> to set a reason</div>
+          </div>
+        </div>
+        <div style="height:20px"></div>
+        <div style="display:flex;gap:2ch;height:20px;color:#6b7280;white-space:nowrap;overflow:hidden"><span><b style="color:#d6dae2;font-weight:500">j/k</b> item</span><span><b style="color:#d6dae2;font-weight:500">x</b> toggle</span><span><b style="color:#d6dae2;font-weight:500">o</b> new item</span><span><b style="color:#d6dae2;font-weight:500">e</b> edit notes</span><span><b style="color:#d6dae2;font-weight:500">t</b> tag</span><span><b style="color:#d6dae2;font-weight:500">m</b> move</span><span><b style="color:#d6dae2;font-weight:500">b</b> block</span><span><b style="color:#d6dae2;font-weight:500">esc</b> back</span></div>
+      </div>
+    </div>
+
+    <!-- 1e Filter · Slate -->
+    <div id="1e" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#2b2622"><span style="background:#2b2622;color:#f6f1e8;padding:2px 7px;font-weight:600;border-radius:3px">1e</span><span>Filter / search · prompt replaces header, non-matching cards collapse</span></div>
+      <div style="width:120ch;height:800px;box-sizing:border-box;padding:0 2ch;font-size:13px;line-height:20px;background:#14181f;color:#d6dae2;border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.25);display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;gap:1ch;height:20px"><span style="color:#7cc4ff;font-weight:600">/</span><span>#home</span><span style="display:inline-block;width:1ch;height:16px;background:#7cc4ff;margin-top:2px"></span><span style="margin-left:auto;color:#6b7280">{{ filterCount }} of 11 match</span></div>
+        <div style="height:20px"></div>
+        <div style="flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:3ch;min-height:0">
+          <sc-for list="{{ filteredCols }}" as="col" hint-placeholder-count="4">
+            <div style="display:flex;flex-direction:column;gap:20px;min-height:0">
+              <div style="display:flex;gap:1ch;color:#6b7280;border-bottom:1px solid #2a313d"><span>{{ col.name }}</span><span>{{ col.count }}</span></div>
+              <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="1">
+                <sc-if value="{{ card.sel }}" hint-placeholder-val="{{ false }}">
+                  <div style="background:#1f2733;border-radius:3px;margin:0 -1ch;padding:0 1ch">
+                    <div style="font-weight:600"><span style="color:#7cc4ff">▸</span> {{ card.title }}</div>
+                    <div style="padding-left:2ch;display:flex;gap:1ch;color:#6b7280"><span style="color:#ffb17a">{{ card.tag }}</span><span>{{ card.check }}</span><span style="margin-left:auto">{{ card.age }}</span></div>
+                    <sc-if value="{{ card.blocked }}" hint-placeholder-val="{{ false }}"><div style="padding-left:2ch;color:#ffb17a">⊘ {{ card.blockedNote }}</div></sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ card.plain }}" hint-placeholder-val="{{ true }}">
+                  <div style="margin:-20px 0 0">
+                    <div><span style="color:#6b7280">•</span> {{ card.title }}</div>
+                    <div style="padding-left:2ch;display:flex;gap:1ch;color:#6b7280"><span style="color:#ffb17a">{{ card.tag }}</span><span>{{ card.check }}</span><span style="margin-left:auto">{{ card.age }}</span></div>
+                    <sc-if value="{{ card.blocked }}" hint-placeholder-val="{{ false }}"><div style="padding-left:2ch;color:#ffb17a">⊘ {{ card.blockedNote }}</div></sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ card.done }}" hint-placeholder-val="{{ false }}">
+                  <div style="color:#6b7280">
+                    <div><span style="color:#7cc4ff">✓</span> <span style="text-decoration:line-through">{{ card.title }}</span></div>
+                    <div style="padding-left:2ch;display:flex;gap:1ch"><span style="color:#ffb17a">{{ card.tag }}</span><span style="margin-left:auto">{{ card.age }}</span></div>
+                  </div>
+                </sc-if>
+              </sc-for>
+              <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}"><div style="color:#2a313d">· · ·</div></sc-if>
+              
+            </div>
+          </sc-for>
+        </div>
+        <div style="height:20px"></div>
+        <div style="display:flex;gap:2ch;height:20px;color:#6b7280;white-space:nowrap;overflow:hidden"><span><b style="color:#d6dae2;font-weight:500">type</b> to filter title or #tag</span><span><b style="color:#d6dae2;font-weight:500">enter</b> keep filter</span><span><b style="color:#d6dae2;font-weight:500">esc</b> clear</span><span style="margin-left:auto"><b style="color:#d6dae2;font-weight:500">!blocked</b> <b style="color:#d6dae2;font-weight:500">age&gt;7d</b> also work</span></div>
+      </div>
+    </div>
+
+    <!-- 1f Archive · Slate -->
+    <div id="1f" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#2b2622"><span style="background:#2b2622;color:#f6f1e8;padding:2px 7px;font-weight:600;border-radius:3px">1f</span><span>Done / archive · chronological log grouped by week, a quiet record of what got finished</span></div>
+      <div style="width:120ch;height:800px;box-sizing:border-box;padding:0 2ch;font-size:13px;line-height:20px;background:#14181f;color:#d6dae2;border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.25);display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;gap:2ch;height:20px"><span style="font-weight:600;color:#7cc4ff">kando</span><span style="color:#6b7280">life</span><span style="color:#6b7280">›</span><span>archive</span><span style="margin-left:auto;color:#6b7280">{{ archiveTotal }} done</span></div>
+        <div style="height:20px"></div>
+        <div style="flex:1;display:flex;flex-direction:column;min-height:0;max-width:80ch">
+          <sc-for list="{{ archive }}" as="grp" hint-placeholder-count="3">
+            <div style="display:flex;gap:1ch;color:#6b7280;border-bottom:1px solid #2a313d;margin-bottom:0"><span style="text-transform:uppercase;letter-spacing:.08em">{{ grp.label }}</span><span>{{ grp.count }}</span></div>
+            <sc-for list="{{ grp.items }}" as="it" hint-placeholder-count="3">
+              <div style="display:flex;gap:2ch"><span style="color:#7cc4ff">✓</span><span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ it.title }}</span><span style="color:#7cc4ff;width:8ch">{{ it.tag }}</span><span style="color:#6b7280;width:10ch;text-align:right">{{ it.when }}</span></div>
+            </sc-for>
+            <div style="height:20px"></div>
+          </sc-for>
+          <div style="color:#6b7280">Older entries live in <span style="color:#d6dae2">~/.kando/life/archive.md</span></div>
+        </div>
+        <div style="height:20px"></div>
+        <div style="display:flex;gap:2ch;height:20px;color:#6b7280;white-space:nowrap;overflow:hidden"><span><b style="color:#d6dae2;font-weight:500">j/k</b> move</span><span><b style="color:#d6dae2;font-weight:500">u</b> undo (back to Doing)</span><span><b style="color:#d6dae2;font-weight:500">enter</b> open</span><span><b style="color:#d6dae2;font-weight:500">/</b> filter</span><span><b style="color:#d6dae2;font-weight:500">esc</b> board</span></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;activeColumn&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;Todo&quot;,&quot;options&quot;:[&quot;Backlog&quot;,&quot;Todo&quot;,&quot;Doing&quot;,&quot;Done&quot;],&quot;tsType&quot;:&quot;'Backlog'|'Todo'|'Doing'|'Done'&quot;,&quot;section&quot;:&quot;Board state&quot;},&quot;showAge&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Card metadata&quot;},&quot;showTags&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Card metadata&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const activeName = this.props.activeColumn ?? 'Todo';
+    const showAge = this.props.showAge ?? true;
+    const showTags = this.props.showTags ?? true;
+    const raw = [
+      { name: 'Backlog', cards: [
+        { title: 'Learn to make sourdough', tag: '#home', age: '12d', notes: 'Start with the no-knead recipe. Need a dutch oven.' },
+        { title: 'Replace kitchen tap', tag: '#home', age: '20d', notes: 'Drips at night. Measure the hole spacing first.' },
+        { title: 'Read Piranesi', tag: '#read', age: '5d', notes: 'Copy is on the hallway shelf.' },
+      ]},
+      { name: 'Todo', cards: [
+        { title: 'Renew passport', tag: '#errand', age: '3d', check: '1/4', notes: 'Expires 14 Nov. Two photos, old passport, printed form. Appointment slots open on Mondays.' },
+        { title: 'Tax docs to accountant', tag: '#money', age: '2d', notes: 'P60, dividend statements, the spreadsheet from March.' },
+        { title: 'Book dentist', tag: '#health', age: '1d', notes: 'Try for a Saturday slot.' },
+      ]},
+      { name: 'Doing', cards: [
+        { title: 'Fix bike brake', tag: '#home', age: '4d', blocked: true, blockedNote: 'waiting on pads', notes: 'Rear pads worn through. Ordered Tuesday.' },
+        { title: 'Birthday card for mom', tag: '', age: '1d', notes: 'Post by Friday.' },
+      ]},
+      { name: 'Done', cards: [
+        { title: 'Cancel gym membership', tag: '#money', age: '1d', done: true },
+        { title: 'Return library books', tag: '#errand', age: '2d', done: true },
+        { title: 'Pay electric bill', tag: '#money', age: '3d', done: true },
+      ]},
+    ];
+    const cols = raw.map(c => {
+      const active = c.name === activeName;
+      return {
+        name: c.name, active, inactive: !active, count: c.cards.length,
+        cards: c.cards.map((k, i) => ({
+          ...k,
+          tag: showTags ? k.tag : '',
+          age: showAge ? k.age : '',
+          check: k.check || '',
+          blocked: !!k.blocked, blockedNote: k.blockedNote || '',
+          done: !!k.done, notDone: !k.done,
+          sel: active && i === 0 && !k.done,
+          plain: !k.done && !(active && i === 0),
+          notesPreview: k.notes || '',
+        })),
+      };
+    });
+    const activeCol = cols.find(c => c.active) || cols[1];
+    const detailSrc = activeCol.cards[0];
+    const detail = {
+      title: detailSrc.title, tag: detailSrc.tag, created: 'Mon 31 Aug', moved: 'Tue 1 Sep',
+      notes: detailSrc.notesPreview, check: detailSrc.check || '0/0',
+      items: detailSrc.title === 'Renew passport'
+        ? [{ text: 'Photos from the pharmacy', done: true }, { text: 'Fill in the form', cur: true }, { text: 'Book appointment', open: true }, { text: 'Post the old one back', open: true }]
+        : [{ text: 'No checklist yet — o to add an item', open: true }],
+    };
+    const filteredCols = cols.map(c => {
+      const cards = c.cards.filter(k => k.tag === '#home' || (!showTags && ['Learn to make sourdough','Replace kitchen tap','Fix bike brake'].includes(k.title)));
+      return { name: c.name, count: cards.length, cards: cards.map((k, i) => ({ ...k, sel: i === 0 && c.name === 'Backlog', plain: !k.done && !(i === 0 && c.name === 'Backlog') })), empty: cards.length === 0 };
+    });
+    const archive = [
+      { label: 'This week', items: [
+        { title: 'Cancel gym membership', tag: '#money', when: 'Wed 2 Sep' },
+        { title: 'Return library books', tag: '#errand', when: 'Tue 1 Sep' },
+        { title: 'Pay electric bill', tag: '#money', when: 'Mon 31 Aug' },
+      ]},
+      { label: 'Last week', items: [
+        { title: 'Descale the kettle', tag: '#home', when: 'Sat 29 Aug' },
+        { title: 'Finish The Overstory', tag: '#read', when: 'Thu 27 Aug' },
+        { title: 'Send insurance renewal', tag: '#money', when: 'Mon 24 Aug' },
+        { title: 'Reply to Sam about the trip', tag: '', when: 'Mon 24 Aug' },
+      ]},
+      { label: 'Earlier', items: [
+        { title: 'Hem the grey trousers', tag: '#home', when: 'Wed 19 Aug' },
+        { title: 'Renew car tax', tag: '#money', when: 'Fri 14 Aug' },
+        { title: 'Eye test', tag: '#health', when: 'Tue 11 Aug' },
+      ]},
+    ].map(g => ({ ...g, count: g.items.length, items: g.items.map(i => ({ ...i, tag: showTags ? i.tag : '' })) }));
+    return {
+      cols, detail, activeCards: activeCol.cards, activeCount: activeCol.count,
+      filteredCols, filterCount: filteredCols.reduce((n, c) => n + c.cards.length, 0),
+      archive, archiveTotal: archive.reduce((n, g) => n + g.count, 0),
+    };
+  }
+}
+</script>
+</body>
+</html>
