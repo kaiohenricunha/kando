@@ -21,6 +21,7 @@ var authoredGoldens = []struct {
 	{"filter #home typed", "filter_home_120x40.txt", []string{"/", "#", "h", "o", "m", "e"}},
 	{"help overlay", "help_120x40.txt", []string{"?"}},
 	{"detail renew passport", "detail_120x40.txt", []string{"enter"}},
+	{"archive", "archive_120x40.txt", []string{"D"}},
 }
 
 func TestGoldenScreens(t *testing.T) {

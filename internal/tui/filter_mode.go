@@ -30,7 +30,7 @@ func (m *Model) applyFilter(q string) {
 	m.filter = board.Parse(q)
 	m.sel, m.first = 0, 0
 	if m.scr == screenArchive {
-		m.arch.cursor, m.arch.first = 0, 0
+		m.arch.cursor = 0
 	}
 }
 
