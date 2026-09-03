@@ -21,3 +21,5 @@ func (m Model) visibleArchive() []*board.Card { return nil }
 func (m Model) renderArchive() []string { return m.renderBoard() }
 
 func (m Model) updateArchive(msg tea.KeyMsg) (tea.Model, tea.Cmd) { return m, nil }
+
+func (m *Model) selectArchiveByID(id string) {}

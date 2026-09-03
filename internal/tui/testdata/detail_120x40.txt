@@ -1,0 +1,40 @@
+ kando  life › Todo › Renew passport                                                                          Thu 3 Sep 
+                                                                                                                        
+ Todo 3                            │   Renew passport                                                                   
+ ──────────────────────────────    │   #errand  created Mon 31 Aug  in Todo since Tue 1 Sep                             
+                                   │                                                                                    
+ ▸ Renew passport                  │   NOTES                                                                            
+ • Tax docs to accountant          │   Expires 14 Nov. Two photos, old passport, printed form.                          
+ • Book dentist                    │   Appointment slots open on Mondays.                                               
+                                   │                                                                                    
+                                   │   CHECKLIST 1/4                                                                    
+                                   │   ▣ Photos from the pharmacy                                                       
+                                   │   ▢ Fill in the form                                                               
+                                   │   ▢ Book appointment                                                               
+                                   │   ▢ Post the old one back                                                          
+                                   │                                                                                    
+                                   │   BLOCKED                                                                          
+                                   │   — not blocked. b to set a reason                                                 
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                                                                                                        
+ j/k item  x toggle  o new item  e edit notes  t tag  m move  b block  esc back                                         
