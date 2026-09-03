@@ -1,0 +1,209 @@
+package store
+
+import (
+	"bytes"
+	"os"
+	"reflect"
+	"testing"
+	"time"
+
+	"github.com/kaiohenricunha/kando/internal/board"
+)
+
+var tz = time.FixedZone("-03", -3*3600)
+
+func ts(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 12, 0, 0, 0, tz) }
+
+func readSample(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestParseSampleBoard(t *testing.T) {
+	b, rewrite, err := Parse(readSample(t, "sample_board.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rewrite {
+		t.Errorf("sample has ids; rewrite should be false")
+	}
+	want := [4]int{3, 3, 2, 3}
+	for _, l := range board.Lanes {
+		if len(b.Lanes[l]) != want[l] {
+			t.Errorf("lane %s has %d cards, want %d", l, len(b.Lanes[l]), want[l])
+		}
+	}
+	rp := b.Lanes[board.Todo][0]
+	if rp.Title != "Renew passport" || rp.Tag != "errand" || rp.ID != "k7q2m9ab" {
+		t.Errorf("renew passport head: %+v", rp)
+	}
+	if !rp.CreatedAt.Equal(ts(2026, 8, 31)) || !rp.MovedAt.Equal(ts(2026, 9, 1)) || !rp.DoneAt.IsZero() {
+		t.Errorf("renew passport times: %v %v %v", rp.CreatedAt, rp.MovedAt, rp.DoneAt)
+	}
+	if rp.Notes != "Expires 14 Nov. Two photos, old passport, printed form. Appointment slots open on Mondays." {
+		t.Errorf("notes = %q", rp.Notes)
+	}
+	wantItems := []board.Item{{Text: "Photos from the pharmacy", Done: true}, {Text: "Fill in the form", Done: false}, {Text: "Book appointment", Done: false}, {Text: "Post the old one back", Done: false}}
+	if !reflect.DeepEqual(rp.Checklist, wantItems) {
+		t.Errorf("checklist = %+v", rp.Checklist)
+	}
+	brake := b.Lanes[board.Doing][0]
+	if !brake.Blocked || brake.BlockedReason != "waiting on pads" {
+		t.Errorf("brake blocked = %v %q", brake.Blocked, brake.BlockedReason)
+	}
+	bday := b.Lanes[board.Doing][1]
+	if bday.Tag != "" || bday.Blocked || bday.Notes != "Post by Friday." {
+		t.Errorf("birthday: %+v", bday)
+	}
+	gym := b.Lanes[board.Done][0]
+	if !gym.DoneAt.Equal(ts(2026, 9, 2)) || gym.Notes != "" || len(gym.Checklist) != 0 {
+		t.Errorf("gym: %+v", gym)
+	}
+}
+
+func TestRoundTripCanonical(t *testing.T) {
+	for _, name := range []string{"sample_board.md", "sample_archive.md"} {
+		data := readSample(t, name)
+		var out []byte
+		if name == "sample_board.md" {
+			b, _, err := Parse(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = Marshal(b)
+		} else {
+			a, _, err := ParseArchive(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(a.Cards) != 10 {
+				t.Fatalf("archive cards = %d", len(a.Cards))
+			}
+			out = MarshalArchive(a)
+		}
+		if !bytes.Equal(out, data) {
+			t.Errorf("%s: Marshal(Parse(x)) != x\n--- got ---\n%s\n--- want ---\n%s", name, out, data)
+		}
+	}
+}
+
+func TestNotesVerbatimAndDeepRoundTrip(t *testing.T) {
+	b := &board.Board{}
+	c := &board.Card{
+		ID:        "abcdefgh",
+		Title:     "Weird notes",
+		Notes:     "first line\n\nafter a blank line\ntag: looks like a key but is notes\n  indented  ",
+		CreatedAt: ts(2026, 9, 1),
+		MovedAt:   ts(2026, 9, 1),
+		Checklist: []board.Item{{Text: "one", Done: false}, {Text: "two", Done: true}},
+	}
+	d := &board.Card{ID: "zzzzzzzz", Title: "Bare", CreatedAt: ts(2026, 9, 2), MovedAt: ts(2026, 9, 2), Blocked: true}
+	b.Lanes[board.Backlog] = []*board.Card{c}
+	b.Lanes[board.Done] = []*board.Card{d}
+	d.DoneAt = ts(2026, 9, 3)
+	out := Marshal(b)
+	got, rewrite, err := Parse(out)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if rewrite {
+		t.Errorf("no rewrite expected")
+	}
+	for _, l := range board.Lanes {
+		if len(got.Lanes[l]) != len(b.Lanes[l]) {
+			t.Fatalf("lane %s: %d cards, want %d\n%s", l, len(got.Lanes[l]), len(b.Lanes[l]), out)
+		}
+		for i := range b.Lanes[l] {
+			if !sameCard(got.Lanes[l][i], b.Lanes[l][i]) {
+				t.Errorf("round trip mismatch in %s[%d]\n--- marshalled ---\n%s\n--- got ---\n%+v\n--- want ---\n%+v", l, i, out, got.Lanes[l][i], b.Lanes[l][i])
+			}
+		}
+	}
+	if !bytes.Contains(out, []byte("\nblocked:\n")) {
+		t.Errorf("blocked without reason should serialise as a bare key:\n%s", out)
+	}
+}
+
+func TestParseDateForms(t *testing.T) {
+	src := "## Todo\n\n### A\ncreated: 2026-08-31\nmoved: 2026-08-31T09:12\ndone: 2026-08-31T09:12:33\nid: aaaaaaaa\n"
+	b, _, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := b.Lanes[board.Todo][0]
+	if c.CreatedAt != time.Date(2026, 8, 31, 0, 0, 0, 0, time.Local) {
+		t.Errorf("date-only = %v", c.CreatedAt)
+	}
+	if c.MovedAt != time.Date(2026, 8, 31, 9, 12, 0, 0, time.Local) {
+		t.Errorf("minute form = %v", c.MovedAt)
+	}
+	if c.DoneAt != time.Date(2026, 8, 31, 9, 12, 33, 0, time.Local) {
+		t.Errorf("second form = %v", c.DoneAt)
+	}
+	out := string(Marshal(b))
+	if !bytes.Contains([]byte(out), []byte("created: 2026-08-31\n")) {
+		t.Errorf("midnight should marshal date-only:\n%s", out)
+	}
+	if !bytes.Contains([]byte(out), []byte("done: 2026-08-31T09:12:33")) {
+		t.Errorf("non-midnight should marshal with time:\n%s", out)
+	}
+}
+
+func TestParseAssignsMissingIDs(t *testing.T) {
+	src := "## Backlog\n\n### No id here\ntag: x\n\n## Todo\n\n### Has id\nid: bbbbbbbb\n"
+	b, rewrite, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rewrite {
+		t.Errorf("rewrite should be true when an id was assigned")
+	}
+	if len(b.Lanes[board.Backlog][0].ID) != 8 || b.Lanes[board.Todo][0].ID != "bbbbbbbb" {
+		t.Errorf("ids: %q %q", b.Lanes[board.Backlog][0].ID, b.Lanes[board.Todo][0].ID)
+	}
+}
+
+func TestParseErrors(t *testing.T) {
+	if _, _, err := Parse([]byte("## Nope\n\n### x\n")); err == nil {
+		t.Errorf("unknown lane should error")
+	}
+	if _, _, err := Parse([]byte("### orphan card\n")); err == nil {
+		t.Errorf("card before any lane should error")
+	}
+	if _, _, err := Parse([]byte("## Todo\n\n### A\ncreated: not-a-date\n")); err == nil {
+		t.Errorf("bad date should error")
+	}
+	b, _, err := Parse(nil)
+	if err != nil || b.Count() != 0 {
+		t.Errorf("empty input should be an empty board: %v %v", err, b)
+	}
+}
+
+func TestMarshalEmptyBoard(t *testing.T) {
+	want := "## Backlog\n\n## Todo\n\n## Doing\n\n## Done\n"
+	if got := string(Marshal(&board.Board{})); got != want {
+		t.Errorf("empty board:\n%q\nwant\n%q", got, want)
+	}
+}
+
+// sameCard compares cards field by field, using time.Equal for timestamps.
+func sameCard(a, b *board.Card) bool {
+	if a.ID != b.ID || a.Title != b.Title || a.Notes != b.Notes || a.Tag != b.Tag ||
+		a.Blocked != b.Blocked || a.BlockedReason != b.BlockedReason ||
+		!a.CreatedAt.Equal(b.CreatedAt) || !a.MovedAt.Equal(b.MovedAt) || !a.DoneAt.Equal(b.DoneAt) {
+		return false
+	}
+	if len(a.Checklist) != len(b.Checklist) {
+		return false
+	}
+	for i := range a.Checklist {
+		if a.Checklist[i] != b.Checklist[i] {
+			return false
+		}
+	}
+	return true
+}
