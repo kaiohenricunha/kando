@@ -1,0 +1,83 @@
+# §7 — Non-Functional Requirements
+
+> Performance, reliability, operational, security constraints.
+
+## Performance
+
+**PERF-1.** An edit made in one surface (the TUI, another browser tab, or
+hand-editing the Markdown files) is reflected in an open browser tab within
+2 seconds of the underlying file write, driven by the existing
+`Store.Watch()` fsnotify channel (`internal/store/watch.go:11`) pushed over
+SSE (KD-2, §4) — never by polling. On breach: the SSE test in §6 (U9) fails
+before this ships.
+
+**PERF-2 (invariant).** A freshly loaded or reloaded page always reflects
+the board state the server's watcher has picked up as of that moment — no
+caching layer, no stale data. This is what makes "lazy refresh, possibly
+hours later" (§3) safe without a polling interval to tune: nothing decays,
+because there is nothing cached to go stale.
+
+## Reliability
+
+**REL-1 (invariant).** Every request that returns a success status has
+already durably saved the change to disk, via the existing atomic
+temp-file-plus-rename write (`internal/store/store.go`) — no response can
+claim success for an edit that isn't safely on disk.
+
+**REL-2 (invariant).** A crash or kill of the web server process never
+corrupts `board.md` or `archive.md`. Same atomicity guarantee the TUI
+already relies on today, reused unchanged, not reimplemented (§3 Data
+Stores).
+
+**REL-3 (invariant).** The TUI and the web server writing to the same board
+concurrently never silently lose an edit outright. The existing
+self-write-suppression and watch/reload machinery (already exercised by the
+TUI) is reused verbatim by the web server — both surfaces converge on the
+same per-mutation behavior the TUI already has today; this spec does not
+introduce a new conflict-resolution scheme.
+
+**REL-4 (invariant).** If the SSE connection drops (network blip, server
+restart), the browser's native `EventSource` auto-reconnects, and the
+reconnected client's next page render is current, per PERF-2 — no missed
+event can leave the page permanently stale.
+
+## Operational
+
+**OPS-1 (invariant).** The web server binds to loopback (`127.0.0.1`) only,
+never `0.0.0.0`; this is not configurable within this spec's scope, per §2
+(remote access is explicitly out of scope).
+
+**OPS-2 (invariant).** `kando web` requires no build step beyond the
+existing `go build` / `go run` — no npm, no separate frontend build
+pipeline. Direct consequence of KD-1 (§4).
+
+**OPS-3.** Default port 4242, overridable with `--port` or `KANDO_WEB_PORT`
+(matching the existing `KANDO_HOME` / `KANDO_THEME` naming convention,
+`cmd/kando/main.go`). On breach (port already in use): the process exits
+non-zero with an error naming the port and how to override it — it never
+silently falls back to a different port.
+
+**OPS-4 (invariant).** Operational errors (failed to bind, failed to save)
+are printed to stderr and never crash the process silently — the same
+error-surfacing pattern the TUI already uses (`fatal()`, the model's `err`
+field, `cmd/kando/main.go`).
+
+## Security
+
+**SEC-1 (invariant).** There is no authentication (§2). OPS-1 (loopback
+only) is therefore the entire security boundary: any process on the same
+machine that can reach `127.0.0.1:<port>` can read and modify the board.
+Accepted risk for a single-user local tool (§2's explicit choice).
+
+**SEC-2 (invariant).** All user-provided text (titles, notes, tags,
+checklist items, blocked reasons) is rendered through Go's `html/template`
+package, which contextually auto-escapes output — never `text/template`,
+never raw string concatenation into HTML. No card's content can inject
+markup or script into the page.
+
+**SEC-3 (invariant).** Every state-changing route only accepts `POST`,
+never `GET` (already true of every mutation in §5's route table) — table
+stakes against a mutation triggered by a stray link, image tag, or
+prefetch. Full CSRF-token protection is deliberately not added: given SEC-1,
+anyone who can already reach the loopback port has full read/write access
+regardless, so a token would add little beyond what OPS-1 already provides.
