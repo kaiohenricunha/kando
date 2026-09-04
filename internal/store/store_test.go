@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -159,5 +160,66 @@ func TestDisplayPath(t *testing.T) {
 	s = &Store{dir: "/srv/kando/work"}
 	if got := s.ArchiveDisplayPath(); got != "/srv/kando/work/archive.md" {
 		t.Errorf("display path = %q", got)
+	}
+}
+
+func TestListBoardsEmpty(t *testing.T) {
+	root := t.TempDir()
+	got, err := ListBoards(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("ListBoards on an empty root = %v, want none", got)
+	}
+}
+
+func TestListBoardsMissingRoot(t *testing.T) {
+	got, err := ListBoards(filepath.Join(t.TempDir(), "does-not-exist"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("ListBoards on a missing root = %v, want none", got)
+	}
+}
+
+func TestListBoardsFindsExisting(t *testing.T) {
+	root := t.TempDir()
+	if _, _, err := Open(root, "work"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Open(root, "life"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ListBoards(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"life", "work"} // sorted, deterministic for a stable picker/list UI
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ListBoards = %v, want %v", got, want)
+	}
+}
+
+func TestListBoardsIgnoresNonBoardDirs(t *testing.T) {
+	root := t.TempDir()
+	if _, _, err := Open(root, "life"); err != nil {
+		t.Fatal(err)
+	}
+	// A directory with no board.md is not a board.
+	if err := os.MkdirAll(filepath.Join(root, "not-a-board"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A stray file at the root is not a board either.
+	if err := os.WriteFile(filepath.Join(root, "README.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ListBoards(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"life"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ListBoards = %v, want %v", got, want)
 	}
 }

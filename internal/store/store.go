@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -70,6 +71,30 @@ func Open(root, name string) (*Store, *board.Board, error) {
 	}
 	s.noteArchive()
 	return s, b, nil
+}
+
+// ListBoards returns the names of every board under root — every subdirectory
+// that contains a board.md — sorted alphabetically for a stable list/picker UI.
+// A missing root is not an error; it simply has no boards yet.
+func ListBoards(root string) ([]string, error) {
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(root, e.Name(), "board.md")); err == nil {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 // noteArchive records the archive file's current state so that a pre-existing
