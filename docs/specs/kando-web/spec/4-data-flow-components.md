@@ -13,7 +13,7 @@ loads one `*board.Board` at startup, mutates it via `board.Move`/`Insert`/
 `Remove`, saves via `Store.SaveBoard`/`SaveArchive` after every mutation,
 and reloads via `Store.CheckReload` when `Watch()` fires
 (`internal/tui/model.go`). A board is selected by name at
-`store.Open(root, name)` (`internal/store/store.go:42`) — the storage layer
+`store.Open(root, name)` (`internal/store/store.go:56`) — the storage layer
 already supports many boards, one per directory — but nothing anywhere
 lists the boards under `KANDO_HOME` (confirmed by grep: no `ReadDir` /
 `ListBoards` in product code).
@@ -22,8 +22,9 @@ lists the boards under `KANDO_HOME` (confirmed by grep: no `ReadDir` /
 
 Reused as-is:
 - `internal/board` — domain model.
-- `internal/store` — persistence; gains board listing and board creation
-  (new operations, same package, same on-disk layout).
+- `internal/store` — persistence; gains board listing (`ListBoards`, U1).
+  Board creation needs no new operation: `store.Open` already creates a
+  canonical empty `board.md` on first open (§6.6).
 
 New:
 - An HTTP handler / template package (name TBD, e.g. `internal/web`) that
@@ -37,10 +38,17 @@ New:
 
 The Markdown files on disk are the only state shared between the TUI
 process and the web process; they are separate OS processes (even though
-they're the same binary), so nothing is shared in memory. Synchronization
-is entirely file-based, through the store package's existing atomic-write +
-hash-suppression + watch machinery — unchanged from what the TUI already
-does today.
+they're the same binary), so nothing is shared in memory *between them*.
+Synchronization is entirely file-based, through the store package's
+existing atomic-write + hash-suppression + watch machinery — unchanged
+from what the TUI already does today.
+
+**Within** the web process, that guarantee does not extend: `net/http`
+runs every request in its own goroutine, and `internal/board` is
+deliberately lock-free (it declares itself I/O- and UI-free,
+`internal/board/board.go:1-3`; `Board`/`Card` carry no synchronization).
+The TUI never needed locking because Bubble Tea serialises `Update` in one
+goroutine — a web server removes that property, so KD-3 below settles it.
 
 ## Target Architecture
 
@@ -70,6 +78,28 @@ framework, no client-side router, no build step.
 WebSocket or polling.** The update direction is one-way (server → browser:
 "the board changed, re-fetch"), which is exactly what SSE is for. It needs
 no new dependency beyond the standard library (`net/http`'s
-`http.Flusher`) and reuses the existing `Store.Watch()` channel
-(`internal/store/watch.go:11`) verbatim — the web server subscribes to the
-same channel the TUI already subscribes to.
+`http.Flusher`) and reuses the same *mechanism* the TUI already uses —
+`Store.Watch()` (`internal/store/watch.go:12`) — not the same channel: a
+call to `Watch()` builds a fresh fsnotify watcher and channel, scoped to
+one board directory, and the channel is capacity-1 (`internal/store/watch.go:21`) and drops a
+signal when full (`internal/store/watch.go:31-33`). That is correct coalescing for
+one consumer that reloads after every signal — treat a signal as "something
+changed, re-read," never as a countable event — but it means the web
+server needs one watcher per open board (or re-registration on switch),
+and `KANDO_HOME` itself is never watched, so a board created by another
+process never updates the `/boards` page (§5) until it is next loaded.
+
+**KD-3 — Each request loads, mutates, and saves; nothing survives between
+requests.** No goroutine holds a `*board.Board` across requests, and no
+mutex guards one. A handler that renders reads the board fresh (via
+`Store.CheckReload`, which is stat-gated and returns early when nothing
+changed, `internal/store/store.go:197`); a handler that mutates reads,
+applies the change, and calls `Store.SaveBoard`/`SaveArchive`, all within
+one request. This sidesteps the alternative — one shared in-memory model
+behind a `sync.RWMutex` — at the cost of a parse per request, trivial at
+personal-board sizes, and keeps `internal/board` exactly as lock-free as
+it is today. It also closes the freshness gap KD-2 leaves: correctness
+never depends on the watcher firing, which becomes a pure latency
+optimisation for SSE, not a requirement for a page to be correct (PERF-2,
+§7). `internal/web`'s handler tests run with `-race` to hold this
+invariant (§6.4).

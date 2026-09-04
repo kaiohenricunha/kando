@@ -142,7 +142,7 @@ phase 3's server to exist, not phases 4/5's specific routes.
 | ---- | -------------- | ------------ |
 | `internal/board` mutation helpers (U2) | unit | — |
 | `internal/store` `ListBoards` (U1) | unit | — |
-| `internal/web` route handlers (U5–U8) | unit (`httptest`), contract (§5's route table is the contract: request shape in, redirect/status out) | — |
+| `internal/web` route handlers (U5–U8) | unit (`httptest`), contract (§5's route table is the contract: request shape in, redirect/status out), `-race` (holds KD-3, §4: no shared model across requests) | — |
 | SSE fan-out (U9) | integration (real `Store.Watch()`, real file writes, two live connections) | — |
 | TUI board/goldens (U3, U4) | golden/fixture (three spec-provided goldens must stay byte-identical; `help_120x40.txt` and a new `boards_120x40.txt` regenerate normally) | — |
 | Web board view rendering | golden/fixture (recommended: HTML snapshot tests for the board template, same idea as the TUI's golden frames) | — |

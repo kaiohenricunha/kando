@@ -27,7 +27,7 @@ func (s *Store) Watch() (events <-chan struct{}, stop func(), err error) {
 					return
 				}
 				switch filepath.Base(ev.Name) {
-				case "board.md", "archive.md":
+				case boardFile, archiveFile:
 					select {
 					case ch <- struct{}{}:
 					default:

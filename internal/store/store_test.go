@@ -223,3 +223,52 @@ func TestListBoardsIgnoresNonBoardDirs(t *testing.T) {
 		t.Errorf("ListBoards = %v, want %v", got, want)
 	}
 }
+
+func TestValidBoardName(t *testing.T) {
+	valid := []string{"life", "work-2024", "a", "My Board"}
+	invalid := []string{"", ".", "..", ".hidden", "a/b", "../evil", "a\\b", "/etc"}
+	for _, n := range valid {
+		if !ValidBoardName(n) {
+			t.Errorf("ValidBoardName(%q) = false, want true", n)
+		}
+	}
+	for _, n := range invalid {
+		if ValidBoardName(n) {
+			t.Errorf("ValidBoardName(%q) = true, want false", n)
+		}
+	}
+}
+
+func TestOpenRejectsInvalidName(t *testing.T) {
+	root := t.TempDir()
+	for _, n := range []string{"../evil", "..", ".", "", "a/b", ".hidden"} {
+		if _, _, err := Open(root, n); err == nil {
+			t.Errorf("Open(root, %q) should have been rejected", n)
+		}
+	}
+	// Nothing should have been created outside root.
+	entries, _ := os.ReadDir(filepath.Dir(root))
+	for _, e := range entries {
+		if e.Name() == "evil" {
+			t.Fatal("traversal name escaped root")
+		}
+	}
+}
+
+func TestListBoardsFollowsSymlinkedBoardDir(t *testing.T) {
+	root := t.TempDir()
+	if _, _, err := Open(root, "real"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "linked")); err != nil {
+		t.Skipf("symlinks unsupported: %v", err)
+	}
+	got, err := ListBoards(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"linked", "real"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ListBoards = %v, want %v (a symlinked board directory must list the same as a real one)", got, want)
+	}
+}

@@ -13,7 +13,7 @@ reimplementation (this is how BOUND-1, §2, holds by construction).
 On each request the server renders the current board as HTML straight from
 the `*board.Board`/`*board.Archive` in memory. It also watches the board
 directory with the store's existing `Store.Watch()`
-(`internal/store/watch.go:11`) and pushes a "board changed" event over
+(`internal/store/watch.go:12`) and pushes a "board changed" event over
 Server-Sent Events (SSE) to any open browser tab whenever that fires —
 whether the change came from the TUI, from hand-editing the Markdown files,
 or from another browser tab. A tab that isn't open does nothing; when it's

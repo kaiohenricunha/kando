@@ -7,15 +7,18 @@
 **PERF-1.** An edit made in one surface (the TUI, another browser tab, or
 hand-editing the Markdown files) is reflected in an open browser tab within
 2 seconds of the underlying file write, driven by the existing
-`Store.Watch()` fsnotify channel (`internal/store/watch.go:11`) pushed over
+`Store.Watch()` fsnotify channel (`internal/store/watch.go:12`) pushed over
 SSE (KD-2, §4) — never by polling. On breach: the SSE test in §6 (U9) fails
 before this ships.
 
 **PERF-2 (invariant).** A freshly loaded or reloaded page always reflects
-the board state the server's watcher has picked up as of that moment — no
-caching layer, no stale data. This is what makes "lazy refresh, possibly
-hours later" (§3) safe without a polling interval to tune: nothing decays,
-because there is nothing cached to go stale.
+current disk state, because every request re-checks via
+`Store.CheckReload` itself (KD-3, §4) rather than trusting a
+previously-watched value — no caching layer, no stale data. This is what
+makes "lazy refresh, possibly hours later" (§3) safe without a polling
+interval to tune, and it means correctness never depends on the file
+watcher: a watcher failure (already non-fatal, `cmd/kando/main.go:74-80`)
+degrades SSE push latency (PERF-1), never page correctness.
 
 ## Reliability
 
@@ -76,8 +79,13 @@ never raw string concatenation into HTML. No card's content can inject
 markup or script into the page.
 
 **SEC-3 (invariant).** Every state-changing route only accepts `POST`,
-never `GET` (already true of every mutation in §5's route table) — table
-stakes against a mutation triggered by a stray link, image tag, or
-prefetch. Full CSRF-token protection is deliberately not added: given SEC-1,
-anyone who can already reach the loopback port has full read/write access
-regardless, so a token would add little beyond what OPS-1 already provides.
+never `GET` (already true of every mutation in §5's route table). In
+addition, every request is rejected unless it is same-origin: the `Host`
+header must be `127.0.0.1:<port>` or `localhost:<port>`, and an `Origin`
+header, when present, must equal the server's own origin. Without this, a
+web page the user merely visits could drive a cross-origin form `POST` at
+the loopback port — a plain HTML form submission needs no preflight and no
+token to fire — and a remote page could read the board via DNS rebinding
+(binding a hostname it controls to `127.0.0.1`). A CSRF token is still not
+required: the Host/Origin check already blocks the browser-driven path,
+and SEC-1 accepts same-machine process access as the remaining risk.
