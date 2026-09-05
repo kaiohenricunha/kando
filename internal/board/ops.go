@@ -1,6 +1,9 @@
 package board
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // These mutation helpers are the single place tag/notes/blocked/checklist
 // edits happen, so the TUI and the future web page always apply the exact
@@ -37,9 +40,7 @@ func (c *Card) InsertChecklistItem(cursor int, text string) int {
 	if len(c.Checklist) > 0 {
 		at = cursor + 1
 	}
-	c.Checklist = append(c.Checklist, Item{})
-	copy(c.Checklist[at+1:], c.Checklist[at:])
-	c.Checklist[at] = Item{Text: text}
+	c.Checklist = slices.Insert(c.Checklist, at, Item{Text: text})
 	return at
 }
 
