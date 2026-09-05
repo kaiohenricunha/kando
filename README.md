@@ -27,14 +27,19 @@ from the archive. Every page reflects the files as they are on disk, and an
 open *board* page refreshes itself within a couple of seconds of any change
 — whether it came from another tab, from `kando` in a terminal, or from
 your text editor. The boards list updates on its next load instead, since
-`$KANDO_HOME` itself is not watched. A page with a focused field waits
-until you click away before refreshing, so a reload never eats what you are
-typing.
+`$KANDO_HOME` itself is not watched. A page with a focused field, or a drag
+in flight, waits until you are done before refreshing, so a reload never eats
+what you are typing or the card you are still aiming.
+
+Cards drag between lanes, and a drop lands where the line shows: above or
+below the card you dropped it against. That position is the one thing the web
+page can do that the terminal cannot — everything else `kando web` does, the
+TUI does too, and the other way round. Dragging needs a mouse, so on a touch
+screen use the lane picker on a card's own page, as the terminal does.
+`docs/specs/kando-web/parity.md` is the audit, key by key.
 
 It binds `127.0.0.1` only and has no login: the loopback bind is the whole
-security boundary, and requests from other origins are refused. Everything
-`kando web` does, the TUI does too, and the other way round —
-`docs/specs/kando-web/parity.md` is the audit, key by key.
+security boundary, and requests from other origins are refused.
 A board literally named `web` opens in the terminal with `kando -- web`.
 
 Minimum terminal size is 60×16; the design target is 120×40. Below 100 columns

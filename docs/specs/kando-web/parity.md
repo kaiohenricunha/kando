@@ -15,6 +15,7 @@ does the same thing on the right. Verified against `internal/tui/help.go`,
 | `a` quick add | `GET /b/{board}/cards/new` → `POST /b/{board}/cards` | |
 | `enter` open card | `GET /b/{board}/cards/{id}` | |
 | `H`/`L` move card ±lane | `POST /b/{board}/cards/{id}/move` | The web picks the lane from a select; the TUI steps one lane at a time. Same `board.Move`. |
+| — | drag a card onto a lane | **BOUND-1b (§2): accepted exception.** Dragging also picks the *position* in the lane, which no TUI key does. Same route, same `board.MoveAt`; the TUI would need `J`/`K` to close it. |
 | `d` move to Done | `POST …/move` (`lane=done`) | |
 | `u` undo (Done → Doing) | `POST …/move` (`lane=doing`) | |
 | `x` delete card | `POST /b/{board}/cards/{id}/delete` | Immediate on both, no confirmation (§2). |
@@ -57,17 +58,22 @@ does the same thing on the right. Verified against `internal/tui/help.go`,
 
 | TUI | Web | Notes |
 | --- | --- | --- |
-| fsnotify watcher → reload | `GET /b/{board}/events` (SSE) → `location.reload()` | One `store.WatchBoard` watcher per watched board, fanned out to every open tab (KD-2). Both treat a signal as "re-read", never as a countable event. Board pages only: `$KANDO_HOME` is not watched, so `/boards` updates on its next load (KD-2, §4). The page defers a reload while a field is focused and flushes it on blur. |
+| fsnotify watcher → reload | `GET /b/{board}/events` (SSE) → `location.reload()` | One `store.WatchBoard` watcher per watched board, fanned out to every open tab (KD-2). Both treat a signal as "re-read", never as a countable event. Board pages only: `$KANDO_HOME` is not watched, so `/boards` updates on its next load (KD-2, §4). The page defers a reload while a field is focused or a drag is in flight, and flushes it on blur or `dragend`. |
 
 ## Web-only
 
-No capability the TUI lacks. Every route above exists to serve something the
-TUI already does, and the two write paths share `internal/board` and
-`internal/store` rather than reimplementing the rules.
+One capability the TUI lacks: **where in a lane a card lands**. Dragging a
+card names a position, and no TUI key does — see BOUND-1b (§2) and the board
+row above. Every other route exists to serve something the TUI already does,
+and the two write paths share `internal/board` and `internal/store` rather
+than reimplementing the rules; even this one is a shared helper
+(`board.MoveAt`) the TUI could call tomorrow, not a second write path.
 
-One route has no TUI counterpart because it is plumbing rather than a
-capability: `GET /static/live.js` serves the listener that turns an SSE
-event into a reload. It is in §5 for completeness.
+Two routes have no TUI counterpart because they are plumbing rather than
+capabilities: `GET /static/live.js` serves the listener that turns an SSE
+event into a reload, and `GET /static/dnd.js` serves the drag handler, which
+ends in a form `POST` to `/move` rather than a write of its own. Both are in
+§5 for completeness.
 
 ## Where the surfaces deliberately differ
 

@@ -28,6 +28,13 @@
    independent of which mutation routes are done yet.
 7. **Parity audit + docs** — a manual pass over every TUI key and every §5
    route confirming BOUND-1 holds, plus the README.
+8. **Web: drag-and-drop placement** (U11) — needs 4's `/move` route and 6's
+   listener, which it has to defer while a drag is in flight. Splits three
+   ways: `board.MoveAt` (pure domain, testable alone), the `pos`/`anchor`
+   fields and the redirect rule on `/move` (fully testable with `httptest`,
+   and where the risk is), then the asset and template wiring, which only a
+   browser can check. Ships the first web-only capability, so it lands with
+   BOUND-1b (§2) and the parity row, not after them.
 
 ## 6.2 Workstream Breakdown
 
@@ -144,6 +151,30 @@ phase 3's server to exist, not phases 4/5's specific routes.
 - No new tests: a manual checklist pass, every TUI key against every §5
   route; add a "kando web" section to `README.md`
 
+**U11 — Drag-and-drop placement on the board page**
+- `board.MoveAt`, beside `Move` and sharing `stamp`: a chosen index rather
+  than the top, no restamping on a same-lane reorder. `Move` is untouched —
+  its same-lane no-op is a deliberate guard against a stray lane-picker
+  click, and routing an unpositioned move through `MoveAt` would undo it
+- `/move` grows `pos` (`before`/`after`/`start`) with an `anchor` card id,
+  and redirects to the board (`?q=` intact) when a position was asked for,
+  to the card when one was not. Positions are named against a card the user
+  can see, never an index: the page filters, so the nth card on screen is
+  not the nth in the lane. A stale `anchor` is a 409, matching the
+  checklist's `was` witness
+- `static/dnd.js` beside `live.js`, each pinned by its own route so the
+  embed is never widened to a pattern; the drop builds its action from the
+  card's own `href` rather than re-implementing `url.PathEscape` in JS
+- `live.js` gains a general `busy()`: it already refuses to reload over a
+  focused field, and a drag in flight is the same thing — a native drag
+  cannot be restarted, so a reload would cancel it with no explanation
+- This is the first web-only capability, so BOUND-1b (§2) and the parity row
+  land with it, not after it
+- Read first: §2 (BOUND-1), KD-1 (§4), `internal/web/cards.go`, `parity.md`
+- Tests: `internal/board` for the index arithmetic and the stamping rules;
+  `httptest` for the vocabulary, the 409 and the no-position guard; a manual
+  browser pass for the gesture
+
 ## 6.4 Testing Strategy
 
 | Unit | Kinds applied | N/A + reason |
@@ -152,6 +183,7 @@ phase 3's server to exist, not phases 4/5's specific routes.
 | `internal/store` `ListBoards` (U1) | unit | — |
 | `internal/web` route handlers (U5–U8) | unit (`httptest`), contract (§5's route table is the contract: request shape in, redirect/status out), `-race` (holds KD-3, §4: no shared model across requests) | — |
 | SSE fan-out (U9) | integration (real `Store.Watch()`, real file writes, two live connections) | — |
+| Drag placement (U11) | unit (`board.MoveAt`'s index arithmetic, including the drop into the gap just below the dragged card — the off-by-one no cross-lane test reaches), unit (`httptest` over the `pos`/`anchor` vocabulary, the stale-anchor 409 and the no-position guard) | The gesture itself: `dragstart`/`dragover`/`drop` never fire without a browser, so `dnd.js` is covered only by "the asset is served and the attributes render", plus the manual pass below |
 | TUI board/goldens (U3, U4) | golden/fixture (three spec-provided goldens must stay byte-identical; `help_120x40.txt` and a new `boards_120x40.txt` regenerate normally) | — |
 | Web board view rendering | golden/fixture (recommended: HTML snapshot tests for the board template, same idea as the TUI's golden frames) | — |
 | End-to-end (`kando web` + real HTTP requests against a temp `KANDO_HOME`) | integration | mirrors the pty smoke test already done for the TUI |
@@ -181,4 +213,5 @@ phase 3's server to exist, not phases 4/5's specific routes.
 | TUI delete/picker has a bug | Revert the U3/U4 commits; U1/U2 can stay (additive, backward compatible) | Only the TUI-facing commits need reverting |
 | Web server crashes or misbehaves | Don't run `kando web`; the TUI is a separate entry point and keeps working | Failure in one surface never affects the other |
 | SSE fan-out leaks goroutines/fds under many tabs | Revert the U9 commit: the route, the `static/` embed, the `<script>` in `layout.html`'s `foot` and the `script-src`/`connect-src` CSP widening travel together (the CSP string is pinned by a test, so a partial revert fails the suite). The pages keep working unchanged | Degrades gracefully — SSE is additive, not required for basic function; there is also a per-board stream cap |
+| Drag-and-drop places cards wrongly | Revert the U11 commit: `board.MoveAt`, `/move`'s `pos`/`anchor` handling and redirect rule, the `withCard`/`withQuery` refactor `archive.go`'s restore redirect now shares (a partial revert of only `cards.go` leaves `archive.go` calling an undefined `withQuery` — does not compile), the `dnd.js` embed and route, `board.html`'s card and lane attributes, the `<script>` and CSS in `layout.html`, and `live.js`'s `busy()` travel together | Degrades to the lane picker, which is untouched: a move with no position is the same code path it always was. Drops out for touch and keyboard users already |
 | A board created via the picker or the web page is malformed | `store.Open` already creates a canonical empty `board.md` on first open (`internal/store/store.go`) | This class of bug is unlikely at the storage layer |

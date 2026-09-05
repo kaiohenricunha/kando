@@ -44,6 +44,29 @@ one action worth having on it is undo. Re-open the decision, rather than the
 audit, if a `GET /b/{board}/archive/{id}` is ever wanted. U10's parity
 checklist records this exception so the audit has something to check against.
 
+**BOUND-1b — accepted exception: a chosen drop position is web-only.** The
+board page lets a card be dragged to an exact place in a lane — in front of a
+named card, or last — and the TUI has no equivalent: `H`/`L`, `d` and `u`
+still land a card on top of its new lane, and nothing reorders a lane from
+the terminal. The gap is accepted, not overlooked: a pointer makes "put it
+*there*" a one-gesture operation, and the keyboard equivalent is a second
+grammar (a grab key plus movement keys) that the TUI has not needed. Both
+surfaces share one rule for what a placement does — `Board.MoveAt` in
+`internal/board/board.go`, the same helper the route calls — so re-opening
+this is binding two TUI keys (`J`/`K` to reorder inside a lane) to a helper
+that already exists, not a second implementation. §5's `/move` row and the
+parity checklist record the exception so the audit has something to check
+against.
+
+The exception is narrower than "drag-and-drop is web-only": the *capability*
+— put a card in a lane — is on both surfaces, and only the *precision* is
+not. It is narrower still in practice, because HTML5 drag fires from neither
+touch nor the keyboard: a phone or keyboard user of the web page is in
+exactly the TUI's position, re-laning through the `<select>` and unable to
+reorder. That is acceptable only because the card stays an ordinary link and
+that `<select>` stays untouched — which the "no position asked for means the
+move it always meant" rule guarantees.
+
 | Touches | Does Not Touch |
 | ------- | -------------- |
 | `internal/board` (new delete/board-listing operations), `internal/store` (board discovery/creation; already keys boards by name at `Open(root, name)`, `internal/store/store.go:56`), a new local web server + frontend, `internal/tui/board_update.go` (wire up delete) | Authentication/authorization, remote or cloud infrastructure, mobile apps |

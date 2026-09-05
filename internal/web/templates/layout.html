@@ -21,6 +21,10 @@ header .brand { font-weight:700; color:var(--accent); } header .crumb, header .d
 .card .title { display:flex; justify-content:space-between; gap:.5rem; } .card .age, .card .notes, .card .meta { color:var(--muted); }
 .card .notes { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .card .done .t { text-decoration:line-through; color:var(--muted); }
+.card.dragging { opacity:.4; }
+.card.drop-here { box-shadow:0 -3px 0 -1px var(--accent); }
+.lane.drag-over { border-color:var(--accent); }
+.lane.drop-end > .add { box-shadow:0 -3px 0 -1px var(--accent); }
 .tag { color:var(--accent); } .blocked { color:var(--accent2); } .check { color:var(--accent); }
 .empty { color:var(--border); }
 .bar { display:flex; gap:1rem; align-items:center; margin:.25rem 0 1rem; color:var(--muted); }
@@ -52,6 +56,7 @@ ul.items li { display:flex; gap:.4rem; align-items:center; margin:.2rem 0; } ul.
 {{end}}
 {{define "foot"}}
 <script src="/static/live.js"></script>
+<script src="/static/dnd.js"></script>
 </body>
 </html>
 {{end}}

@@ -191,6 +191,43 @@ func (b *Board) Move(from Lane, i int, to Lane, now time.Time) int {
 	return 0
 }
 
+// MoveAt places the card at from[i] into lane `to` at position `at`, where
+// Move always lands a card on top. `at` is insert-before against the
+// destination lane as it stood before the move: the card ends up in front of
+// whatever sat at `at`, and at == len(lane) appends. A cross-lane move stamps
+// the card exactly as Move does; a move inside one lane is a reorder, not a
+// lane change, so MovedAt and DoneAt are left alone. Returns the card's new
+// index, or -1 if the source index was invalid.
+//
+// Move is the top-insert the TUI's H/L/d and the web's lane picker use, and
+// its same-lane case is a deliberate no-op; this is the positional form the
+// web page's drag-and-drop needs.
+func (b *Board) MoveAt(from Lane, i int, to Lane, at int, now time.Time) int {
+	if i < 0 || i >= len(b.Lanes[from]) {
+		return -1
+	}
+	// Removing from the same lane shifts everything below i up one, so a
+	// position measured before the removal is one too far. The same
+	// correction makes both ways of dropping a card on itself (at == i and
+	// at == i+1) fall out as no-ops, with no special case for either.
+	dst := at
+	if from == to && at > i {
+		dst--
+	}
+	c := b.remove(from, i)
+	if from != to {
+		stamp(c, to, now)
+	}
+	if dst < 0 {
+		dst = 0
+	}
+	if n := len(b.Lanes[to]); dst > n {
+		dst = n
+	}
+	b.Insert(to, dst, c)
+	return dst
+}
+
 // stamp records a card's arrival in lane to at now: the one rule for what a
 // lane change does to the dates, shared by Move and Unarchive.
 func stamp(c *Card, to Lane, now time.Time) {

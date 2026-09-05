@@ -2,7 +2,6 @@ package web
 
 import (
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/kaiohenricunha/kando/internal/board"
@@ -113,9 +112,5 @@ func (s *server) restoreCard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cannot save the restored card", http.StatusInternalServerError)
 		return
 	}
-	to := boardURL(name) + "/archive"
-	if q := strings.TrimSpace(f.Get("q")); q != "" {
-		to += "?q=" + url.QueryEscape(q)
-	}
-	http.Redirect(w, r, to, http.StatusSeeOther)
+	http.Redirect(w, r, withQuery(boardURL(name)+"/archive", f), http.StatusSeeOther)
 }

@@ -46,7 +46,7 @@ type Options struct {
 //go:embed templates/*.html
 var templateFS embed.FS
 
-//go:embed static/live.js
+//go:embed static/live.js static/dnd.js
 var staticFS embed.FS
 
 type server struct {
@@ -117,12 +117,15 @@ func newServer(o Options) *server {
 	mux.HandleFunc("GET /b/{board}/cards/{id}", s.card)
 	mux.HandleFunc("GET /b/{board}/archive", s.archive)
 	mux.HandleFunc("GET /b/{board}/events", s.events)
-	// The one asset, pinned by path: a file server would also answer
+	// The assets, each pinned by path: a file server would also answer
 	// GET /static/ with a directory listing and would depend on the embed
-	// layout for its prefix.
-	mux.HandleFunc("GET /static/live.js", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFileFS(w, r, staticFS, "static/live.js")
-	})
+	// layout for its prefix. This list is the pin — widening it to a
+	// pattern is what events_test.go guards against.
+	for _, name := range []string{"static/live.js", "static/dnd.js"} {
+		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFileFS(w, r, staticFS, name)
+		})
+	}
 	// Mutations (§5): one form POST per TUI key; see cards.go, boards.go,
 	// archive.go. The same-origin guard is what makes a bare POST safe.
 	mux.HandleFunc("POST /boards", s.createBoard)
@@ -224,17 +227,28 @@ func sameOrigin(port int, next http.Handler) http.Handler {
 			return
 		}
 		if o := r.Header.Get("Origin"); o != "" && o != "http://"+r.Host {
-			http.Error(w, "forbidden: cross-origin request", http.StatusForbidden)
-			return
+			// "null" is an origin withheld, not a foreign one, and withheld
+			// is not the same as cross-origin. Chrome sends it on every form
+			// POST from a page whose Referrer-Policy is no-referrer — which
+			// is the policy secureHeaders sets below, so this is how this
+			// app's own forms arrive. Sec-Fetch-Site has already said which
+			// kind of request it is, the browser sets it and script cannot
+			// forge it, and a cross-site value was refused just above. An
+			// Origin naming some other host is still refused outright.
+			if o != "null" || r.Header.Get("Sec-Fetch-Site") != "same-origin" {
+				http.Error(w, "forbidden: cross-origin request", http.StatusForbidden)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
 // secureHeaders is set on every response, errors and redirects included. The
-// only script is /static/live.js, served from this origin, which opens the
-// SSE stream connect-src allows; the inline stylesheet in layout.html needs
-// 'unsafe-inline' for styles only, and no inline script is ever allowed. frame-ancestors
+// scripts are /static/live.js and /static/dnd.js, both served from this
+// origin; live.js is what opens the SSE stream connect-src allows. The
+// inline stylesheet in layout.html needs 'unsafe-inline' for styles only,
+// and no inline script is ever allowed. frame-ancestors
 // 'none' keeps the board out of other sites' frames, form-action 'self'
 // keeps an injected form from posting elsewhere, and no-store keeps personal
 // board content out of the browser cache (PERF-2).
