@@ -1,14 +1,10 @@
 package web
 
 import (
-	"fmt"
 	"net/http"
-	"net/url"
-	"os"
 	"strings"
 
 	"github.com/kaiohenricunha/kando/internal/board"
-	"github.com/kaiohenricunha/kando/internal/store"
 )
 
 // Page is the chrome every page shares: the board it belongs to, a title,
@@ -31,11 +27,6 @@ type laneView struct {
 	Cards     []cardView
 }
 
-type boardsPage struct {
-	Page
-	Boards []string
-}
-
 type boardPage struct {
 	Page
 	Lanes          []laneView
@@ -46,9 +37,11 @@ type boardPage struct {
 type cardPage struct {
 	Page
 	Card           cardView
+	URL            string // the card's own route; forms post to URL/<action>
 	Lane, LaneKey  string
+	Lanes          [4]board.Lane
 	Created, Since string
-	Notes          []string
+	Notes, Reason  string
 	Checklist      []board.Item
 }
 
@@ -77,21 +70,10 @@ func (s *server) cardView(c *board.Card, lane board.Lane) cardView {
 // home redirects to the CLI-given board, or to the boards list.
 func (s *server) home(w http.ResponseWriter, r *http.Request) {
 	if s.def != "" {
-		http.Redirect(w, r, "/b/"+url.PathEscape(s.def), http.StatusSeeOther)
+		http.Redirect(w, r, boardURL(s.def), http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/boards", http.StatusSeeOther)
-}
-
-// boards lists every board with a form to create one.
-func (s *server) boards(w http.ResponseWriter, r *http.Request) {
-	names, err := store.ListBoards(s.root)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "kando web: cannot list boards in %s: %v\n", s.root, err)
-		fail(w, &httpError{http.StatusInternalServerError, "cannot list boards"})
-		return
-	}
-	s.render(w, "boards.html", boardsPage{Page: s.basePage("", "boards"), Boards: names})
 }
 
 // board renders all four lanes, filtered by ?q= with the TUI's own parser.
@@ -133,7 +115,11 @@ func (s *server) card(w http.ResponseWriter, r *http.Request) {
 		fail(w, &httpError{http.StatusNotFound, "no such card"})
 		return
 	}
-	p := cardPage{Page: s.basePage(name, c.Title), Card: s.cardView(c, lane), Lane: lane.String(), LaneKey: lane.Key(), Checklist: c.Checklist}
+	p := cardPage{
+		Page: s.basePage(name, c.Title), Card: s.cardView(c, lane), URL: cardURL(name, c.ID),
+		Lane: lane.String(), LaneKey: lane.Key(), Lanes: board.Lanes,
+		Notes: c.Notes, Reason: c.BlockedReason, Checklist: c.Checklist,
+	}
 	if !c.CreatedAt.IsZero() {
 		p.Created = board.DayLabel(c.CreatedAt)
 	}
@@ -143,9 +129,6 @@ func (s *server) card(w http.ResponseWriter, r *http.Request) {
 	}
 	if !since.IsZero() {
 		p.Since = board.DayLabel(since)
-	}
-	if strings.TrimSpace(c.Notes) != "" {
-		p.Notes = strings.Split(c.Notes, "\n")
 	}
 	s.render(w, "card.html", p)
 }

@@ -117,3 +117,18 @@ func (c *Card) SetChecklistItemText(i int, text string) bool {
 func (b *Board) DeleteCard(l Lane, i int) *Card {
 	return b.remove(l, i)
 }
+
+// Restore takes the archived card at index i out of a and puts it back at
+// the top of Doing on b, stamped moved-at now with its done date cleared:
+// the TUI's `u` on the archive screen and the web's restore button, one
+// rule. Returns the card, or nil if i was out of range.
+func (b *Board) Restore(a *Archive, i int, now time.Time) *Card {
+	if i < 0 || i >= len(a.Cards) {
+		return nil
+	}
+	c := a.Remove(i)
+	c.MovedAt = now
+	c.DoneAt = time.Time{}
+	b.Insert(Doing, 0, c)
+	return c
+}

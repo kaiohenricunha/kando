@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -227,13 +226,10 @@ func (m Model) updateArchive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) restoreArchived(c *board.Card) {
 	for i, x := range m.archive.Cards {
 		if x == c {
-			m.archive.Remove(i)
+			m.b.Restore(m.archive, i, m.now())
 			break
 		}
 	}
-	c.MovedAt = m.now()
-	c.DoneAt = time.Time{}
-	m.b.Insert(board.Doing, 0, c)
 	m.saveArchive()
 	m.save()
 	m.clampArchive()

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -42,6 +43,44 @@ func newRoot(t *testing.T) string {
 func newHandler(t *testing.T, root, defaultBoard string) http.Handler {
 	t.Helper()
 	return New(Options{Root: root, Board: defaultBoard, Port: testPort, Now: func() time.Time { return fixedNow }})
+}
+
+// post performs a same-origin form POST the way a browser on localhost would:
+// every browser sends Origin on a form submission.
+func post(t *testing.T, h http.Handler, path string, form url.Values, hdr ...string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest("POST", path, strings.NewReader(form.Encode()))
+	req.Host = "127.0.0.1:4242"
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "http://127.0.0.1:4242")
+	for i := 0; i+1 < len(hdr); i += 2 {
+		if hdr[i] == "Host" {
+			req.Host = hdr[i+1]
+		} else {
+			req.Header.Set(hdr[i], hdr[i+1])
+		}
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+// reload reads the board back from disk, the way the TUI's detail tests do.
+func reload(t *testing.T, root, name string) *board.Board {
+	t.Helper()
+	b, err := store.Load(root, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// wantRedirect asserts a post/redirect/get response.
+func wantRedirect(t *testing.T, rec *httptest.ResponseRecorder, to string) {
+	t.Helper()
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != to {
+		t.Fatalf("want 303 → %s, got %d → %s: %s", to, rec.Code, rec.Header().Get("Location"), strings.TrimSpace(rec.Body.String()))
+	}
 }
 
 // get performs a same-origin GET the way a browser on localhost would.
@@ -276,12 +315,6 @@ func TestBoardNameIsEscapedInLinks(t *testing.T) {
 	}
 	if rec, _ := get(t, h, "/b/My%20Board"); rec.Code != 200 {
 		t.Errorf("escaped link must resolve: %d", rec.Code)
-	}
-}
-
-func TestArchiveStubUntilU8(t *testing.T) {
-	if rec, _ := get(t, newHandler(t, newRoot(t), "life"), "/b/life/archive"); rec.Code != http.StatusNotImplemented {
-		t.Errorf("archive should answer 501 until U8, got %d", rec.Code)
 	}
 }
 

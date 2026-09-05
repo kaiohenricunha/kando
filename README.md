@@ -18,8 +18,9 @@ kando web                     # serves the boards at http://127.0.0.1:4242/
 kando web work --port 8080    # a specific board, a specific port
 ```
 
-The web page is the same board as a local website: read-only for now,
-loopback only, no login — the loopback bind is the whole security boundary.
+The web page is the same board as a local website: create, edit, move,
+block, check off and delete cards, create boards, restore from the archive.
+Loopback only, no login — the loopback bind is the whole security boundary.
 A board literally named `web` opens in the terminal with `kando -- web`.
 
 Minimum terminal size is 60×16; the design target is 120×40. Below 100 columns

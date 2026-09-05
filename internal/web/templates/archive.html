@@ -1,0 +1,11 @@
+{{template "head" .Page}}
+<div class="bar">
+  <form method="get" action="/b/{{urlpath .Board}}/archive"><input type="text" name="q" value="{{.Query}}" placeholder="filter: title, #tag, age>7d"></form>
+  {{if .Query}}<span>{{.Matched}} of {{.Total}} match · <a href="/b/{{urlpath .Board}}/archive">clear</a></span>{{else}}<span>{{.Total}} done</span>{{end}}
+</div>
+{{range .Groups}}<div class="section">{{.Label}} {{len .Items}}</div>
+<ul class="items">{{range .Items}}<li><span class="check">✓</span> <span class="t">{{.Title}}</span> {{if .Tag}}<span class="tag">#{{.Tag}}</span>{{end}} <span class="muted">{{.Date}}</span>
+  <form class="inline" method="post" action="/b/{{urlpath $.Board}}/archive/{{urlpath .ID}}/restore"><button type="submit" class="small">restore</button></form></li>
+{{end}}</ul>{{else}}<div class="empty">— nothing archived</div>{{end}}
+<footer><a href="/b/{{urlpath .Board}}">← board</a><span>{{if .Capped}}showing the {{len .Groups}} most recent groups of 50 entries; older entries live in archive.md{{end}}</span></footer>
+{{template "foot"}}

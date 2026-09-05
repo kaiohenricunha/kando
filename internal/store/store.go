@@ -85,6 +85,24 @@ func Load(root, name string) (*board.Board, error) {
 	return b, nil
 }
 
+// LoadArchive reads root/name/archive.md read-only, the archive counterpart
+// of Load: empty when the file is missing, never rewritten, ids assigned in
+// memory only. Unlike (*Store).LoadArchive it is safe on a GET.
+func LoadArchive(root, name string) (*board.Archive, error) {
+	if !ValidBoardName(name) {
+		return nil, fmt.Errorf("invalid board name %q", name)
+	}
+	data, err := os.ReadFile(filepath.Join(root, name, archiveFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return &board.Archive{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	a, _, err := ParseArchive(data)
+	return a, err
+}
+
 // Open loads (or creates) the board under root/name. Cards missing an id are
 // assigned one and the file is rewritten once.
 func Open(root, name string) (*Store, *board.Board, error) {

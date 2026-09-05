@@ -331,3 +331,24 @@ func TestLoadIsReadOnly(t *testing.T) {
 		t.Errorf("invalid name should error")
 	}
 }
+
+func TestLoadArchiveIsReadOnly(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "life")
+	os.MkdirAll(dir, 0o755)
+	if a, err := LoadArchive(root, "life"); err != nil || len(a.Cards) != 0 {
+		t.Fatalf("missing archive should be empty: %v %v", a, err)
+	}
+	idless := []byte("## 2026-W36\n\n### Done by hand\ndone: 2026-09-02\n")
+	os.WriteFile(filepath.Join(dir, "archive.md"), idless, 0o644)
+	a, err := LoadArchive(root, "life")
+	if err != nil || len(a.Cards) != 1 || len(a.Cards[0].ID) != 8 {
+		t.Fatalf("LoadArchive: %+v %v", a, err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "archive.md")); !bytes.Equal(got, idless) {
+		t.Errorf("LoadArchive must not rewrite archive.md:\n%s", got)
+	}
+	if _, err := LoadArchive(root, "../evil"); err == nil {
+		t.Errorf("invalid name should error")
+	}
+}

@@ -116,3 +116,23 @@ func TestCardLabels(t *testing.T) {
 		t.Errorf("reason: %q", c.BlockedLabel())
 	}
 }
+
+func TestRestoreMovesArchivedCardToTopOfDoing(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	b := &Board{}
+	b.Insert(Doing, 0, &Card{ID: "old", Title: "already doing"})
+	a := &Archive{Cards: []*Card{{ID: "x", DoneAt: now.Add(-24 * time.Hour)}, {ID: "y", DoneAt: now.Add(-48 * time.Hour)}}}
+	if got := b.Restore(a, 5, now); got != nil {
+		t.Fatalf("out of range should be nil, got %v", got)
+	}
+	c := b.Restore(a, 1, now)
+	if c == nil || c.ID != "y" || !c.DoneAt.IsZero() || !c.MovedAt.Equal(now) {
+		t.Fatalf("restored: %+v", c)
+	}
+	if len(a.Cards) != 1 || a.Cards[0].ID != "x" {
+		t.Errorf("archive after restore: %v", a.Cards)
+	}
+	if len(b.Lanes[Doing]) != 2 || b.Lanes[Doing][0] != c {
+		t.Errorf("restored card should be at the top of Doing")
+	}
+}

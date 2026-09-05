@@ -1,9 +1,10 @@
 // Package web serves the kando board as server-rendered HTML on localhost.
 // It is a second renderer over the same internal/board model and
 // internal/store files the TUI uses — never a second model (KD-1, §4 of
-// docs/specs/kando-web). Every request loads the board from disk read-only
-// (store.Load), acts, and forgets (KD-3): no board lives in memory between
-// requests, so handlers need no locking and a page is never stale.
+// docs/specs/kando-web). Every request loads the board from disk (GETs
+// read-only via store.Load, POSTs via store.Open), acts, saves, and forgets
+// (KD-3): no board lives in memory between requests, so handlers need no
+// locking and a page is never stale.
 package web
 
 import (
@@ -60,11 +61,19 @@ func New(o Options) http.Handler {
 	mux.HandleFunc("GET /b/{board}", s.board)
 	mux.HandleFunc("GET /b/{board}/cards/new", s.newCard)
 	mux.HandleFunc("GET /b/{board}/cards/{id}", s.card)
-	// The board page links here already (the §5 route table is the U6–U8
-	// contract, frozen now); the real handler lands in U8.
-	mux.HandleFunc("GET /b/{board}/archive", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "not implemented yet (U8)", http.StatusNotImplemented)
-	})
+	mux.HandleFunc("GET /b/{board}/archive", s.archive)
+	// Mutations (§5): one form POST per TUI key; see cards.go, boards.go,
+	// archive.go. The same-origin guard is what makes a bare POST safe.
+	mux.HandleFunc("POST /boards", s.createBoard)
+	mux.HandleFunc("POST /b/{board}/cards", s.createCard)
+	mux.HandleFunc("POST /b/{board}/cards/{id}", s.updateCard())
+	mux.HandleFunc("POST /b/{board}/cards/{id}/move", s.moveCard())
+	mux.HandleFunc("POST /b/{board}/cards/{id}/block", s.blockCard())
+	mux.HandleFunc("POST /b/{board}/cards/{id}/checklist", s.addChecklistItem())
+	mux.HandleFunc("POST /b/{board}/cards/{id}/checklist/{index}/toggle", s.toggleChecklistItem)
+	mux.HandleFunc("POST /b/{board}/cards/{id}/checklist/{index}", s.editChecklistItem)
+	mux.HandleFunc("POST /b/{board}/cards/{id}/delete", s.deleteCard())
+	mux.HandleFunc("POST /b/{board}/archive/{id}/restore", s.restoreCard)
 	return secureHeaders(sameOrigin(o.Port, mux))
 }
 
