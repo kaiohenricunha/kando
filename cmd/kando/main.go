@@ -72,14 +72,14 @@ func main() {
 	styles := resolveStyles()
 
 	var changes <-chan struct{}
-	if ch, stop, err := st.Watch(); err != nil {
+	var stop func()
+	if ch, st, err := st.Watch(); err != nil {
 		fmt.Fprintln(os.Stderr, "kando: file watching disabled:", err)
 	} else {
-		changes = ch
-		defer stop()
+		changes, stop = ch, st
 	}
 
-	m := tui.New(tui.Options{Store: st, Board: b, Styles: styles, Changes: changes})
+	m := tui.New(tui.Options{Store: st, Board: b, Root: root, Styles: styles, Changes: changes, StopWatch: stop})
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
 		fatal(err)
 	}

@@ -60,6 +60,12 @@ func (m Model) updateBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.clampSel()
 			}
 		}
+	case "x":
+		if c := m.selectedCard(); c != nil {
+			m.b.DeleteCard(m.lane, m.laneIndex(m.lane, c))
+			m.save()
+			m.clampSel()
+		}
 	case "a":
 		m.openQuickAdd()
 	case "enter":
@@ -72,6 +78,8 @@ func (m Model) updateBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.help = true
 	case "D":
 		m.openArchive()
+	case "B":
+		m.openBoards()
 	}
 	return m, nil
 }

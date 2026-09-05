@@ -8,7 +8,8 @@ import (
 
 // Watch starts an fsnotify watcher on the board directory. The returned channel
 // receives a (coalesced) signal whenever board.md or archive.md changes; the
-// caller then runs CheckReload. Call stop to release the watcher.
+// caller then runs CheckReload. Call stop to release the watcher; the channel
+// is closed once it is.
 func (s *Store) Watch() (events <-chan struct{}, stop func(), err error) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -20,6 +21,7 @@ func (s *Store) Watch() (events <-chan struct{}, stop func(), err error) {
 	}
 	ch := make(chan struct{}, 1)
 	go func() {
+		defer close(ch) // wakes any listener when stop() closes the watcher
 		for {
 			select {
 			case ev, ok := <-w.Events:

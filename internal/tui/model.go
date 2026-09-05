@@ -17,6 +17,7 @@ const (
 	screenBoard screen = iota
 	screenDetail
 	screenArchive
+	screenBoards
 )
 
 type mode int
@@ -27,31 +28,41 @@ const (
 	modeFilter
 	modeEdit
 	modeLanePick
+	modeBoardName
 )
 
 // Options configures a Model. Store and Changes may be nil (pure in-memory model).
+// Root is the KANDO_HOME directory the board picker lists and opens boards
+// from; StopWatch releases the current watcher when the picker switches board.
 type Options struct {
-	Store   *store.Store
-	Board   *board.Board
-	Archive *board.Archive
-	Styles  Styles
-	Now     func() time.Time
-	Changes <-chan struct{}
-	Width   int
-	Height  int
+	Store     *store.Store
+	Board     *board.Board
+	Archive   *board.Archive
+	Root      string
+	Styles    Styles
+	Now       func() time.Time
+	Changes   <-chan struct{}
+	StopWatch func()
+	Width     int
+	Height    int
 }
 
 // changeMsg says the board directory changed on disk.
 type changeMsg struct{}
 
+// watchStoppedMsg says the watcher channel closed (the picker switched board).
+type watchStoppedMsg struct{}
+
 // Model is the whole UI state. Every View() call renders the full frame from it.
 type Model struct {
-	st      *store.Store
-	b       *board.Board
-	archive *board.Archive
-	styles  Styles
-	now     func() time.Time
-	changes <-chan struct{}
+	st        *store.Store
+	b         *board.Board
+	archive   *board.Archive
+	root      string
+	styles    Styles
+	now       func() time.Time
+	changes   <-chan struct{}
+	stopWatch func()
 
 	w, h int
 	scr  screen
@@ -70,6 +81,7 @@ type Model struct {
 
 	detail detailState
 	arch   archiveState
+	boards boardsState
 
 	err error
 }
@@ -83,15 +95,17 @@ func New(o Options) Model {
 		o.Board = &board.Board{Name: "life"}
 	}
 	return Model{
-		st:      o.Store,
-		b:       o.Board,
-		archive: o.Archive,
-		styles:  o.Styles,
-		now:     o.Now,
-		changes: o.Changes,
-		w:       o.Width,
-		h:       o.Height,
-		lane:    board.Todo,
+		st:        o.Store,
+		b:         o.Board,
+		archive:   o.Archive,
+		root:      o.Root,
+		styles:    o.Styles,
+		now:       o.Now,
+		changes:   o.Changes,
+		stopWatch: o.StopWatch,
+		w:         o.Width,
+		h:         o.Height,
+		lane:      board.Todo,
 	}
 }
 
@@ -105,7 +119,9 @@ func (m Model) Init() tea.Cmd {
 
 func waitChange(ch <-chan struct{}) tea.Cmd {
 	return func() tea.Msg {
-		<-ch
+		if _, ok := <-ch; !ok {
+			return watchStoppedMsg{}
+		}
 		return changeMsg{}
 	}
 }
@@ -121,6 +137,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case changeMsg:
 		m.reload()
 		return m, waitChange(m.changes)
+	case watchStoppedMsg:
+		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -141,6 +159,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateEdit(msg)
 	case modeLanePick:
 		return m.updateLanePick(msg)
+	case modeBoardName:
+		return m.updateBoardName(msg)
 	}
 	if m.help {
 		if key == "?" || key == "esc" {
@@ -153,6 +173,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateDetail(msg)
 	case screenArchive:
 		return m.updateArchive(msg)
+	case screenBoards:
+		return m.updateBoards(msg)
 	}
 	return m.updateBoard(msg)
 }
@@ -174,6 +196,8 @@ func (m Model) render() []string {
 		rows = m.renderDetail()
 	case screenArchive:
 		rows = m.renderArchive()
+	case screenBoards:
+		rows = m.renderBoards()
 	default:
 		rows = m.renderBoard()
 	}

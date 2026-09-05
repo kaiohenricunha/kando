@@ -27,6 +27,12 @@ var (
 	archiveFooterGroups = []keyGroup{
 		{"j/k", "move"}, {"u", "undo (back to Doing)"}, {"enter", "open"}, {"/", "filter"}, {"esc", "board"},
 	}
+	boardsFooterGroups = []keyGroup{
+		{"j/k", "move"}, {"enter", "open"}, {"n", "new board"}, {"esc", "back"},
+	}
+	boardNameFooterGroups = []keyGroup{
+		{"type", "a name"}, {"enter", "create"}, {"esc", "cancel"},
+	}
 )
 
 // groups renders key groups joined by two spaces: bold key, space, muted label.
