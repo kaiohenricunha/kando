@@ -207,3 +207,19 @@ func sameCard(a, b *board.Card) bool {
 	}
 	return true
 }
+
+func TestSanitizedFieldsRoundTripAsOneCard(t *testing.T) {
+	b := &board.Board{}
+	c := board.NewCard("Injected", board.Todo, ts(2026, 9, 1))
+	c.SetTag("home\n## Bogus")
+	c.SetBlocked("wait\ncreated: nope")
+	c.InsertChecklistItem(0, "a\n### Injected")
+	b.Lanes[board.Todo] = []*board.Card{c}
+	got, _, err := Parse(Marshal(b))
+	if err != nil {
+		t.Fatalf("Parse failed: %v\n%s", err, Marshal(b))
+	}
+	if got.Count() != 1 || got.Lanes[board.Todo][0].Tag != "home## Bogus" || len(got.Lanes[board.Todo][0].Checklist) != 1 {
+		t.Errorf("sanitized fields should round-trip as exactly one card: %+v", got.Lanes[board.Todo][0])
+	}
+}

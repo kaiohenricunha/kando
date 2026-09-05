@@ -2,6 +2,7 @@ package board
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -49,7 +50,7 @@ func TestCardSetBlockedEmptyClears(t *testing.T) {
 func TestChecklistAddAtCursor(t *testing.T) {
 	card := &Card{}
 	// Empty checklist: the first item always lands at index 0, regardless of cursor.
-	at := card.InsertChecklistItem(0, "  first  ")
+	at := card.InsertChecklistItem(7, "  first  ")
 	if at != 0 || len(card.Checklist) != 1 || card.Checklist[0] != (Item{Text: "first"}) {
 		t.Fatalf("first insert: at=%d checklist=%+v", at, card.Checklist)
 	}
@@ -88,9 +89,67 @@ func TestChecklistToggle(t *testing.T) {
 	if card.Checklist[1].Done {
 		t.Errorf("toggling index 1 should clear it (was true)")
 	}
-	// Out-of-range indices are a no-op, not a panic.
+	// Out-of-range indices are a no-op, not a panic, and change nothing.
+	before := append([]Item(nil), card.Checklist...)
 	card.ToggleChecklistItem(-1)
 	card.ToggleChecklistItem(2)
+	if !reflect.DeepEqual(card.Checklist, before) {
+		t.Errorf("out-of-range toggle modified the checklist: %+v", card.Checklist)
+	}
+}
+
+func TestChecklistInsertClampsCursor(t *testing.T) {
+	card := &Card{Checklist: []Item{{Text: "a"}, {Text: "b"}}}
+	if at := card.InsertChecklistItem(99, "end"); at != 2 || card.Checklist[2].Text != "end" {
+		t.Errorf("over-large cursor should clamp to the end: at=%d %+v", at, card.Checklist)
+	}
+	if at := card.InsertChecklistItem(-5, "start"); at != 0 || card.Checklist[0].Text != "start" {
+		t.Errorf("negative cursor should clamp to the start: at=%d %+v", at, card.Checklist)
+	}
+}
+
+func TestSingleLineFieldsDropControlRunes(t *testing.T) {
+	card := &Card{Checklist: []Item{{Text: "x"}}}
+	card.SetTag("home\n## Bogus")
+	card.SetBlocked("wait\r\ncreated: nope")
+	card.SetTitle("Ti\ttle\x00")
+	card.InsertChecklistItem(0, "item\n### Injected")
+	card.SetChecklistItemText(0, "edit\nid: zzzzzzzz")
+	for name, got := range map[string]string{"tag": card.Tag, "blocked": card.BlockedReason, "title": card.Title, "item0": card.Checklist[0].Text, "item1": card.Checklist[1].Text} {
+		if strings.ContainsAny(got, "\n\r\t\x00") {
+			t.Errorf("%s kept a control rune: %q", name, got)
+		}
+	}
+	if card.Tag != "home## Bogus" || card.BlockedReason != "waitcreated: nope" || card.Title != "Title" {
+		t.Errorf("unexpected sanitized values: tag=%q blocked=%q title=%q", card.Tag, card.BlockedReason, card.Title)
+	}
+}
+
+func TestSetNotesNormalizesCRLF(t *testing.T) {
+	card := &Card{}
+	card.SetNotes("a\r\nb\r\n\r\n")
+	if card.Notes != "a\nb" {
+		t.Errorf("Notes = %q, want %q", card.Notes, "a\nb")
+	}
+}
+
+func TestNewCardAndSetTitle(t *testing.T) {
+	if NewCard("   ", Todo, now) != nil {
+		t.Errorf("empty title should yield nil")
+	}
+	c := NewCard("  Buy milk  ", Todo, now)
+	if c == nil || c.Title != "Buy milk" || len(c.ID) != 8 || !c.CreatedAt.Equal(now) || !c.MovedAt.Equal(now) || !c.DoneAt.IsZero() {
+		t.Fatalf("NewCard(Todo) = %+v", c)
+	}
+	if d := NewCard("x", Done, now); !d.DoneAt.Equal(now) {
+		t.Errorf("NewCard(Done) should stamp DoneAt")
+	}
+	if !c.SetTitle(" Renamed ") || c.Title != "Renamed" {
+		t.Errorf("SetTitle: %q", c.Title)
+	}
+	if c.SetTitle("  ") || c.Title != "Renamed" {
+		t.Errorf("empty SetTitle must be a no-op: %q", c.Title)
+	}
 }
 
 func TestChecklistEditText(t *testing.T) {

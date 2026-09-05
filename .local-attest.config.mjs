@@ -2,9 +2,12 @@
 // on a full pass, posts a SHA-pinned attestation comment to the open PR.
 export default {
   matrix: [
-    { name: "fmt", mode: "hard", command: 'test -z "$(gofmt -l .)"' },
-    { name: "vet", mode: "hard", command: "go vet ./..." },
-    { name: "test", mode: "hard", command: "go test -race -count=1 ./..." },
+    // The hard legs call the Makefile targets so there is one declaration of
+    // each command. `make test` runs with -race, which needs cgo and a host
+    // C toolchain; without one the leg fails to build rather than to test.
+    { name: "fmt", mode: "hard", command: "make fmt-check" },
+    { name: "vet", mode: "hard", command: "make vet" },
+    { name: "test", mode: "hard", command: "make test" },
     {
       name: "vuln",
       mode: "advisory",

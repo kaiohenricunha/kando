@@ -129,8 +129,9 @@ func (b *Board) Insert(l Lane, i int, c *Card) {
 	b.Lanes[l] = cards
 }
 
-// Remove takes the card at index i out of lane l and returns it (nil if out of range).
-func (b *Board) Remove(l Lane, i int) *Card {
+// remove takes the card at index i out of lane l and returns it (nil if out of
+// range). Move and DeleteCard are the callers; DeleteCard is the exported entry.
+func (b *Board) remove(l Lane, i int) *Card {
 	cards := b.Lanes[l]
 	if i < 0 || i >= len(cards) {
 		return nil
@@ -144,7 +145,7 @@ func (b *Board) Remove(l Lane, i int) *Card {
 // clearing it when leaving), inserts it at the top of the destination lane and
 // returns its new index (0), or -1 if the source index was invalid.
 func (b *Board) Move(from Lane, i int, to Lane, now time.Time) int {
-	c := b.Remove(from, i)
+	c := b.remove(from, i)
 	if c == nil {
 		return -1
 	}
