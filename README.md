@@ -31,8 +31,8 @@ Environment:
 
 Board: `j/k` select card · `h/l` `tab` `shift+tab` change lane · `H/L` move the
 card to the previous/next lane (the lane follows it) · `a` quick add · `enter`
-open card · `d` move to Done · `u` undo (Done → Doing) · `/` filter · `D` archive
-· `?` help · `q` quit. Arrow keys work everywhere `j/k/h/l` do.
+open card · `d` move to Done · `u` undo (Done → Doing) · `x` delete card · `/` filter
+· `D` archive · `B` boards · `?` help · `q` quit. Arrow keys work everywhere `j/k/h/l` do.
 
 Card detail: `j/k` checklist item · `x` toggle · `o` new item · `enter` edit item
 · `e` edit notes (`ctrl+s` saves, `esc` cancels) · `t` tag · `m` move (then `1`–`4`)

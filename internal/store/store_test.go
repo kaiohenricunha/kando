@@ -225,8 +225,8 @@ func TestListBoardsIgnoresNonBoardDirs(t *testing.T) {
 }
 
 func TestValidBoardName(t *testing.T) {
-	valid := []string{"life", "work-2024", "a", "My Board"}
-	invalid := []string{"", ".", "..", ".hidden", "a/b", "../evil", "a\\b", "/etc"}
+	valid := []string{"life", "work-2024", "a", "My Board", "日本"}
+	invalid := []string{"", ".", "..", ".hidden", "a/b", "../evil", "a\\b", "/etc", "a\nb", "tab\there", strings.Repeat("x", 65), "bad\xffutf8"}
 	for _, n := range valid {
 		if !ValidBoardName(n) {
 			t.Errorf("ValidBoardName(%q) = false, want true", n)
@@ -270,5 +270,22 @@ func TestListBoardsFollowsSymlinkedBoardDir(t *testing.T) {
 	want := []string{"linked", "real"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("ListBoards = %v, want %v (a symlinked board directory must list the same as a real one)", got, want)
+	}
+}
+
+func TestListBoardsIgnoresInvalidNames(t *testing.T) {
+	root := t.TempDir()
+	if _, _, err := Open(root, "life"); err != nil {
+		t.Fatal(err)
+	}
+	// A dot-directory with a board.md would be listed but never openable.
+	os.MkdirAll(filepath.Join(root, ".trash"), 0o755)
+	os.WriteFile(filepath.Join(root, ".trash", "board.md"), Marshal(&board.Board{}), 0o644)
+	got, err := ListBoards(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"life"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ListBoards = %v, want %v (the listed set must equal the openable set)", got, want)
 	}
 }

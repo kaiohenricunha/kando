@@ -13,6 +13,7 @@ func (m Model) updateBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	n := len(m.visible(m.lane))
 	switch msg.String() {
 	case "q":
+		m.teardown()
 		return m, tea.Quit
 	case "j", "down":
 		if n > 0 {

@@ -72,7 +72,7 @@ func (m Model) visibleArchive() []*board.Card {
 	if m.filter.Empty() {
 		return cards
 	}
-	now := m.now()
+	now := m.tick
 	out := make([]*board.Card, 0, len(cards))
 	for _, c := range cards {
 		if m.filter.Match(c, now) {

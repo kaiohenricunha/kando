@@ -22,13 +22,17 @@ type boardsState struct {
 // openBoards lists the boards under the root and shows the picker with the
 // cursor on the open board. Without a root there is only the open board.
 func (m *Model) openBoards() {
+	m.boards = boardsState{}
 	names := []string{m.b.Name}
 	if m.root != "" {
-		if listed, err := store.ListBoards(m.root); err == nil && len(listed) > 0 {
+		listed, err := store.ListBoards(m.root)
+		if err != nil {
+			m.boards.err = err.Error()
+		} else if len(listed) > 0 {
 			names = listed
 		}
 	}
-	m.boards = boardsState{names: names}
+	m.boards.names = names
 	for i, n := range names {
 		if n == m.b.Name {
 			m.boards.cursor = i
@@ -81,7 +85,8 @@ func (m Model) updateBoards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		if n > 0 {
-			return m, m.switchBoard(m.boards.names[m.boards.cursor])
+			cmd := m.switchBoard(m.boards.names[m.boards.cursor])
+			return m, cmd
 		}
 	case "n":
 		m.boards.in = m.newInput(m.styles.Fg, m.styles.Fg)
@@ -106,7 +111,8 @@ func (m Model) updateBoardName(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if name == "" {
 			return m, nil
 		}
-		return m, m.switchBoard(name)
+		cmd := m.switchBoard(name)
+		return m, cmd
 	}
 	var cmd tea.Cmd
 	m.boards.in, cmd = m.boards.in.Update(msg)
@@ -114,8 +120,11 @@ func (m Model) updateBoardName(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // switchBoard opens (creating if needed) the named board under the root and
-// makes it the model's board: fresh store, fresh watcher, lane and selection
-// reset, filter cleared. On failure the picker stays open showing the error.
+// makes it the model's board: fresh store, lane and selection reset, filter
+// cleared, archive dropped. The old watcher is stopped and, when watching is
+// on, a new one is started through the same path Init uses; its generation
+// makes anything still in flight from the old watcher ignorable. On failure
+// the picker stays open showing the error.
 func (m *Model) switchBoard(name string) tea.Cmd {
 	if name == m.b.Name || m.st == nil || m.root == "" {
 		m.scr, m.mode = screenBoard, modeNormal
@@ -126,22 +135,14 @@ func (m *Model) switchBoard(name string) tea.Cmd {
 		m.boards.err = err.Error()
 		return nil
 	}
-	if m.stopWatch != nil {
-		m.stopWatch()
-		m.stopWatch = nil
-	}
-	var cmd tea.Cmd
-	if m.changes != nil {
-		if ch, stop, err := st.Watch(); err == nil {
-			m.changes, m.stopWatch = ch, stop
-			cmd = waitChange(ch)
-		} else {
-			m.changes = nil
-		}
-	}
+	m.teardown()
+	m.watchGen++
 	m.st, m.b, m.archive = st, b, nil
 	m.filter, m.filterQuery = board.Filter{}, ""
 	m.setLane(board.Todo)
 	m.scr, m.mode = screenBoard, modeNormal
-	return cmd
+	if m.watch {
+		return startWatch(st, m.watchGen)
+	}
+	return nil
 }
