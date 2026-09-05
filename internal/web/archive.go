@@ -1,18 +1,13 @@
 package web
 
 import (
-	"fmt"
 	"net/http"
-	"os"
+	"net/url"
 	"strings"
 
 	"github.com/kaiohenricunha/kando/internal/board"
 	"github.com/kaiohenricunha/kando/internal/store"
 )
-
-// archiveMaxItems caps the list at the most recent entries, as the TUI's
-// archive screen does (internal/tui/archive.go).
-const archiveMaxItems = 50
 
 type archiveItem struct {
 	ID, Title, Tag, Date string
@@ -25,72 +20,72 @@ type archiveGroup struct {
 
 type archivePage struct {
 	Page
-	Groups         []archiveGroup
-	Query          string
-	Matched, Total int
-	Capped         bool
+	Groups                  []archiveGroup
+	Query                   string
+	Matched, Scanned, Total int
+	Cap                     int
+	Path                    string
 }
 
-// archive (U8) mirrors `D`: the 50 most recent archived cards grouped by
-// week, filtered by ?q= with the same parser as the board.
+// archive (U8) mirrors `D`: the newest board.ArchiveMax archived cards
+// grouped by week, filtered by ?q= with the same parser as the board. The
+// grouping, the cap and the filtering all come from board.ArchiveView, so
+// this page and the TUI's archive screen cannot drift apart.
 func (s *server) archive(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("board")
-	if _, err := s.load(name); err != nil {
-		fail(w, err)
+	// Only the archive is rendered here, so an unparsable board.md must not
+	// take this page down with it: check the board exists, do not parse it.
+	if err := s.mustExist(name); err != nil {
+		s.fail(w, err)
 		return
 	}
 	a, err := store.LoadArchive(s.root, name)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "kando web: archive %s: %v\n", name, err)
-		fail(w, &httpError{http.StatusInternalServerError, "cannot read archive"})
+		s.logf("archive %s: %v", name, err)
+		s.fail(w, &httpError{http.StatusInternalServerError, "cannot read archive"})
 		return
 	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	f := board.Parse(q)
-	now := s.now()
-	cards := a.Cards
-	if len(cards) > archiveMaxItems {
-		cards = cards[:archiveMaxItems]
-	}
-	p := archivePage{Page: s.basePage(name, "archive"), Query: q, Total: len(a.Cards), Capped: len(a.Cards) > archiveMaxItems}
-	var groups [3]archiveGroup
-	for g := board.ThisWeek; g <= board.Earlier; g++ {
-		groups[g].Label = g.Label()
-	}
-	for _, c := range cards {
-		if !f.Empty() && !f.Match(c, now) {
-			continue
-		}
-		g := board.GroupOf(now, c.DoneAt)
-		item := archiveItem{ID: c.ID, Title: c.Title, Tag: c.Tag}
-		if !c.DoneAt.IsZero() {
-			item.Date = board.DayLabel(c.DoneAt)
-		}
-		groups[g].Items = append(groups[g].Items, item)
-		p.Matched++
+	groups, matched, scanned, total := board.ArchiveView(a, board.Parse(q), s.now())
+	p := archivePage{
+		Page: s.basePage(name, "archive"), Query: q,
+		Matched: matched, Scanned: scanned, Total: total,
+		Cap: board.ArchiveMax, Path: store.ArchiveDisplayPath(s.root, name),
 	}
 	for _, g := range groups {
-		if len(g.Items) > 0 {
-			p.Groups = append(p.Groups, g)
+		gv := archiveGroup{Label: g.Label}
+		for _, c := range g.Cards {
+			item := archiveItem{ID: c.ID, Title: c.Title, Tag: c.Tag}
+			if !c.DoneAt.IsZero() {
+				item.Date = board.DayLabel(c.DoneAt)
+			}
+			gv.Items = append(gv.Items, item)
 		}
+		p.Groups = append(p.Groups, gv)
 	}
 	s.render(w, "archive.html", p)
 }
 
-// restoreCard mirrors `u` on the archive screen via board.Restore. The
-// board is saved before the archive: if the second write fails the card
-// exists in both files (a duplicate the user can see), never in neither.
+// restoreCard mirrors `u` on the archive screen via board.Restore, and
+// returns to the archive with the filter the user was reading, as the TUI
+// stays on its archive screen. store.SaveRestore owns the write order.
 func (s *server) restoreCard(w http.ResponseWriter, r *http.Request) {
 	name, id := r.PathValue("board"), r.PathValue("id")
+	f, err := form(w, r)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	defer s.writeLock(name)()
 	st, b, err := s.openForWrite(name)
 	if err != nil {
-		fail(w, err)
+		s.fail(w, err)
 		return
 	}
 	a, err := st.LoadArchive()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "kando web: archive %s: %v\n", name, err)
-		fail(w, &httpError{http.StatusInternalServerError, "cannot read archive"})
+		s.logf("archive %s: %v", name, err)
+		s.fail(w, &httpError{http.StatusInternalServerError, "cannot read archive"})
 		return
 	}
 	at := -1
@@ -101,19 +96,26 @@ func (s *server) restoreCard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if at < 0 {
-		fail(w, &httpError{http.StatusNotFound, "no such archived card"})
+		s.fail(w, &httpError{http.StatusNotFound, "no such archived card"})
+		return
+	}
+	// The board already holding this id means a previous restore half
+	// failed, or archive.md keeps a copy of a live card. Restoring anyway
+	// would put two cards with one id on the board, and Board.Find only ever
+	// reaches the first: the second would be uneditable from both surfaces.
+	if _, _, c := b.Find(id); c != nil {
+		s.fail(w, &httpError{http.StatusConflict, "that card is already on the board"})
 		return
 	}
 	b.Restore(a, at, s.now())
-	if err := st.SaveBoard(b); err != nil {
-		fmt.Fprintf(os.Stderr, "kando web: save %s: %v\n", name, err)
-		http.Error(w, "cannot save board", http.StatusInternalServerError)
+	if err := st.SaveRestore(b, a); err != nil {
+		s.logf("restore %s: %v", name, err)
+		http.Error(w, "cannot save the restored card", http.StatusInternalServerError)
 		return
 	}
-	if err := st.SaveArchive(a); err != nil {
-		fmt.Fprintf(os.Stderr, "kando web: save archive %s: %v\n", name, err)
-		http.Error(w, "cannot save archive", http.StatusInternalServerError)
-		return
+	to := boardURL(name) + "/archive"
+	if q := strings.TrimSpace(f.Get("q")); q != "" {
+		to += "?q=" + url.QueryEscape(q)
 	}
-	http.Redirect(w, r, boardURL(name), http.StatusSeeOther)
+	http.Redirect(w, r, to, http.StatusSeeOther)
 }

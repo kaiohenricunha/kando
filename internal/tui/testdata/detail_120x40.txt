@@ -37,4 +37,4 @@
                                    │                                                                                    
                                    │                                                                                    
                                                                                                                         
- j/k item  x toggle  o new item  e edit notes  t tag  m move  b block  esc back                                         
+ j/k item  x toggle  o new item  T title  e edit notes  t tag  m move  b block  esc back                                

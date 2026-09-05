@@ -172,18 +172,34 @@ func (b *Board) remove(l Lane, i int) *Card {
 // clearing it when leaving), inserts it at the top of the destination lane and
 // returns its new index (0), or -1 if the source index was invalid.
 func (b *Board) Move(from Lane, i int, to Lane, now time.Time) int {
+	if from == to {
+		// Moving a card to the lane it is already in is a no-op, not a
+		// reshuffle: it must not jump the card to the top or restamp its
+		// dates. The web's lane form defaults to the current lane, so this
+		// is one stray click away.
+		if i < 0 || i >= len(b.Lanes[from]) {
+			return -1
+		}
+		return i
+	}
 	c := b.remove(from, i)
 	if c == nil {
 		return -1
 	}
+	stamp(c, to, now)
+	b.Insert(to, 0, c)
+	return 0
+}
+
+// stamp records a card's arrival in lane to at now: the one rule for what a
+// lane change does to the dates, shared by Move and Unarchive.
+func stamp(c *Card, to Lane, now time.Time) {
 	c.MovedAt = now
 	if to == Done {
 		c.DoneAt = now
 	} else {
 		c.DoneAt = time.Time{}
 	}
-	b.Insert(to, 0, c)
-	return 0
 }
 
 // Archive is the list of cards moved out of Done, newest DoneAt first.

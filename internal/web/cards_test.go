@@ -5,8 +5,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/kaiohenricunha/kando/internal/board"
 	"github.com/kaiohenricunha/kando/internal/store"
@@ -258,7 +262,7 @@ func TestArchiveViewGroupsByWeek(t *testing.T) {
 		t.Errorf("groups out of order")
 	}
 	_, body = get(t, h, "/b/life/archive?q=%23money")
-	if !strings.Contains(body, "4 of 10 match") || strings.Contains(body, "Eye test") {
+	if !strings.Contains(body, "4 of the newest 10 match") || strings.Contains(body, "Eye test") {
 		t.Errorf("filter: %s", grepLine(body, "match"))
 	}
 	if rec, body := get(t, h, "/b/work/archive"); rec.Code != 200 || !strings.Contains(body, "nothing archived") {
@@ -274,7 +278,7 @@ func TestArchiveRestoreRoute(t *testing.T) {
 	h := newHandler(t, root, "life")
 	a, _ := store.LoadArchive(root, "life")
 	id := a.Cards[0].ID
-	wantRedirect(t, post(t, h, "/b/life/archive/"+id+"/restore", nil), "/b/life")
+	wantRedirect(t, post(t, h, "/b/life/archive/"+id+"/restore", url.Values{"q": {"#money"}}), "/b/life/archive?q=%23money")
 	b := reload(t, root, "life")
 	lane, i, c := b.Find(id)
 	if c == nil || lane != board.Doing || i != 0 || !c.DoneAt.IsZero() || !c.MovedAt.Equal(fixedNow) {
@@ -291,5 +295,258 @@ func TestArchiveRestoreRoute(t *testing.T) {
 	}
 	if rec := post(t, h, "/b/life/archive/"+id+"/restore", nil); rec.Code != http.StatusNotFound {
 		t.Errorf("restoring twice: %d", rec.Code)
+	}
+}
+
+// mutationRoutes is §5's mutation table in spec order. hasGET marks the two
+// paths that are also a page — a GET there renders, it does not mutate.
+func mutationRoutes(id, archived string) []struct {
+	path   string
+	hasGET bool
+} {
+	card := "/b/life/cards/" + id
+	return []struct {
+		path   string
+		hasGET bool
+	}{
+		{"/boards", true}, {"/b/life/cards", false}, {card, true},
+		{card + "/move", false}, {card + "/block", false},
+		{card + "/checklist", false}, {card + "/checklist/0/toggle", false},
+		{card + "/checklist/0", false}, {card + "/delete", false},
+		{"/b/life/archive/" + archived + "/restore", false},
+	}
+}
+
+func TestEveryMutationRouteIsPostOnlyAndSameOrigin(t *testing.T) {
+	root := archiveRoot(t)
+	h := newHandler(t, root, "life")
+	a, _ := store.LoadArchive(root, "life")
+	routes := mutationRoutes(todoCard(t, root), a.Cards[0].ID)
+	before, _ := os.ReadFile(filepath.Join(root, "life", "board.md"))
+	for _, rt := range routes {
+		path := rt.path
+		want := http.StatusMethodNotAllowed
+		if rt.hasGET {
+			want = http.StatusOK
+		}
+		if rec, _ := get(t, h, path); rec.Code != want {
+			t.Errorf("GET %s = %d, want %d (SEC-3: a mutation is never a GET)", path, rec.Code, want)
+		}
+		for _, hdr := range [][]string{
+			{"Origin", "http://evil.example"},
+			{"Host", "kando.evil.example:4242"},
+			{"Sec-Fetch-Site", "cross-site"},
+		} {
+			if rec := post(t, h, path, nil, hdr...); rec.Code != http.StatusForbidden {
+				t.Errorf("POST %s with %s: %d, want 403", path, hdr[0], rec.Code)
+			}
+		}
+	}
+	if after, _ := os.ReadFile(filepath.Join(root, "life", "board.md")); string(after) != string(before) {
+		t.Errorf("rejected requests changed board.md")
+	}
+}
+
+func TestMutationsWorkOnAHandWrittenBoard(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "hand")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "board.md"), []byte("## Todo\n\n### Typed by hand\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "archive.md"), []byte("## 2026-W36\n\n### Done by hand\ndone: 2026-09-02\n"), 0o644)
+	h := newHandler(t, root, "hand")
+
+	// The id a page renders for an id-less card must be the id the POST it
+	// produces resolves — otherwise every first mutation 404s.
+	_, body := get(t, h, "/b/hand")
+	id := idRe.FindStringSubmatch(body)[1]
+	if len(id) != 8 {
+		t.Fatalf("no card id in the rendered board: %q", grepLine(body, "cards/"))
+	}
+	wantRedirect(t, post(t, h, "/b/hand/cards/"+id+"/move", url.Values{"lane": {"doing"}}), "/b/hand/cards/"+id)
+	if lane, _, c := reload(t, root, "hand").Find(id); c == nil || lane != board.Doing {
+		t.Errorf("move on a hand-written board: lane=%v card=%v", lane, c)
+	}
+	_, body = get(t, h, "/b/hand/archive")
+	aid := between(body, `/archive/`, `/restore`)
+	if len(aid) != 8 {
+		t.Fatalf("no archived id rendered: %q", grepLine(body, "restore"))
+	}
+	if rec := post(t, h, "/b/hand/archive/"+aid+"/restore", nil); rec.Code != http.StatusSeeOther {
+		t.Errorf("restore on a hand-written archive: %d", rec.Code)
+	}
+}
+
+// idRe finds a rendered card id (the 8-char base32 the store mints).
+var idRe = regexp.MustCompile(`/cards/([a-z2-7]{8})"`)
+
+// between returns the text between the first occurrence of pre and the next end.
+func between(s, pre, end string) string {
+	i := strings.Index(s, pre)
+	if i < 0 {
+		return ""
+	}
+	rest := s[i+len(pre):]
+	j := strings.Index(rest, end)
+	if j < 0 {
+		return ""
+	}
+	return rest[:j]
+}
+
+func TestConcurrentMutationsAllSurvive(t *testing.T) {
+	root := newRoot(t)
+	h := newHandler(t, root, "life")
+	b := reload(t, root, "life")
+	var ids []string
+	for _, l := range board.Lanes {
+		for _, c := range b.Lanes[l] {
+			ids = append(ids, c.ID)
+		}
+	}
+	var wg sync.WaitGroup
+	codes := make([]int, len(ids))
+	for i, id := range ids {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes[i] = post(t, h, "/b/life/cards/"+id, url.Values{"tag": {"tagged"}}).Code
+		}()
+	}
+	wg.Wait()
+	after := reload(t, root, "life")
+	for i, id := range ids {
+		if codes[i] != http.StatusSeeOther {
+			t.Errorf("POST %s: %d", id, codes[i])
+			continue
+		}
+		if _, _, c := after.Find(id); c == nil || c.Tag != "tagged" {
+			t.Errorf("edit to %s was lost by a concurrent write", id)
+		}
+	}
+}
+
+func TestChecklistFormRejectsAStaleIndex(t *testing.T) {
+	root := newRoot(t)
+	h := newHandler(t, root, "life")
+	id := todoCard(t, root)
+	card := "/b/life/cards/" + id
+	// The page was rendered when item 2 read "Book appointment"; by the time
+	// the form arrives an insert has shifted it.
+	rec := post(t, h, card+"/checklist/2", url.Values{"text": {"Book it"}, "was": {"Something else"}})
+	if rec.Code != http.StatusConflict {
+		t.Errorf("stale index should be 409, got %d", rec.Code)
+	}
+	if rec := post(t, h, card+"/checklist/2/toggle", url.Values{"was": {"Something else"}}); rec.Code != http.StatusConflict {
+		t.Errorf("stale toggle should be 409, got %d", rec.Code)
+	}
+	_, _, c := reload(t, root, "life").Find(id)
+	if c.Checklist[2].Text != "Book appointment" || c.Checklist[2].Done {
+		t.Errorf("a 409 must not have written: %+v", c.Checklist[2])
+	}
+	// The form the page actually renders carries the current text and works.
+	_, body := get(t, h, card)
+	if !strings.Contains(body, `<input type="hidden" name="was" value="Book appointment">`) {
+		t.Errorf("checklist forms should carry the rendered text: %s", grepLine(body, "was"))
+	}
+	wantRedirect(t, post(t, h, card+"/checklist/2", url.Values{"text": {"Book it"}, "was": {"Book appointment"}}), card)
+}
+
+func TestRestoringACardAlreadyOnTheBoardIsRefused(t *testing.T) {
+	root := archiveRoot(t)
+	h := newHandler(t, root, "life")
+	a, _ := store.LoadArchive(root, "life")
+	id := a.Cards[0].ID
+	// A duplicate: the same id is on the board and in the archive.
+	b := reload(t, root, "life")
+	b.Insert(board.Todo, 0, &board.Card{ID: id, Title: "already here"})
+	st, _, _ := store.Open(root, "life")
+	if err := st.SaveBoard(b); err != nil {
+		t.Fatal(err)
+	}
+	if rec := post(t, h, "/b/life/archive/"+id+"/restore", nil); rec.Code != http.StatusConflict {
+		t.Errorf("restoring a duplicate id should be 409, got %d", rec.Code)
+	}
+	if a2, _ := store.LoadArchive(root, "life"); len(a2.Cards) != 10 {
+		t.Errorf("a refused restore must not touch the archive: %d", len(a2.Cards))
+	}
+}
+
+func TestArchiveCapsAtFifty(t *testing.T) {
+	root := newRoot(t)
+	a := &board.Archive{}
+	for i := 0; i < 60; i++ {
+		a.Cards = append(a.Cards, &board.Card{
+			ID: board.DeriveID(strconv.Itoa(i)), Title: "archived " + strconv.Itoa(i),
+			DoneAt: fixedNow.AddDate(0, 0, -i),
+		})
+	}
+	st, _, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveArchive(a); err != nil {
+		t.Fatal(err)
+	}
+	_, body := get(t, newHandler(t, root, "life"), "/b/life/archive")
+	if n := strings.Count(body, "restore</button>"); n != board.ArchiveMax {
+		t.Errorf("rendered %d rows, want %d", n, board.ArchiveMax)
+	}
+	if !strings.Contains(body, "showing the 50 most recent entries") || !strings.Contains(body, "archive.md") {
+		t.Errorf("capped footer: %s", grepLine(body, "showing"))
+	}
+	if strings.Contains(body, "archived 55") {
+		t.Errorf("cards past the cap should not render")
+	}
+}
+
+func TestFailedSaveIsNotReportedAsSuccess(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	root := newRoot(t)
+	var logs strings.Builder
+	h := New(Options{Root: root, Board: "life", Port: testPort, ErrorLog: &logs, Now: func() time.Time { return fixedNow }})
+	id := todoCard(t, root)
+	dir := filepath.Join(root, "life")
+	before, _ := os.ReadFile(filepath.Join(dir, "board.md"))
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0o755)
+	rec := post(t, h, "/b/life/cards/"+id, url.Values{"tag": {"nope"}})
+	if rec.Code != http.StatusInternalServerError || rec.Header().Get("Location") != "" {
+		t.Errorf("a failed save must be a 500 with no redirect: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	if !strings.Contains(logs.String(), "save life") {
+		t.Errorf("the failure should reach the error log (OPS-4): %q", logs.String())
+	}
+	if strings.Contains(rec.Body.String(), root) {
+		t.Errorf("the response leaks a path: %q", rec.Body.String())
+	}
+	os.Chmod(dir, 0o755)
+	if after, _ := os.ReadFile(filepath.Join(dir, "board.md")); string(after) != string(before) {
+		t.Errorf("board.md changed despite the failure")
+	}
+}
+
+func TestNotesCannotBreakTheBoardFile(t *testing.T) {
+	root := newRoot(t)
+	h := newHandler(t, root, "life")
+	id := todoCard(t, root)
+	notes := "## Nope\n### Ghost\n- [ ] not an item\nplain line"
+	wantRedirect(t, post(t, h, "/b/life/cards/"+id, url.Values{"notes": {notes}}), "/b/life/cards/"+id)
+	b := reload(t, root, "life") // parses, or the structural lines took over
+	if b.Count() != 11 {
+		t.Fatalf("card count changed: %d", b.Count())
+	}
+	_, _, c := b.Find(id)
+	if c == nil || c.Notes != notes {
+		t.Errorf("notes round trip:\n got %q\nwant %q", c.Notes, notes)
+	}
+	if len(c.Checklist) != 4 {
+		t.Errorf("a note line became a checklist item: %+v", c.Checklist)
+	}
+	if rec, _ := get(t, h, "/b/life"); rec.Code != 200 {
+		t.Errorf("board page after structural notes: %d", rec.Code)
 	}
 }

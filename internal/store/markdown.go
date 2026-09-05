@@ -30,6 +30,7 @@ func parseSections(data []byte) (secs []section, needsRewrite bool, err error) {
 		inKeys   bool
 		notes    []string
 		lineNo   int
+		ordinal  int
 		checkist []board.Item
 	)
 	flush := func() {
@@ -39,9 +40,15 @@ func parseSections(data []byte) (secs []section, needsRewrite bool, err error) {
 		card.Notes = strings.Join(trimBlank(notes), "\n")
 		card.Checklist = checkist
 		if card.ID == "" {
-			card.ID = board.NewID()
+			// Derived, not random: the same file parsed twice yields the same
+			// ids, so a link or form rendered from a read-only load still
+			// resolves on the request it produces. The ordinal keeps two
+			// identical card blocks apart.
+			card.ID = board.DeriveID(fmt.Sprintf("%d\x00%s\x00%s\x00%s\x00%s",
+				ordinal, cur.heading, card.Title, formatTime(card.CreatedAt), card.Notes))
 			needsRewrite = true
 		}
+		ordinal++
 		cur.cards = append(cur.cards, card)
 		card, notes, checkist = nil, nil, nil
 	}
@@ -74,7 +81,7 @@ func parseSections(data []byte) (secs []section, needsRewrite bool, err error) {
 			if m := itemRe.FindStringSubmatch(line); m != nil {
 				checkist = append(checkist, board.Item{Text: m[2], Done: m[1] != " "})
 			} else {
-				notes = append(notes, line)
+				notes = append(notes, unescapeNote(line))
 			}
 		}
 	}
@@ -171,6 +178,28 @@ func ParseArchive(data []byte) (a *board.Archive, needsRewrite bool, err error) 
 	return a, needsRewrite, nil
 }
 
+// structuralNote matches a note line that would otherwise be read back as
+// structure: a heading, a checklist item, or an already-escaped line.
+var structuralNote = regexp.MustCompile(`^\\*(#{1,6} |- \[[ xX]\] )`)
+
+// escapeNote prefixes a structural note line with a backslash so the parser
+// reads it back as prose. Without it a notes line of "## Nope" makes the
+// whole board unparsable, and "### Ghost" silently splits the card in two.
+func escapeNote(line string) string {
+	if structuralNote.MatchString(line) {
+		return "\\" + line
+	}
+	return line
+}
+
+// unescapeNote is escapeNote's inverse, applied to every note line read.
+func unescapeNote(line string) string {
+	if strings.HasPrefix(line, "\\") && structuralNote.MatchString(line[1:]) {
+		return line[1:]
+	}
+	return line
+}
+
 func cardBlock(c *board.Card) string {
 	lines := []string{"### " + c.Title}
 	if c.Tag != "" {
@@ -195,8 +224,8 @@ func cardBlock(c *board.Card) string {
 	if c.ID != "" {
 		lines = append(lines, "id: "+c.ID)
 	}
-	if notes := trimBlank(strings.Split(c.Notes, "\n")); len(notes) > 0 {
-		lines = append(lines, notes...)
+	for _, n := range trimBlank(strings.Split(c.Notes, "\n")) {
+		lines = append(lines, escapeNote(n))
 	}
 	for _, it := range c.Checklist {
 		mark := " "

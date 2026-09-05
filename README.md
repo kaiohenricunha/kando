@@ -18,9 +18,11 @@ kando web                     # serves the boards at http://127.0.0.1:4242/
 kando web work --port 8080    # a specific board, a specific port
 ```
 
-The web page is the same board as a local website: create, edit, move,
-block, check off and delete cards, create boards, restore from the archive.
-Loopback only, no login — the loopback bind is the whole security boundary.
+The web page is the same board as a local website: add a card, edit its
+title, tag and notes, move it between lanes, block it, tick checklist items,
+delete it, create a board, and restore from the archive. It does not yet
+refresh itself when a file changes — reload the page. Loopback only, no
+login: the loopback bind is the whole security boundary.
 A board literally named `web` opens in the terminal with `kando -- web`.
 
 Minimum terminal size is 60×16; the design target is 120×40. Below 100 columns
@@ -43,7 +45,7 @@ open card · `d` move to Done · `u` undo (Done → Doing) · `x` delete card ·
 · `D` archive · `B` boards · `?` help · `q` quit. Arrow keys work everywhere `j/k/h/l` do.
 
 Card detail: `j/k` checklist item · `x` toggle · `o` new item · `enter` edit item
-· `e` edit notes (`ctrl+s` saves, `esc` cancels) · `t` tag · `m` move (then `1`–`4`)
+· `T` title · `e` edit notes (`ctrl+s` saves, `esc` cancels) · `t` tag · `m` move (then `1`–`4`)
 · `b` block reason (empty clears) · `J/K` previous/next card · `esc` back.
 
 Filter: type to match titles; `#tag` matches tags; `!blocked`, `age>7d`, `age<3d`
@@ -74,12 +76,15 @@ Expires 14 Nov. Two photos, old passport, printed form.
 lines (`tag`, `created`, `moved`, `done`, `blocked`, `id`) follow the heading;
 then free-text notes; then `- [ ]` / `- [x]` checklist items. Dates are written
 date-only at midnight, otherwise as RFC 3339. A card without an `id` gets one on
-load. `archive.md` groups cards under `## 2026-W36` ISO-week headings. Nothing in
+load, derived from its contents so every read agrees. `archive.md` groups cards under `## 2026-W36` ISO-week headings. Nothing in
 the TUI archives cards; move them there by hand or with a future CLI verb.
 
-Limits of the hand-editable format: a note line that starts with `## ` or `### `
-is read as a heading, and note text after a checklist item is moved above the
-checklist on the next save.
+Limits of the hand-editable format: note text after a checklist item is moved
+above the checklist on the next save. A note line that would otherwise read as
+structure — a `## ` heading or a `- [ ] ` item — is written with a leading
+backslash and read back without it, so notes can hold Markdown of their own.
+A card written without an `id` is given one derived from its contents, so it
+keeps the same id until the file is saved with the id in it.
 
 ## Development
 

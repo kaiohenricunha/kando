@@ -1,10 +1,9 @@
 package web
 
 import (
-	"fmt"
+	"errors"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 
 	"github.com/kaiohenricunha/kando/internal/board"
@@ -35,17 +34,15 @@ func boardURL(name string) string { return "/b/" + url.PathEscape(name) }
 func cardURL(name, id string) string { return boardURL(name) + "/cards/" + url.PathEscape(id) }
 
 // openForWrite opens an existing board for a mutation. A board that does not
-// exist is 404: only POST /boards creates one, never a card route.
+// exist is 404: only POST /boards creates one, never a card route. The
+// caller must already hold the board's write lock.
 func (s *server) openForWrite(name string) (*store.Store, *board.Board, error) {
-	if !store.ValidBoardName(name) {
-		return nil, nil, &httpError{http.StatusBadRequest, "invalid board name"}
-	}
-	if !store.Exists(s.root, name) {
-		return nil, nil, &httpError{http.StatusNotFound, "no such board"}
+	if err := s.mustExist(name); err != nil {
+		return nil, nil, err
 	}
 	st, b, err := store.Open(s.root, name)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "kando web: open %s: %v\n", name, err)
+		s.logf("open %s: %v", name, err)
 		return nil, nil, &httpError{http.StatusInternalServerError, "cannot open board"}
 	}
 	return st, b, nil
@@ -60,11 +57,18 @@ func findCard(b *board.Board, id string) (board.Lane, int, *board.Card, error) {
 	return lane, i, c, nil
 }
 
-// commit saves the board atomically (REL-1) and redirects. A failed save is
-// a 500 with the detail on stderr (OPS-4), never a success page.
+// commit saves the board atomically (REL-1) and redirects. A save refused
+// because the file changed underneath is a 409, not a silent overwrite; any
+// other failure is a 500 with the detail logged (OPS-4). Neither redirects,
+// so no response ever claims success for an edit that is not on disk.
 func (s *server) commit(w http.ResponseWriter, r *http.Request, st *store.Store, b *board.Board, to string) {
-	if err := st.SaveBoard(b); err != nil {
-		fmt.Fprintf(os.Stderr, "kando web: save %s: %v\n", b.Name, err)
+	err := st.SaveBoardIfUnchanged(b)
+	if errors.Is(err, store.ErrConflict) {
+		http.Error(w, "the board changed on disk — reload and try again", http.StatusConflict)
+		return
+	}
+	if err != nil {
+		s.logf("save %s: %v", b.Name, err)
 		http.Error(w, "cannot save board", http.StatusInternalServerError)
 		return
 	}
@@ -82,21 +86,22 @@ func (s *server) withCard(to func(name, id string) string, op cardOp) http.Handl
 		name, id := r.PathValue("board"), r.PathValue("id")
 		f, err := form(w, r)
 		if err != nil {
-			fail(w, err)
+			s.fail(w, err)
 			return
 		}
+		defer s.writeLock(name)()
 		st, b, err := s.openForWrite(name)
 		if err != nil {
-			fail(w, err)
+			s.fail(w, err)
 			return
 		}
 		lane, i, c, err := findCard(b, id)
 		if err != nil {
-			fail(w, err)
+			s.fail(w, err)
 			return
 		}
 		if err := op(b, lane, i, c, f); err != nil {
-			fail(w, err)
+			s.fail(w, err)
 			return
 		}
 		s.commit(w, r, st, b, to(name, id))
@@ -112,30 +117,32 @@ func (s *server) createCard(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("board")
 	f, err := form(w, r)
 	if err != nil {
-		fail(w, err)
+		s.fail(w, err)
 		return
 	}
 	lane, ok := board.ParseLane(f.Get("lane"))
 	if !ok {
-		fail(w, &httpError{http.StatusBadRequest, "invalid lane"})
+		s.fail(w, &httpError{http.StatusBadRequest, "invalid lane"})
 		return
 	}
+	defer s.writeLock(name)()
 	st, b, err := s.openForWrite(name)
 	if err != nil {
-		fail(w, err)
+		s.fail(w, err)
 		return
 	}
 	c := board.NewCard(f.Get("title"), lane, s.now())
 	if c == nil {
-		fail(w, &httpError{http.StatusBadRequest, "title required"})
+		s.fail(w, &httpError{http.StatusBadRequest, "title required"})
 		return
 	}
 	b.Insert(lane, 0, c)
 	s.commit(w, r, st, b, boardURL(name))
 }
 
-// updateCard mirrors the detail screen's `t` and `e` edits. Only the fields
-// present in the form change, so a form that omits notes leaves them alone.
+// updateCard mirrors the detail screen's `T`, `t` and `e` edits (title, tag
+// and notes). Only the fields present in the form change, so a form that
+// omits notes leaves them alone.
 func (s *server) updateCard() http.HandlerFunc {
 	return s.withCard(toCard, func(_ *board.Board, _ board.Lane, _ int, c *board.Card, f url.Values) error {
 		if v, ok := f["title"]; ok && !c.SetTitle(v[0]) {
@@ -182,19 +189,27 @@ func (s *server) addChecklistItem() http.HandlerFunc {
 	})
 }
 
-// checklistIndex resolves {index} against the card's checklist, or 404.
-func checklistIndex(r *http.Request, c *board.Card) (int, error) {
+// checklistIndex resolves {index} against the card's checklist. The index is
+// a position, and positions move: the TUI can insert an item between the
+// moment this page was rendered and the moment its form arrives, which would
+// silently retarget the write to a different line. So the form also carries
+// the text it was rendered with ("was"), and a mismatch is a 409 rather than
+// an edit of the wrong item.
+func checklistIndex(r *http.Request, c *board.Card, f url.Values) (int, error) {
 	i, err := strconv.Atoi(r.PathValue("index"))
 	if err != nil || i < 0 || i >= len(c.Checklist) {
 		return 0, &httpError{http.StatusNotFound, "no such checklist item"}
+	}
+	if was, ok := f["was"]; ok && was[0] != c.Checklist[i].Text {
+		return 0, &httpError{http.StatusConflict, "this card changed — reload and try again"}
 	}
 	return i, nil
 }
 
 // toggleChecklistItem mirrors `x` on an item.
 func (s *server) toggleChecklistItem(w http.ResponseWriter, r *http.Request) {
-	s.withCard(toCard, func(_ *board.Board, _ board.Lane, _ int, c *board.Card, _ url.Values) error {
-		i, err := checklistIndex(r, c)
+	s.withCard(toCard, func(_ *board.Board, _ board.Lane, _ int, c *board.Card, f url.Values) error {
+		i, err := checklistIndex(r, c, f)
 		if err != nil {
 			return err
 		}
@@ -206,7 +221,7 @@ func (s *server) toggleChecklistItem(w http.ResponseWriter, r *http.Request) {
 // editChecklistItem mirrors enter on an item.
 func (s *server) editChecklistItem(w http.ResponseWriter, r *http.Request) {
 	s.withCard(toCard, func(_ *board.Board, _ board.Lane, _ int, c *board.Card, f url.Values) error {
-		i, err := checklistIndex(r, c)
+		i, err := checklistIndex(r, c, f)
 		if err != nil {
 			return err
 		}

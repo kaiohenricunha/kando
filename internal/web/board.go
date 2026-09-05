@@ -81,7 +81,7 @@ func (s *server) board(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("board")
 	b, err := s.load(name)
 	if err != nil {
-		fail(w, err)
+		s.fail(w, err)
 		return
 	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
@@ -107,12 +107,12 @@ func (s *server) card(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("board")
 	b, err := s.load(name)
 	if err != nil {
-		fail(w, err)
+		s.fail(w, err)
 		return
 	}
 	lane, _, c := b.Find(r.PathValue("id"))
 	if c == nil {
-		fail(w, &httpError{http.StatusNotFound, "no such card"})
+		s.fail(w, &httpError{http.StatusNotFound, "no such card"})
 		return
 	}
 	p := cardPage{
@@ -137,7 +137,7 @@ func (s *server) card(w http.ResponseWriter, r *http.Request) {
 func (s *server) newCard(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("board")
 	if _, err := s.load(name); err != nil {
-		fail(w, err)
+		s.fail(w, err)
 		return
 	}
 	lane := strings.ToLower(r.URL.Query().Get("lane"))

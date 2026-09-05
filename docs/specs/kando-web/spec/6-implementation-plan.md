@@ -131,6 +131,10 @@ phase 3's server to exist, not phases 4/5's specific routes.
   template (no separate JS dependency, per KD-1)
 
 **U10 — Parity audit + docs**
+- Check BOUND-1a (§2): archived cards are restore-only on the web, by
+  decision — the audit records it rather than reporting it as a gap
+- Check the `title` field of `POST /b/{board}/cards/{id}` against the TUI's
+  `T` key, which U6 added to keep BOUND-1
 - Read first: §2 (BOUND-1), `internal/tui/help.go`, §5 route table
 - Command: `/think`
 - No new tests: a manual checklist pass, every TUI key against every §5

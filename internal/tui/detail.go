@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -18,6 +17,7 @@ type editKind int
 
 const (
 	editNone editKind = iota
+	editTitle
 	editNotes
 	editTag
 	editNewItem
@@ -64,7 +64,7 @@ func (d *detailState) resize(m *Model) {
 	switch d.edit {
 	case editNotes:
 		d.ta.SetWidth(m.notesWidth())
-	case editTag, editNewItem, editItem, editBlock:
+	case editTitle, editTag, editNewItem, editItem, editBlock:
 		d.in.Width = m.rightPaneWidth() - 4
 	}
 }
@@ -210,7 +210,12 @@ func (m Model) detailLeft(rows int) []string {
 func (m Model) detailRight(c *board.Card, rp int) []string {
 	s := m.styles
 	d := m.detail
-	rows := []string{s.Bold.Render(fit(sanitize(c.Title), rp))}
+	var rows []string
+	if d.edit == editTitle {
+		rows = append(rows, fit(d.in.View(), rp))
+	} else {
+		rows = append(rows, s.Bold.Render(fit(sanitize(c.Title), rp)))
+	}
 
 	var meta []string
 	switch {
@@ -332,6 +337,8 @@ func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detail.ta = m.newTextarea(c.Notes)
 		m.detail.edit = editNotes
 		m.mode = modeEdit
+	case "T":
+		m.startEdit(editTitle, c.Title)
 	case "t":
 		m.startEdit(editTag, c.Tag)
 	case "b":
@@ -446,6 +453,10 @@ func (m *Model) commitEdit() {
 		return
 	}
 	switch kind {
+	case editTitle:
+		if !c.SetTitle(m.detail.in.Value()) {
+			return
+		}
 	case editNotes:
 		c.SetNotes(m.detail.ta.Value())
 	case editTag:
@@ -489,19 +500,11 @@ func (m *Model) moveDetailCard(to board.Lane) {
 	if m.detail.archived {
 		for i, x := range m.archive.Cards {
 			if x == c {
-				m.archive.Remove(i)
+				m.b.Unarchive(m.archive, i, to, now)
 				break
 			}
 		}
-		c.MovedAt = now
-		if to == board.Done {
-			c.DoneAt = now
-		} else {
-			c.DoneAt = time.Time{}
-		}
-		m.b.Insert(to, 0, c)
-		m.saveArchive()
-		m.save()
+		m.saveRestore()
 		m.detail.archived = false
 	} else {
 		l, i, _ := m.b.Find(c.ID)

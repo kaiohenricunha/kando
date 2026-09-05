@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kaiohenricunha/kando/internal/board"
 )
@@ -351,4 +352,117 @@ func TestLoadArchiveIsReadOnly(t *testing.T) {
 	if _, err := LoadArchive(root, "../evil"); err == nil {
 		t.Errorf("invalid name should error")
 	}
+}
+
+func TestSaveBoardIfUnchangedRefusesAMidAirCollision(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Insert(board.Todo, 0, &board.Card{ID: "aaaaaaaa", Title: "mine"})
+	if err := st.SaveBoardIfUnchanged(b); err != nil {
+		t.Fatalf("an unchanged file should save: %v", err)
+	}
+	// Somebody else (the TUI, an editor) rewrites board.md.
+	other := &board.Board{Name: "life"}
+	other.Insert(board.Todo, 0, &board.Card{ID: "bbbbbbbb", Title: "theirs"})
+	if err := os.WriteFile(st.BoardPath(), Marshal(other), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b.Insert(board.Todo, 0, &board.Card{ID: "cccccccc", Title: "mine too"})
+	if err := st.SaveBoardIfUnchanged(b); !errors.Is(err, ErrConflict) {
+		t.Errorf("a changed file should be ErrConflict, got %v", err)
+	}
+	got, _, err := Parse(mustRead(t, st.BoardPath()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Lanes[board.Todo]) != 1 || got.Lanes[board.Todo][0].Title != "theirs" {
+		t.Errorf("the refused save overwrote the other writer: %v", titlesOf(got.Lanes[board.Todo]))
+	}
+	if err := st.SaveBoard(b); err != nil { // the unchecked writer still wins on purpose
+		t.Fatal(err)
+	}
+}
+
+func TestSaveRestoreWritesTheBoardFirst(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &board.Archive{Cards: []*board.Card{{ID: "aaaaaaaa", Title: "was done"}}}
+	b.Restore(a, 0, time.Now())
+	if err := st.SaveRestore(b, a); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := Parse(mustRead(t, st.BoardPath()))
+	left, _ := LoadArchive(root, "life")
+	if len(got.Lanes[board.Doing]) != 1 || len(left.Cards) != 0 {
+		t.Errorf("after restore: board=%v archive=%d", titlesOf(got.Lanes[board.Doing]), len(left.Cards))
+	}
+}
+
+func TestStructuralNotesSurviveARoundTrip(t *testing.T) {
+	notes := "## Nope\n### Ghost\n- [ ] not an item\n#### deep\nplain"
+	b := &board.Board{Name: "life"}
+	b.Insert(board.Todo, 0, &board.Card{ID: "aaaaaaaa", Title: "notes", Notes: notes})
+	data := Marshal(b)
+	got, _, err := Parse(data)
+	if err != nil {
+		t.Fatalf("a board with structural note lines must still parse: %v\n%s", err, data)
+	}
+	if n := got.Count(); n != 1 {
+		t.Fatalf("note lines became %d cards:\n%s", n, data)
+	}
+	c := got.Lanes[board.Todo][0]
+	if c.Notes != notes {
+		t.Errorf("notes round trip:\n got %q\nwant %q", c.Notes, notes)
+	}
+	if len(c.Checklist) != 0 {
+		t.Errorf("a note line became a checklist item: %+v", c.Checklist)
+	}
+	if !bytes.Equal(Marshal(got), data) {
+		t.Errorf("second marshal differs:\n%s\n%s", data, Marshal(got))
+	}
+}
+
+func TestIdlessCardsGetTheSameIdOnEveryRead(t *testing.T) {
+	data := []byte("## Todo\n\n### One\n\n### Two\n\n### One\n")
+	first, rewrite, err := Parse(data)
+	if err != nil || !rewrite {
+		t.Fatalf("parse: %v rewrite=%v", err, rewrite)
+	}
+	second, _, _ := Parse(data)
+	var ids []string
+	for i, c := range first.Lanes[board.Todo] {
+		if c.ID != second.Lanes[board.Todo][i].ID {
+			t.Errorf("card %d: %q then %q — a rendered link would not resolve", i, c.ID, second.Lanes[board.Todo][i].ID)
+		}
+		if len(c.ID) != 8 {
+			t.Errorf("card %d: id %q", i, c.ID)
+		}
+		ids = append(ids, c.ID)
+	}
+	if ids[0] == ids[2] {
+		t.Errorf("two identical card blocks must still get distinct ids: %v", ids)
+	}
+}
+
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func titlesOf(cards []*board.Card) []string {
+	var out []string
+	for _, c := range cards {
+		out = append(out, c.Title)
+	}
+	return out
 }

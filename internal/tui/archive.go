@@ -230,8 +230,7 @@ func (m *Model) restoreArchived(c *board.Card) {
 			break
 		}
 	}
-	m.saveArchive()
-	m.save()
+	m.saveRestore()
 	m.clampArchive()
 	if m.lane == board.Doing {
 		m.clampSel()

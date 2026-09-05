@@ -36,6 +36,14 @@ board data and must never present different capabilities. This shapes §4
 (shared domain/store package, not a reimplementation) and §6 (delete ships to
 the TUI before or alongside the web page).
 
+**BOUND-1a — accepted exception: archived cards are restore-only on the web.**
+The TUI opens an archived card with `enter` and can edit or re-lane it from
+there; §5 defines no archived-card route, so the web offers restore alone. The
+gap is accepted, not overlooked: an archived card is finished work, and the
+one action worth having on it is undo. Re-open the decision, rather than the
+audit, if a `GET /b/{board}/archive/{id}` is ever wanted. U10's parity
+checklist records this exception so the audit has something to check against.
+
 | Touches | Does Not Touch |
 | ------- | -------------- |
 | `internal/board` (new delete/board-listing operations), `internal/store` (board discovery/creation; already keys boards by name at `Open(root, name)`, `internal/store/store.go:56`), a new local web server + frontend, `internal/tui/board_update.go` (wire up delete) | Authentication/authorization, remote or cloud infrastructure, mobile apps |

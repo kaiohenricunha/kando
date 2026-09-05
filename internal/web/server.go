@@ -1,10 +1,13 @@
 // Package web serves the kando board as server-rendered HTML on localhost.
 // It is a second renderer over the same internal/board model and
 // internal/store files the TUI uses — never a second model (KD-1, §4 of
-// docs/specs/kando-web). Every request loads the board from disk (GETs
-// read-only via store.Load, POSTs via store.Open), acts, saves, and forgets
-// (KD-3): no board lives in memory between requests, so handlers need no
-// locking and a page is never stale.
+// docs/specs/kando-web). A GET loads the board read-only (store.Load) and
+// renders it; a POST loads it (store.Open), applies one internal/board
+// helper, saves and forgets (KD-3). No board lives in memory between
+// requests, so a page is never stale — but a write is a whole-file
+// read-modify-write, so writers to one board are serialised by the server
+// (see writeLock) and the save refuses outright if the file changed
+// underneath (store.ErrConflict → 409).
 package web
 
 import (
@@ -14,11 +17,13 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/kaiohenricunha/kando/internal/board"
@@ -34,16 +39,36 @@ type Options struct {
 	Board string
 	Port  int
 	Now   func() time.Time
+	// ErrorLog receives operational errors (OPS-4); os.Stderr when nil.
+	ErrorLog io.Writer
 }
 
 //go:embed templates/*.html
 var templateFS embed.FS
 
 type server struct {
-	root string
-	def  string
-	now  func() time.Time
-	tpl  *template.Template
+	root  string
+	def   string
+	now   func() time.Time
+	tpl   *template.Template
+	errw  io.Writer // operational errors (OPS-4); os.Stderr outside tests
+	locks sync.Map  // board name → *sync.Mutex, held across load-mutate-save
+}
+
+// writeLock serialises the read-modify-write of one board against other
+// requests in this process. It says nothing about the TUI or a text editor
+// writing the same file — SaveBoardIfUnchanged covers those.
+func (s *server) writeLock(name string) func() {
+	v, _ := s.locks.LoadOrStore(name, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
+// logf reports an operational error (OPS-4): never to the user, always to
+// the error writer.
+func (s *server) logf(format string, a ...any) {
+	fmt.Fprintf(s.errw, "kando web: "+format+"\n", a...)
 }
 
 // New builds the HTTP handler: the routes of §5 behind the security headers
@@ -52,7 +77,10 @@ func New(o Options) http.Handler {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	s := &server{root: o.Root, def: o.Board, now: o.Now}
+	s := &server{root: o.Root, def: o.Board, now: o.Now, errw: o.ErrorLog}
+	if s.errw == nil {
+		s.errw = os.Stderr
+	}
 	funcs := template.FuncMap{"urlpath": url.PathEscape}
 	s.tpl = template.Must(template.New("").Funcs(funcs).ParseFS(templateFS, "templates/*.html"))
 	mux := http.NewServeMux()
@@ -62,6 +90,11 @@ func New(o Options) http.Handler {
 	mux.HandleFunc("GET /b/{board}/cards/new", s.newCard)
 	mux.HandleFunc("GET /b/{board}/cards/{id}", s.card)
 	mux.HandleFunc("GET /b/{board}/archive", s.archive)
+	// U9 adds GET /b/{board}/events here. Note the CSP below: it has no
+	// script-src and no connect-src, so an EventSource and the script that
+	// opens it are both refused today — serve the listener from an embedded
+	// /static/live.js under script-src 'self' rather than relaxing the
+	// policy to 'unsafe-inline'. store.WatchBoard is its read-only watcher.
 	// Mutations (§5): one form POST per TUI key; see cards.go, boards.go,
 	// archive.go. The same-origin guard is what makes a bare POST safe.
 	mux.HandleFunc("POST /boards", s.createBoard)
@@ -174,6 +207,18 @@ type httpError struct {
 
 func (e *httpError) Error() string { return e.msg }
 
+// mustExist is the 400/404 gate every {board} route shares: a name the
+// store would reject is 400, a board that is not there is 404.
+func (s *server) mustExist(name string) error {
+	if !store.ValidBoardName(name) {
+		return &httpError{http.StatusBadRequest, "invalid board name"}
+	}
+	if !store.Exists(s.root, name) {
+		return &httpError{http.StatusNotFound, "no such board"}
+	}
+	return nil
+}
+
 // load reads the named board for this request, read-only: an unknown board
 // is 404, an invalid name 400, and nothing on disk is ever created or
 // rewritten by a GET.
@@ -186,7 +231,7 @@ func (s *server) load(name string) (*board.Board, error) {
 		return nil, &httpError{http.StatusNotFound, "no such board"}
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "kando web: load %s: %v\n", name, err)
+		s.logf("load %s: %v", name, err)
 		return nil, &httpError{http.StatusInternalServerError, "cannot read board"}
 	}
 	return b, nil
@@ -194,13 +239,13 @@ func (s *server) load(name string) (*board.Board, error) {
 
 // fail writes an error response; unexpected errors are logged and become
 // a generic 500 so no path or file detail reaches the page.
-func fail(w http.ResponseWriter, err error) {
+func (s *server) fail(w http.ResponseWriter, err error) {
 	var he *httpError
 	if errors.As(err, &he) {
 		http.Error(w, he.msg, he.status)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "kando web: %v\n", err)
+	s.logf("%v", err)
 	http.Error(w, "internal error", http.StatusInternalServerError)
 }
 
@@ -209,7 +254,7 @@ func fail(w http.ResponseWriter, err error) {
 func (s *server) render(w http.ResponseWriter, name string, data any) {
 	var buf bytes.Buffer
 	if err := s.tpl.ExecuteTemplate(&buf, name, data); err != nil {
-		fmt.Fprintf(os.Stderr, "kando web: render %s: %v\n", name, err)
+		s.logf("render %s: %v", name, err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
