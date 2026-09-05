@@ -7,7 +7,7 @@
 **PERF-1.** An edit made in one surface (the TUI, another browser tab, or
 hand-editing the Markdown files) is reflected in an open browser tab within
 2 seconds of the underlying file write, driven by the existing
-`Store.Watch()` fsnotify channel (`internal/store/watch.go:12`) pushed over
+`Store.Watch()` fsnotify channel (`internal/store/watch.go:13`) pushed over
 SSE (KD-2, §4) — never by polling. On breach: the SSE test in §6 (U9) fails
 before this ships.
 

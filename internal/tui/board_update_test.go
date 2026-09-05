@@ -304,3 +304,71 @@ func TestQuitKeys(t *testing.T) {
 		t.Errorf("ctrl+c should quit")
 	}
 }
+
+func TestDeleteKeyRemovesSelectedCard(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Lanes = sampleBoard(t).Lanes
+	m := New(Options{Store: st, Board: b, Styles: testStyles, Now: func() time.Time { return fixedNow }, Width: 120, Height: 40})
+	m = press(m, "j", "x") // delete "Tax docs to accountant"
+	if got := titles(m.b.Lanes[board.Todo]); len(got) != 2 || got[0] != "Renew passport" || got[1] != "Book dentist" {
+		t.Fatalf("x should delete the selected card: %v", got)
+	}
+	if m.b.Count() != 10 {
+		t.Errorf("Count = %d, want 10", m.b.Count())
+	}
+	if c := m.selectedCard(); c == nil || c.Title != "Book dentist" {
+		t.Errorf("selection should stay at the same index: %v", c)
+	}
+	data, _ := os.ReadFile(st.BoardPath())
+	if strings.Contains(string(data), "Tax docs") {
+		t.Errorf("delete should be saved:\n%s", data)
+	}
+	if !strings.HasSuffix(plainLines(m)[39], "10 cards ") {
+		t.Errorf("footer count should update: %q", plainLines(m)[39])
+	}
+}
+
+func TestDeleteKeyClampsSelectionAfterDelete(t *testing.T) {
+	m := newTestModel(t, 120, 40)
+	m = press(m, "k", "x") // last card (Book dentist)
+	if m.sel != 1 || m.selectedCard().Title != "Tax docs to accountant" {
+		t.Errorf("deleting the last card should select the new last: sel=%d %v", m.sel, m.selectedCard())
+	}
+	m = press(m, "x", "x")
+	if len(m.b.Lanes[board.Todo]) != 0 || m.sel != 0 || m.selectedCard() != nil {
+		t.Errorf("emptying the lane: sel=%d card=%v", m.sel, m.selectedCard())
+	}
+	if !strings.Contains(plainView(m), "· · ·") {
+		t.Errorf("empty lane should show the placeholder")
+	}
+}
+
+func TestDeleteKeyOnEmptyLaneNoop(t *testing.T) {
+	m := newTestModel(t, 120, 40)
+	m.b.Lanes[board.Todo] = nil
+	before := m.b.Count()
+	m = press(m, "x")
+	if m.b.Count() != before || m.scr != screenBoard {
+		t.Errorf("x on an empty lane must do nothing")
+	}
+}
+
+func TestHelpOverlayListsDeleteAndBoards(t *testing.T) {
+	m := newTestModel(t, 120, 40)
+	m = press(m, "?")
+	view := plainView(m)
+	for _, want := range []string{"x        delete card", "B        boards", "?        close help"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("help overlay missing %q", want)
+		}
+	}
+	// The persistent footer is unchanged (the three spec goldens stay byte-identical).
+	m = press(m, "esc")
+	if !strings.HasPrefix(plainLines(m)[39], " j/k move  h/l tab lane  a add  enter open  H/L move card  d done  / filter  ? help  q quit") {
+		t.Errorf("footer must not change: %q", plainLines(m)[39])
+	}
+}

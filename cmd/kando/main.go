@@ -71,15 +71,10 @@ func main() {
 	// detection talks to the terminal directly.
 	styles := resolveStyles()
 
-	var changes <-chan struct{}
-	if ch, stop, err := st.Watch(); err != nil {
-		fmt.Fprintln(os.Stderr, "kando: file watching disabled:", err)
-	} else {
-		changes = ch
-		defer stop()
-	}
-
-	m := tui.New(tui.Options{Store: st, Board: b, Styles: styles, Changes: changes})
+	// The model owns the file watcher: it starts one on the board, swaps it
+	// on a board switch, tears it down on quit, and shows a watch failure in
+	// the footer.
+	m := tui.New(tui.Options{Store: st, Board: b, Root: root, Styles: styles, Watch: true})
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
 		fatal(err)
 	}

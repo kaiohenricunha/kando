@@ -79,10 +79,10 @@ WebSocket or polling.** The update direction is one-way (server → browser:
 "the board changed, re-fetch"), which is exactly what SSE is for. It needs
 no new dependency beyond the standard library (`net/http`'s
 `http.Flusher`) and reuses the same *mechanism* the TUI already uses —
-`Store.Watch()` (`internal/store/watch.go:12`) — not the same channel: a
+`Store.Watch()` (`internal/store/watch.go:13`) — not the same channel: a
 call to `Watch()` builds a fresh fsnotify watcher and channel, scoped to
-one board directory, and the channel is capacity-1 (`internal/store/watch.go:21`) and drops a
-signal when full (`internal/store/watch.go:31-33`). That is correct coalescing for
+one board directory, and the channel is capacity-1 (`internal/store/watch.go:22`) and drops a
+signal when full (`internal/store/watch.go:33-36`). That is correct coalescing for
 one consumer that reloads after every signal — treat a signal as "something
 changed, re-read," never as a countable event — but it means the web
 server needs one watcher per open board (or re-registration on switch),

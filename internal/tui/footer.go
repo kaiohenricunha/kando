@@ -27,6 +27,12 @@ var (
 	archiveFooterGroups = []keyGroup{
 		{"j/k", "move"}, {"u", "undo (back to Doing)"}, {"enter", "open"}, {"/", "filter"}, {"esc", "board"},
 	}
+	boardsFooterGroups = []keyGroup{
+		{"j/k", "move"}, {"enter", "open"}, {"n", "new board"}, {"esc", "back"},
+	}
+	boardNameFooterGroups = []keyGroup{
+		{"type", "a name"}, {"enter", "create"}, {"esc", "cancel"},
+	}
 )
 
 // groups renders key groups joined by two spaces: bold key, space, muted label.
@@ -41,6 +47,9 @@ func (m Model) groups(gs []keyGroup) string {
 // boardFooter applies the fallback chain: full+count, reduced+count, reduced, truncated.
 func (m Model) boardFooter(cw int) string {
 	count := m.styles.Muted.Render(fmt.Sprintf("%d cards", m.visibleCount()))
+	if m.err != nil { // a failed save or watcher takes the count's place until the next success
+		count = m.styles.Accent2.Render(trunc("⊘ "+sanitize(m.err.Error()), cw/2))
+	}
 	full := m.groups(boardFooterFull)
 	reduced := m.groups(boardFooterReduced)
 	switch {

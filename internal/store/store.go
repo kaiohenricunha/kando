@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/kaiohenricunha/kando/internal/board"
 )
@@ -44,11 +46,22 @@ type Reload struct {
 	Archive *board.Archive
 }
 
-// ValidBoardName reports whether name is safe to use as a board directory
-// name: non-empty, no path separators, and no leading dot (which also
-// excludes "." and "..", ruling out any escape from root).
+// maxBoardName caps a board name's length in bytes.
+const maxBoardName = 64
+
+// ValidBoardName reports whether name is acceptable as a board directory
+// name: non-empty, at most maxBoardName bytes, valid UTF-8, no control
+// runes, no path separators, and no leading dot (which also excludes "." and
+// ".."). A valid name always resolves to a directory directly under root;
+// what a symlink placed under root points at is the user's own business.
 func ValidBoardName(name string) bool {
-	return name != "" && !strings.HasPrefix(name, ".") && !strings.ContainsAny(name, `/\`)
+	if name == "" || len(name) > maxBoardName || !utf8.ValidString(name) {
+		return false
+	}
+	if strings.HasPrefix(name, ".") || strings.ContainsAny(name, `/\`) {
+		return false
+	}
+	return strings.IndexFunc(name, unicode.IsControl) < 0
 }
 
 // Open loads (or creates) the board under root/name. Cards missing an id are
@@ -90,8 +103,10 @@ func Open(root, name string) (*Store, *board.Board, error) {
 }
 
 // ListBoards returns the names of every board under root — every subdirectory
-// that contains a board.md — sorted alphabetically for a stable list/picker UI.
-// A missing root is not an error; it simply has no boards yet. Names only:
+// with a valid board name (see ValidBoardName) that contains a board.md —
+// sorted alphabetically for a stable list/picker UI, so the listed set is
+// exactly the set Open accepts. A missing root is not an error; it simply
+// has no boards yet. Names only:
 // callers wanting more than a name (card counts, previews) must not call Open
 // per listed board — Open creates or rewrites board.md, turning a read into a
 // write.
@@ -105,6 +120,9 @@ func ListBoards(root string) ([]string, error) {
 	}
 	var names []string
 	for _, e := range entries {
+		if !ValidBoardName(e.Name()) {
+			continue
+		}
 		// os.Stat follows symlinks, so a symlinked board directory is listed too
 		// — the same directories Open can open. A plain file at root has no
 		// <name>/board.md and is naturally skipped; no IsDir check is needed.

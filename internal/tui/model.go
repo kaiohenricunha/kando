@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ const (
 	screenBoard screen = iota
 	screenDetail
 	screenArchive
+	screenBoards
 )
 
 type mode int
@@ -27,31 +29,57 @@ const (
 	modeFilter
 	modeEdit
 	modeLanePick
+	modeBoardName
 )
 
-// Options configures a Model. Store and Changes may be nil (pure in-memory model).
+// Options configures a Model. Store may be nil (pure in-memory model). Root is
+// the KANDO_HOME directory the board picker lists and opens boards from. With
+// Watch set, the model owns the file watcher end to end: Init starts one on
+// the current store, a board switch stops it and starts another, quit tears
+// it down, and a failure to watch is shown in the footer and retried on the
+// next switch.
 type Options struct {
 	Store   *store.Store
 	Board   *board.Board
 	Archive *board.Archive
+	Root    string
 	Styles  Styles
 	Now     func() time.Time
-	Changes <-chan struct{}
+	Watch   bool
 	Width   int
 	Height  int
 }
 
-// changeMsg says the board directory changed on disk.
-type changeMsg struct{}
+// Watcher messages carry the generation they belong to; a board switch bumps
+// the generation so anything from a previous watcher is ignored.
+type (
+	// watchStartedMsg is the result of startWatch.
+	watchStartedMsg struct {
+		gen  int
+		ch   <-chan struct{}
+		stop func()
+		err  error
+	}
+	// changeMsg says the board directory changed on disk.
+	changeMsg struct{ gen int }
+	// watchStoppedMsg says the watcher channel closed.
+	watchStoppedMsg struct{ gen int }
+)
 
 // Model is the whole UI state. Every View() call renders the full frame from it.
 type Model struct {
 	st      *store.Store
 	b       *board.Board
 	archive *board.Archive
+	root    string
 	styles  Styles
 	now     func() time.Time
-	changes <-chan struct{}
+
+	watch     bool            // policy: keep a watcher on the current store
+	watchGen  int             // bumped on every board switch
+	changes   <-chan struct{} // live watcher channel, nil while none is running
+	stopWatch func()
+	tick      time.Time // instant the last frame was evaluated at (filters, ages)
 
 	w, h int
 	scr  screen
@@ -70,6 +98,7 @@ type Model struct {
 
 	detail detailState
 	arch   archiveState
+	boards boardsState
 
 	err error
 }
@@ -86,43 +115,97 @@ func New(o Options) Model {
 		st:      o.Store,
 		b:       o.Board,
 		archive: o.Archive,
+		root:    o.Root,
 		styles:  o.Styles,
 		now:     o.Now,
-		changes: o.Changes,
+		watch:   o.Watch,
+		tick:    o.Now(),
 		w:       o.Width,
 		h:       o.Height,
 		lane:    board.Todo,
 	}
 }
 
-// Init starts waiting for file changes when a change channel was supplied.
+// Init starts the watcher on the current store when watching is enabled.
 func (m Model) Init() tea.Cmd {
-	if m.changes == nil {
+	if !m.watch || m.st == nil {
 		return nil
 	}
-	return waitChange(m.changes)
+	return startWatch(m.st, m.watchGen)
 }
 
-func waitChange(ch <-chan struct{}) tea.Cmd {
+// startWatch opens a watcher on st and reports it (or the failure) tagged with gen.
+func startWatch(st *store.Store, gen int) tea.Cmd {
 	return func() tea.Msg {
-		<-ch
-		return changeMsg{}
+		ch, stop, err := st.Watch()
+		return watchStartedMsg{gen: gen, ch: ch, stop: stop, err: err}
 	}
 }
 
-// Update routes messages: size, disk changes, then keys by capture mode and screen.
+// waitChange blocks until the watcher signals (changeMsg) or is stopped
+// (watchStoppedMsg), tagging the result with the watcher's generation.
+func waitChange(ch <-chan struct{}, gen int) tea.Cmd {
+	return func() tea.Msg {
+		if _, ok := <-ch; !ok {
+			return watchStoppedMsg{gen: gen}
+		}
+		return changeMsg{gen: gen}
+	}
+}
+
+// teardown releases the current watcher, if any.
+func (m *Model) teardown() {
+	if m.stopWatch != nil {
+		m.stopWatch()
+		m.stopWatch = nil
+	}
+	m.changes = nil
+}
+
+// Update routes messages, then freezes the clock the next frame is evaluated
+// at. Keys are handled against the instant of the frame the user is looking
+// at, so a time-dependent filter cannot shift the selection between a paint
+// and the key that acts on it.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.dispatch(msg)
+	next.tick = next.now()
+	return next, cmd
+}
+
+func (m Model) dispatch(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
 		m.resizeInputs()
 		m.ensureVisible()
 		return m, nil
+	case watchStartedMsg:
+		if msg.gen != m.watchGen { // a switch happened meanwhile; not ours
+			if msg.stop != nil {
+				msg.stop()
+			}
+			return m, nil
+		}
+		if msg.err != nil {
+			m.err = fmt.Errorf("file watching disabled: %w", msg.err)
+			return m, nil
+		}
+		m.changes, m.stopWatch = msg.ch, msg.stop
+		return m, waitChange(msg.ch, msg.gen)
 	case changeMsg:
+		if msg.gen != m.watchGen { // from a watcher we no longer own
+			return m, nil
+		}
 		m.reload()
-		return m, waitChange(m.changes)
+		if m.changes == nil {
+			return m, nil
+		}
+		return m, waitChange(m.changes, msg.gen)
+	case watchStoppedMsg:
+		return m, nil
 	case tea.KeyMsg:
-		return m.handleKey(msg)
+		next, cmd := m.handleKey(msg)
+		return next.(Model), cmd
 	}
 	return m, nil
 }
@@ -130,6 +213,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if key == "ctrl+c" {
+		m.teardown()
 		return m, tea.Quit
 	}
 	switch m.mode {
@@ -141,6 +225,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateEdit(msg)
 	case modeLanePick:
 		return m.updateLanePick(msg)
+	case modeBoardName:
+		return m.updateBoardName(msg)
 	}
 	if m.help {
 		if key == "?" || key == "esc" {
@@ -153,6 +239,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateDetail(msg)
 	case screenArchive:
 		return m.updateArchive(msg)
+	case screenBoards:
+		return m.updateBoards(msg)
 	}
 	return m.updateBoard(msg)
 }
@@ -174,6 +262,8 @@ func (m Model) render() []string {
 		rows = m.renderDetail()
 	case screenArchive:
 		rows = m.renderArchive()
+	case screenBoards:
+		rows = m.renderBoards()
 	default:
 		rows = m.renderBoard()
 	}
@@ -208,7 +298,7 @@ func (m Model) visible(l board.Lane) []*board.Card {
 	if m.filter.Empty() {
 		return cards
 	}
-	now := m.now()
+	now := m.tick
 	out := make([]*board.Card, 0, len(cards))
 	for _, c := range cards {
 		if m.filter.Match(c, now) {
@@ -308,7 +398,9 @@ func (m *Model) save() {
 	}
 	if err := m.st.SaveBoard(m.b); err != nil {
 		m.err = err
+		return
 	}
+	m.err = nil
 }
 
 // saveArchive persists the archive after a mutation.
@@ -318,7 +410,9 @@ func (m *Model) saveArchive() {
 	}
 	if err := m.st.SaveArchive(m.archive); err != nil {
 		m.err = err
+		return
 	}
+	m.err = nil
 }
 
 // reload applies external file changes while keeping the UI state.
