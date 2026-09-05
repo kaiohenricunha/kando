@@ -243,12 +243,20 @@ func TestWatcherLifecycleAcrossBoardSwitch(t *testing.T) {
 
 	// Switching boards stops the old watcher (its listener sees the close) and
 	// starts a new one with the next generation.
+	oldCh := m.changes
 	m = press(m, "B", "j")
 	m, startNew := feed(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.b.Name != "work" || m.watchGen != 1 || m.changes != nil {
 		t.Fatalf("after switch: name=%q gen=%d changes=%v", m.b.Name, m.watchGen, m.changes != nil)
 	}
-	if stopped := runCmd(t, listen); stopped != (watchStoppedMsg{gen: 0}) {
+	// Drain contract (store.Watch): one coalesced signal buffered before the
+	// stop may still arrive ahead of the close; the model ignores it (stale
+	// gen) and the listener keeps receiving until the channel closes.
+	stopped := runCmd(t, listen)
+	for _, stale := stopped.(changeMsg); stale; _, stale = stopped.(changeMsg) {
+		stopped = runCmd(t, waitChange(oldCh, 0))
+	}
+	if stopped != (watchStoppedMsg{gen: 0}) {
 		t.Fatalf("old listener should observe the close, got %#v", stopped)
 	}
 	if _, cmd := feed(m, watchStoppedMsg{gen: 0}); cmd != nil {
