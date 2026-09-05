@@ -245,9 +245,10 @@ func sameOrigin(port int, next http.Handler) http.Handler {
 }
 
 // secureHeaders is set on every response, errors and redirects included. The
-// only script is /static/live.js, served from this origin, which opens the
-// SSE stream connect-src allows; the inline stylesheet in layout.html needs
-// 'unsafe-inline' for styles only, and no inline script is ever allowed. frame-ancestors
+// scripts are /static/live.js and /static/dnd.js, both served from this
+// origin; live.js is what opens the SSE stream connect-src allows. The
+// inline stylesheet in layout.html needs 'unsafe-inline' for styles only,
+// and no inline script is ever allowed. frame-ancestors
 // 'none' keeps the board out of other sites' frames, form-action 'self'
 // keeps an injected form from posting elsewhere, and no-store keeps personal
 // board content out of the browser cache (PERF-2).
