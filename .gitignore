@@ -5,3 +5,4 @@
 *.out
 coverage.*
 .claude/worktrees/
+.local-attest-log.jsonl

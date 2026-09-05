@@ -76,10 +76,16 @@ checklist on the next save.
 ## Development
 
 ```sh
-make test     # go test ./...
+make test       # go test -race -count=1 ./...
 make vet
-make fmt
+make fmt        # rewrite
+make fmt-check  # verify only
 ```
+
+`.local-attest.config.mjs` runs the same targets (plus an advisory
+`govulncheck`) as the local CI matrix; `dotbabel local-attest --pr <N>` posts
+a SHA-pinned attestation to the open PR. The repo has no GitHub Actions
+workflows, so that attestation is the review gate.
 
 Golden frames live in `internal/tui/testdata/`. The three `board_*.txt` files are
 the reference frames from the spec and are never regenerated; the other goldens

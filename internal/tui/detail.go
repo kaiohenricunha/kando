@@ -323,7 +323,7 @@ func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailSwitch(-1)
 	case "x":
 		if n > 0 {
-			c.Checklist[m.detail.cursor].Done = !c.Checklist[m.detail.cursor].Done
+			c.ToggleChecklistItem(m.detail.cursor)
 			m.saveDetail()
 		}
 	case "o":
@@ -451,32 +451,21 @@ func (m *Model) commitEdit() {
 	}
 	switch kind {
 	case editNotes:
-		c.Notes = strings.TrimRight(m.detail.ta.Value(), "\n ")
+		c.SetNotes(m.detail.ta.Value())
 	case editTag:
-		c.Tag = strings.TrimPrefix(strings.TrimSpace(m.detail.in.Value()), "#")
+		c.SetTag(m.detail.in.Value())
 	case editNewItem:
-		text := strings.TrimSpace(m.detail.in.Value())
-		if text == "" {
+		at := c.InsertChecklistItem(m.detail.cursor, m.detail.in.Value())
+		if at < 0 {
 			return
 		}
-		at := 0
-		if len(c.Checklist) > 0 {
-			at = m.detail.cursor + 1
-		}
-		c.Checklist = append(c.Checklist, board.Item{})
-		copy(c.Checklist[at+1:], c.Checklist[at:])
-		c.Checklist[at] = board.Item{Text: text}
 		m.detail.cursor = at
 	case editItem:
-		text := strings.TrimSpace(m.detail.in.Value())
-		if text == "" || m.detail.cursor >= len(c.Checklist) {
+		if !c.SetChecklistItemText(m.detail.cursor, m.detail.in.Value()) {
 			return
 		}
-		c.Checklist[m.detail.cursor].Text = text
 	case editBlock:
-		reason := strings.TrimSpace(m.detail.in.Value())
-		c.Blocked = reason != ""
-		c.BlockedReason = reason
+		c.SetBlocked(m.detail.in.Value())
 	}
 	m.saveDetail()
 }

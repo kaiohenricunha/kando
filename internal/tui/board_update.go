@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"strings"
-
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -121,14 +119,8 @@ func (m Model) updateQuickAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ensureVisible()
 		return m, nil
 	case "enter":
-		title := strings.TrimSpace(m.quick.Value())
 		m.mode = modeNormal
-		if title != "" {
-			now := m.now()
-			c := &board.Card{ID: board.NewID(), Title: title, CreatedAt: now, MovedAt: now}
-			if m.lane == board.Done {
-				c.DoneAt = now
-			}
+		if c := board.NewCard(m.quick.Value(), m.lane, m.now()); c != nil {
 			m.b.Insert(m.lane, 0, c)
 			m.save()
 			m.sel, m.first = 0, 0
