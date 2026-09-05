@@ -21,8 +21,8 @@ var (
 		{"type", "to filter title or #tag"}, {"enter", "keep filter"}, {"esc", "clear"},
 	}
 	detailFooterGroups = []keyGroup{
-		{"j/k", "item"}, {"x", "toggle"}, {"o", "new item"}, {"e", "edit notes"},
-		{"t", "tag"}, {"m", "move"}, {"b", "block"}, {"esc", "back"},
+		{"j/k", "item"}, {"x", "toggle"}, {"o", "new item"}, {"T", "title"},
+		{"e", "edit notes"}, {"t", "tag"}, {"m", "move"}, {"b", "block"}, {"esc", "back"},
 	}
 	archiveFooterGroups = []keyGroup{
 		{"j/k", "move"}, {"u", "undo (back to Doing)"}, {"enter", "open"}, {"/", "filter"}, {"esc", "board"},

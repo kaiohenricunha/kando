@@ -85,6 +85,24 @@ func Load(root, name string) (*board.Board, error) {
 	return b, nil
 }
 
+// LoadArchive reads root/name/archive.md read-only, the archive counterpart
+// of Load: empty when the file is missing, never rewritten, ids assigned in
+// memory only. Unlike (*Store).LoadArchive it is safe on a GET.
+func LoadArchive(root, name string) (*board.Archive, error) {
+	if !ValidBoardName(name) {
+		return nil, fmt.Errorf("invalid board name %q", name)
+	}
+	data, err := os.ReadFile(filepath.Join(root, name, archiveFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return &board.Archive{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	a, _, err := ParseArchive(data)
+	return a, err
+}
+
 // Open loads (or creates) the board under root/name. Cards missing an id are
 // assigned one and the file is rewritten once.
 func Open(root, name string) (*Store, *board.Board, error) {
@@ -179,9 +197,17 @@ func (s *Store) BoardPath() string { return filepath.Join(s.dir, boardFile) }
 // ArchivePath is <dir>/archive.md.
 func (s *Store) ArchivePath() string { return filepath.Join(s.dir, archiveFile) }
 
+// ArchiveDisplayPath is root/name/archive.md with the home directory
+// shortened to "~", for a surface that wants to tell the user where the
+// entries it is not showing live.
+func ArchiveDisplayPath(root, name string) string {
+	return displayPath(filepath.Join(root, name, archiveFile))
+}
+
 // ArchiveDisplayPath is ArchivePath with the home directory shortened to "~".
-func (s *Store) ArchiveDisplayPath() string {
-	p := s.ArchivePath()
+func (s *Store) ArchiveDisplayPath() string { return displayPath(s.ArchivePath()) }
+
+func displayPath(p string) string {
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
 		if rel, err := filepath.Rel(home, p); err == nil && !strings.HasPrefix(rel, "..") {
 			return "~/" + filepath.ToSlash(rel)
@@ -190,10 +216,49 @@ func (s *Store) ArchiveDisplayPath() string {
 	return p
 }
 
+// ErrConflict says the file changed underneath a read-modify-write: the
+// board on disk is no longer the one the caller loaded, so saving it would
+// silently drop whoever wrote in between.
+var ErrConflict = errors.New("the board changed on disk since it was loaded")
+
 // SaveBoard writes board.md atomically.
 func (s *Store) SaveBoard(b *board.Board) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.saveBoard(b)
+}
+
+// SaveBoardIfUnchanged is SaveBoard for a caller that loaded, edited and is
+// now writing back the whole file: it refuses with ErrConflict when
+// board.md no longer holds the bytes this Store last read or wrote. The web
+// server needs it because each request opens its own Store, so nothing else
+// stops two overlapping requests from each writing a whole board built
+// before the other's edit.
+func (s *Store) SaveBoardIfUnchanged(b *board.Board) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, changed, err := changedContent(s.BoardPath(), &s.board); err != nil {
+		return err
+	} else if changed {
+		return ErrConflict
+	}
+	return s.saveBoard(b)
+}
+
+// SaveRestore writes both files of a restore in the order that fails safely:
+// board.md first, so a failure leaves the card in both files (a duplicate
+// the user can see and delete) and never in neither. Both surfaces call it,
+// so the same action has the same failure mode in the terminal and the
+// browser.
+func (s *Store) SaveRestore(b *board.Board, a *board.Archive) error {
+	if err := s.SaveBoard(b); err != nil {
+		return err
+	}
+	return s.SaveArchive(a)
+}
+
+// saveBoard writes board.md; the caller holds s.mu.
+func (s *Store) saveBoard(b *board.Board) error {
 	data := Marshal(b)
 	if err := writeAtomic(s.BoardPath(), data); err != nil {
 		return err

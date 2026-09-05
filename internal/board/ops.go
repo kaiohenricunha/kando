@@ -5,7 +5,28 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
+
+// Field limits. The store is a text file the user also edits by hand and the
+// TUI re-measures every visible string on every frame, so one pasted
+// megabyte would degrade all three surfaces. Values are trimmed to these
+// lengths on a rune boundary rather than rejected.
+const (
+	maxFieldBytes = 512
+	maxNotesBytes = 16 << 10
+)
+
+// clip truncates s to at most n bytes without splitting a rune.
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
 
 // These mutation helpers are the single place title/tag/notes/blocked/
 // checklist edits and card creation happen, so the TUI and the future web
@@ -19,12 +40,12 @@ import (
 // sanitizeLine trims s and drops control runes (including CR/LF) so a value
 // can never become a second line in the Markdown store.
 func sanitizeLine(s string) string {
-	return strings.TrimSpace(strings.Map(func(r rune) rune {
+	return clip(strings.TrimSpace(strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return -1
 		}
 		return r
-	}, s))
+	}, s)), maxFieldBytes)
 }
 
 // NewCard builds a card for lane l with a sanitized title, stamped created
@@ -63,7 +84,7 @@ func (c *Card) SetTag(value string) {
 func (c *Card) SetNotes(value string) {
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\r", "\n")
-	c.Notes = strings.TrimRight(value, "\n \t")
+	c.Notes = strings.TrimRight(clip(value, maxNotesBytes), "\n \t")
 }
 
 // SetBlocked sets the card's blocked reason (sanitized); a reason that's
@@ -116,4 +137,67 @@ func (c *Card) SetChecklistItemText(i int, text string) bool {
 // entry point. Returns the removed card, or nil if the index was invalid.
 func (b *Board) DeleteCard(l Lane, i int) *Card {
 	return b.remove(l, i)
+}
+
+// Unarchive takes the archived card at index i out of a and puts it at the
+// top of lane `to` on b, stamped exactly as Move stamps a lane change: the
+// TUI's `u` and `m`-on-an-archived-card and the web's restore button, one
+// rule. Returns the card, or nil if i was out of range.
+func (b *Board) Unarchive(a *Archive, i int, to Lane, now time.Time) *Card {
+	if i < 0 || i >= len(a.Cards) {
+		return nil
+	}
+	c := a.Remove(i)
+	stamp(c, to, now)
+	b.Insert(to, 0, c)
+	return c
+}
+
+// Restore is Unarchive back to Doing, the undo both surfaces offer.
+func (b *Board) Restore(a *Archive, i int, now time.Time) *Card {
+	return b.Unarchive(a, i, Doing, now)
+}
+
+// ArchiveMax is how many of the most recent archived cards a surface shows;
+// the rest stay in archive.md.
+const ArchiveMax = 50
+
+// ArchiveGroup is one week bucket of an archive view.
+type ArchiveGroup struct {
+	Label string
+	Cards []*Card
+}
+
+// ArchiveView is the archive as both surfaces present it: the newest
+// ArchiveMax cards, filtered, bucketed by week with empty buckets dropped.
+// Scanned is how many cards the filter actually looked at and Total how many
+// the archive holds, so a caller can say "3 matches in the newest 50 of 200"
+// without implying it searched all of them.
+func ArchiveView(a *Archive, f Filter, now time.Time) (groups []ArchiveGroup, matched, scanned, total int) {
+	if a == nil {
+		return nil, 0, 0, 0
+	}
+	cards := a.Cards
+	total = len(cards)
+	if len(cards) > ArchiveMax {
+		cards = cards[:ArchiveMax]
+	}
+	scanned = len(cards)
+	var buckets [3]ArchiveGroup
+	for g := ThisWeek; g <= Earlier; g++ {
+		buckets[g].Label = g.Label()
+	}
+	for _, c := range cards {
+		if !f.Empty() && !f.Match(c, now) {
+			continue
+		}
+		buckets[GroupOf(now, c.DoneAt)].Cards = append(buckets[GroupOf(now, c.DoneAt)].Cards, c)
+		matched++
+	}
+	for _, g := range buckets {
+		if len(g.Cards) > 0 {
+			groups = append(groups, g)
+		}
+	}
+	return groups, matched, scanned, total
 }

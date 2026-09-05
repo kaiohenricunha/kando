@@ -404,6 +404,20 @@ func (m *Model) save() {
 }
 
 // saveArchive persists the archive after a mutation.
+// saveRestore writes both files of a restore through the store, which owns
+// the order that fails safely (board.md first): the same durability rule the
+// web's restore button gets.
+func (m *Model) saveRestore() {
+	if m.st == nil || m.archive == nil {
+		return
+	}
+	if err := m.st.SaveRestore(m.b, m.archive); err != nil {
+		m.err = err
+		return
+	}
+	m.err = nil
+}
+
 func (m *Model) saveArchive() {
 	if m.st == nil || m.archive == nil {
 		return

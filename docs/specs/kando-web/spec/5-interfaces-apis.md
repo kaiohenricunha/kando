@@ -24,7 +24,7 @@ their meaning, are identical by construction.
 | GET | `/b/{board}/cards/new?lane={lane}` | New-card form | `a` quick add |
 | POST | `/b/{board}/cards` | Create a card (lane, title) | `a` quick add |
 | GET | `/b/{board}/cards/{id}` | Card detail: notes, tag, checklist, blocked, meta | `enter` detail screen |
-| POST | `/b/{board}/cards/{id}` | Update card fields (title, notes, tag) | `t`, `e` edits |
+| POST | `/b/{board}/cards/{id}` | Update card fields (title, notes, tag) | `T`, `t`, `e` edits |
 | POST | `/b/{board}/cards/{id}/move` | Move to a lane (`lane` param) | `H`/`L`, `d`, `m` picker |
 | POST | `/b/{board}/cards/{id}/block` | Set or clear the blocked reason | `b` |
 | POST | `/b/{board}/cards/{id}/checklist` | Add a checklist item (`text` param) | `o` |

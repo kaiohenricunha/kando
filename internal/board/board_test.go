@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestLaneNames(t *testing.T) {
@@ -114,5 +115,121 @@ func TestCardLabels(t *testing.T) {
 	c.BlockedReason = "waiting on pads"
 	if c.BlockedLabel() != "waiting on pads" {
 		t.Errorf("reason: %q", c.BlockedLabel())
+	}
+}
+
+func TestRestoreMovesArchivedCardToTopOfDoing(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	b := &Board{}
+	b.Insert(Doing, 0, &Card{ID: "old", Title: "already doing"})
+	a := &Archive{Cards: []*Card{{ID: "x", DoneAt: now.Add(-24 * time.Hour)}, {ID: "y", DoneAt: now.Add(-48 * time.Hour)}}}
+	if got := b.Restore(a, 5, now); got != nil {
+		t.Fatalf("out of range should be nil, got %v", got)
+	}
+	c := b.Restore(a, 1, now)
+	if c == nil || c.ID != "y" || !c.DoneAt.IsZero() || !c.MovedAt.Equal(now) {
+		t.Fatalf("restored: %+v", c)
+	}
+	if len(a.Cards) != 1 || a.Cards[0].ID != "x" {
+		t.Errorf("archive after restore: %v", a.Cards)
+	}
+	if len(b.Lanes[Doing]) != 2 || b.Lanes[Doing][0] != c {
+		t.Errorf("restored card should be at the top of Doing")
+	}
+}
+
+func TestMoveToTheSameLaneIsANoOp(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	old := now.AddDate(0, 0, -5)
+	b := &Board{}
+	b.Insert(Todo, 0, &Card{ID: "a", Title: "first", MovedAt: old})
+	b.Insert(Todo, 1, &Card{ID: "b", Title: "second", MovedAt: old})
+	if got := b.Move(Todo, 1, Todo, now); got != 1 {
+		t.Errorf("index = %d, want 1", got)
+	}
+	c := b.Lanes[Todo][1]
+	if c.ID != "b" || !c.MovedAt.Equal(old) {
+		t.Errorf("a same-lane move must not reorder or restamp: %+v", c)
+	}
+	done := &Card{ID: "d", DoneAt: old, MovedAt: old}
+	b.Insert(Done, 0, done)
+	b.Move(Done, 0, Done, now)
+	if !done.DoneAt.Equal(old) {
+		t.Errorf("a same-lane move must not restamp DoneAt: %v", done.DoneAt)
+	}
+}
+
+func TestUnarchiveStampsLikeMove(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	for _, to := range Lanes {
+		b := &Board{}
+		a := &Archive{Cards: []*Card{{ID: "x", DoneAt: now.AddDate(0, 0, -3)}}}
+		c := b.Unarchive(a, 0, to, now)
+		if c == nil || len(b.Lanes[to]) != 1 || len(a.Cards) != 0 {
+			t.Fatalf("unarchive to %v: %+v", to, c)
+		}
+		wantDone := time.Time{}
+		if to == Done {
+			wantDone = now
+		}
+		if !c.MovedAt.Equal(now) || !c.DoneAt.Equal(wantDone) {
+			t.Errorf("to %v: moved=%v done=%v want done=%v", to, c.MovedAt, c.DoneAt, wantDone)
+		}
+	}
+}
+
+func TestArchiveViewCapsGroupsAndCounts(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	a := &Archive{}
+	for i := 0; i < 60; i++ {
+		c := &Card{ID: DeriveID(string(rune('a' + i%26))), Title: "card", DoneAt: now.AddDate(0, 0, -i)}
+		if i%2 == 0 {
+			c.Tag = "money"
+		}
+		a.Cards = append(a.Cards, c)
+	}
+	groups, matched, scanned, total := ArchiveView(a, Parse(""), now)
+	if scanned != ArchiveMax || total != 60 {
+		t.Errorf("scanned=%d total=%d", scanned, total)
+	}
+	if matched != ArchiveMax {
+		t.Errorf("matched=%d", matched)
+	}
+	var n int
+	for _, g := range groups {
+		if len(g.Cards) == 0 {
+			t.Errorf("empty group %q should be dropped", g.Label)
+		}
+		n += len(g.Cards)
+	}
+	if n != ArchiveMax {
+		t.Errorf("groups hold %d cards", n)
+	}
+	if _, matched, _, _ := ArchiveView(a, Parse("#money"), now); matched != 25 {
+		t.Errorf("filtered matched=%d, want 25 (half of the newest 50)", matched)
+	}
+	if _, _, _, total := ArchiveView(nil, Parse(""), now); total != 0 {
+		t.Errorf("nil archive")
+	}
+}
+
+func TestFieldsAreCapped(t *testing.T) {
+	long := strings.Repeat("é", 4000) // 8000 bytes
+	c := &Card{}
+	c.SetTitle(long)
+	c.SetTag(long)
+	c.SetBlocked(long)
+	c.SetNotes(strings.Repeat("x", 40<<10))
+	c.InsertChecklistItem(-1, long)
+	if len(c.Title) > 512 || len(c.Tag) > 512 || len(c.BlockedReason) > 512 || len(c.Checklist[0].Text) > 512 {
+		t.Errorf("single-line fields not capped: %d %d %d %d", len(c.Title), len(c.Tag), len(c.BlockedReason), len(c.Checklist[0].Text))
+	}
+	if len(c.Notes) > 16<<10 {
+		t.Errorf("notes not capped: %d", len(c.Notes))
+	}
+	for _, s := range []string{c.Title, c.Tag, c.BlockedReason} {
+		if !utf8.ValidString(s) {
+			t.Errorf("cap split a rune: %q", s)
+		}
 	}
 }

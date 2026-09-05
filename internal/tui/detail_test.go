@@ -78,7 +78,7 @@ func TestDetailLayout(t *testing.T) {
 			t.Errorf("right row %d = %q, want %q", i, right[i], w)
 		}
 	}
-	if !strings.HasPrefix(lines[39], " j/k item  x toggle  o new item  e edit notes  t tag  m move  b block  esc back") {
+	if !strings.HasPrefix(lines[39], " j/k item  x toggle  o new item  T title  e edit notes  t tag  m move  b block  esc back") {
 		t.Errorf("footer = %q", lines[39])
 	}
 }
@@ -300,5 +300,68 @@ func TestWidthInvariantsDetail(t *testing.T) {
 			m = press(m, keys...)
 			checkInvariants(t, name, m, sz[0], sz[1])
 		}
+	}
+}
+
+func TestDetailTitleEdit(t *testing.T) {
+	m := newTestModel(t, 120, 40)
+	m = press(m, "enter", "T")
+	if m.mode != modeEdit || m.detail.edit != editTitle {
+		t.Fatalf("T opens the title editor: mode=%v edit=%v", m.mode, m.detail.edit)
+	}
+	if right := rightPane(plainLines(m)); !strings.HasPrefix(right[0], "Renew passport") {
+		t.Errorf("the input should start from the current title: %q", right[0])
+	}
+	m = typeText(m, " soon")
+	m = press(m, "enter")
+	c := m.b.Lanes[board.Todo][0]
+	if c.Title != "Renew passport soon" || m.mode != modeNormal {
+		t.Fatalf("title = %q, mode = %v", c.Title, m.mode)
+	}
+	m = press(m, "T")
+	m = typeText(m, " discarded")
+	m = press(m, "esc")
+	if c.Title != "Renew passport soon" || m.mode != modeNormal {
+		t.Errorf("esc cancels the title edit: %q", c.Title)
+	}
+	// An empty title is refused, as it is on the web (board.SetTitle).
+	m = press(m, "T")
+	for range "Renew passport soon" {
+		m = press(m, "backspace")
+	}
+	m = press(m, "enter")
+	if c.Title != "Renew passport soon" {
+		t.Errorf("an empty title must be a no-op, got %q", c.Title)
+	}
+}
+
+func TestArchiveRestoreWritesBothFiles(t *testing.T) {
+	root := t.TempDir()
+	st, _, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newTestModel(t, 120, 40)
+	m.st = st
+	m.b.Name = "life"
+	m = press(m, "D") // archive screen
+	before := len(m.archive.Cards)
+	m = press(m, "u")
+	if len(m.archive.Cards) != before-1 || m.err != nil {
+		t.Fatalf("restore: archive=%d err=%v", len(m.archive.Cards), m.err)
+	}
+	b, err := store.Load(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := store.LoadArchive(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Lanes[board.Doing]) == 0 {
+		t.Errorf("the restored card must be on the saved board")
+	}
+	if len(a.Cards) != before-1 {
+		t.Errorf("archive.md has %d cards, want %d", len(a.Cards), before-1)
 	}
 }
