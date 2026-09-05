@@ -33,12 +33,15 @@ their meaning, are identical by construction.
 | POST | `/b/{board}/cards/{id}/delete` | Delete the card | new capability, §2 |
 | GET | `/b/{board}/archive` | Archive view, grouped by week; optional `?q=` | `D` |
 | POST | `/b/{board}/archive/{id}/restore` | Undo, back to Doing | `u` |
-| GET | `/b/{board}/events` | Server-Sent Events stream: one `board-changed` event per `Store.Watch()` firing (KD-2, §4) | — |
+| GET | `/b/{board}/events` | Server-Sent Events stream: one `board-changed` event per `Store.Watch()` firing (KD-2, §4); each frame carries the board's version as its event id, so a reconnecting client replaying `Last-Event-ID` is told at once if it missed a change | — |
+| GET | `/static/live.js` | The SSE listener, served from this origin so the Content-Security-Policy can stay at `script-src 'self'` | — (plumbing) |
 
 Every `POST` route redirects back to a `GET` on success (the standard
 post/redirect/get pattern), so a page refresh never resubmits a form.
-`/b/{board}/events` is the only non-form route; a small vanilla-JS listener
-(KD-1, §4) reacts to it by reloading the current page.
+`/b/{board}/events` and `/static/live.js` are the two non-form routes: the
+listener (KD-1, §4) is a small vanilla-JS file that reacts to the stream by
+reloading the current page. It is served rather than inlined so the
+Content-Security-Policy need not allow inline script.
 
 ## Database Schema
 

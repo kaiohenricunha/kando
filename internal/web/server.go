@@ -50,28 +50,27 @@ var templateFS embed.FS
 var staticFS embed.FS
 
 type server struct {
-	root  string
-	def   string
-	now   func() time.Time
-	tpl   *template.Template
-	errw  io.Writer // operational errors (OPS-4); os.Stderr outside tests
-	locks sync.Map  // board name → *sync.Mutex, held across load-mutate-save
-	hub   *hub      // one file watcher per board with an open SSE stream
-	done  chan struct{}
-	mux   *http.ServeMux
+	root      string
+	def       string
+	now       func() time.Time
+	tpl       *template.Template
+	errw      io.Writer // operational errors (OPS-4); os.Stderr outside tests
+	locks     sync.Map  // board name → *sync.Mutex, held across load-mutate-save
+	hub       *hub      // one file watcher per board with an open SSE stream
+	port      int
+	mux       *http.ServeMux
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // Close releases the file watchers and ends every open SSE stream. Serve
-// calls it on shutdown; a handler built with New and never served needs no
-// teardown, but calling it twice is safe.
+// calls it on shutdown. It is idempotent and safe from several goroutines
+// at once, which matters because Serve calls it from two.
 func (s *server) Close() {
-	select {
-	case <-s.done:
-		return
-	default:
-	}
-	close(s.done)
-	s.hub.close()
+	s.closeOnce.Do(func() {
+		close(s.done)
+		s.hub.close()
+	})
 }
 
 // writeLock serialises the read-modify-write of one board against other
@@ -91,11 +90,11 @@ func (s *server) logf(format string, a ...any) {
 }
 
 // New builds the HTTP handler: the routes of §5 behind the security headers
-// and the same-origin guard.
-func New(o Options) http.Handler {
-	s := newServer(o)
-	return secureHeaders(sameOrigin(o.Port, s.routes()))
-}
+// and the same-origin guard. The watchers it allocates are released only by
+// Serve, so a handler built here and served by something else keeps its SSE
+// streams open until each client disconnects — fine for tests, which is what
+// this constructor is for now; production goes through Serve.
+func New(o Options) http.Handler { return newServer(o).handler() }
 
 // newServer is New with the concrete type, so a caller that must release the
 // watchers (Serve, and the tests) can reach Close.
@@ -103,7 +102,7 @@ func newServer(o Options) *server {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	s := &server{root: o.Root, def: o.Board, now: o.Now, errw: o.ErrorLog, done: make(chan struct{})}
+	s := &server{root: o.Root, def: o.Board, now: o.Now, errw: o.ErrorLog, port: o.Port, done: make(chan struct{})}
 	if s.errw == nil {
 		s.errw = os.Stderr
 	}
@@ -118,7 +117,12 @@ func newServer(o Options) *server {
 	mux.HandleFunc("GET /b/{board}/cards/{id}", s.card)
 	mux.HandleFunc("GET /b/{board}/archive", s.archive)
 	mux.HandleFunc("GET /b/{board}/events", s.events)
-	mux.Handle("GET /static/", http.FileServerFS(staticFS))
+	// The one asset, pinned by path: a file server would also answer
+	// GET /static/ with a directory listing and would depend on the embed
+	// layout for its prefix.
+	mux.HandleFunc("GET /static/live.js", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFileFS(w, r, staticFS, "static/live.js")
+	})
 	// Mutations (§5): one form POST per TUI key; see cards.go, boards.go,
 	// archive.go. The same-origin guard is what makes a bare POST safe.
 	mux.HandleFunc("POST /boards", s.createBoard)
@@ -135,8 +139,11 @@ func newServer(o Options) *server {
 	return s
 }
 
-// routes is the bare mux, without the middlewares New wraps around it.
-func (s *server) routes() http.Handler { return s.mux }
+// handler is the mux behind the middlewares. Both New and Serve go through
+// it, so a middleware added here cannot miss one of them.
+func (s *server) handler() http.Handler {
+	return secureHeaders(sameOrigin(s.port, s.mux))
+}
 
 // Listen binds the loopback interface only (OPS-1, §7). A busy port is an
 // error the caller reports, never a silent fallback to another port (OPS-3).
@@ -160,12 +167,19 @@ func Serve(ctx context.Context, ln net.Listener, o Options) error {
 	h := newServer(o)
 	defer h.Close()
 	srv := &http.Server{
-		Handler:           secureHeaders(sameOrigin(o.Port, h.routes())),
+		Handler:           h.handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}
+	// Shutdown closes the listener, which makes Serve return straight away,
+	// so the drain has to be waited for explicitly or the process exits
+	// mid-request.
+	ctx, cancelAll := context.WithCancel(ctx)
+	defer cancelAll()
+	drained := make(chan struct{})
 	go func() {
+		defer close(drained)
 		<-ctx.Done()
 		// End the streams first: an open SSE connection would otherwise hold
 		// Shutdown until its grace period expires.
@@ -174,7 +188,10 @@ func Serve(ctx context.Context, ln net.Listener, o Options) error {
 		defer cancel()
 		srv.Shutdown(shutdownCtx)
 	}()
-	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	err := srv.Serve(ln)
+	cancelAll() // Serve may have returned for its own reasons
+	<-drained
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

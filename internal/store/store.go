@@ -2,6 +2,7 @@ package store
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -101,6 +102,22 @@ func LoadArchive(root, name string) (*board.Archive, error) {
 	}
 	a, _, err := ParseArchive(data)
 	return a, err
+}
+
+// Version is a short token that changes whenever root/name's board.md or
+// archive.md changes on disk, and stays the same while they do not. The web
+// server sends it as the SSE event id, so a browser that reconnects after a
+// dropped connection can be told whether it missed anything.
+func Version(root, name string) string {
+	dir := filepath.Join(root, name)
+	h := sha256.New()
+	for _, f := range []string{boardFile, archiveFile} {
+		fmt.Fprintf(h, "%s\x00", f)
+		if fi, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			fmt.Fprintf(h, "%d\x00%d\x00", fi.ModTime().UnixNano(), fi.Size())
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)[:8])
 }
 
 // Open loads (or creates) the board under root/name. Cards missing an id are

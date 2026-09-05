@@ -24,10 +24,12 @@ The same board as a local web page: add a card, edit its title, tag and
 notes, move it between lanes, block it, tick checklist items, delete it,
 create a board, filter with the same query syntax as the TUI, and restore
 from the archive. Every page reflects the files as they are on disk, and an
-open tab refreshes itself within a couple of seconds of any change —
-whether it came from another tab, from `kando` in a terminal, or from your
-text editor. A tab with a focused input is left alone, so a reload never
-eats what you are typing.
+open *board* page refreshes itself within a couple of seconds of any change
+— whether it came from another tab, from `kando` in a terminal, or from
+your text editor. The boards list updates on its next load instead, since
+`$KANDO_HOME` itself is not watched. A page with a focused field waits
+until you click away before refreshing, so a reload never eats what you are
+typing.
 
 It binds `127.0.0.1` only and has no login: the loopback bind is the whole
 security boundary, and requests from other origins are refused. Everything

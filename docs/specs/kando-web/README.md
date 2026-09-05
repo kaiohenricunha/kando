@@ -36,6 +36,15 @@ is a design reference, not a benchmark, so nothing needed promoting into
 `GET`-only routes in §5 (the card detail page, the new-card form) — fixed
 in U5.
 
+Finalization pass (2026-09-05, U9/U10): one deviation from §6.3 recorded —
+U9's listener is served from an embedded `/static/live.js` rather than
+inlined in the board template, because U5's review added a
+`default-src 'none'` CSP that an inline `<script>` would have forced open to
+`script-src 'unsafe-inline'`. §5 gains the `/static/live.js` row, §6.3's
+Files line is corrected, and §6.6's SSE rollback row now lists all four
+coupled edits. KD-1 ("no JS dependency") and OPS-2 ("no build step") are
+unaffected: it is one embedded file in the same binary.
+
 ## Parity audit
 
 [parity.md](parity.md) — every TUI key against the §5 route that does the

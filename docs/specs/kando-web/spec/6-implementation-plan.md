@@ -127,8 +127,12 @@ phase 3's server to exist, not phases 4/5's specific routes.
   writing a change via `Store.SaveBoard`, asserting both receive an event
   within a bound (e.g. 2s) — see 6.4, this is the one genuinely integration
   test in the plan
-- Files: `internal/web/events.go`, an inline `<script>` in the board
-  template (no separate JS dependency, per KD-1)
+- Files: `internal/web/events.go`, `internal/web/static/live.js` (embedded,
+  served at `GET /static/live.js`), `internal/web/templates/layout.html`.
+  The listener is served rather than inlined as first sketched: the CSP
+  added in U5 is `default-src 'none'`, so an inline `<script>` would have
+  required `script-src 'unsafe-inline'`. Still no JS dependency (KD-1) and
+  still no build step (OPS-2).
 
 **U10 — Parity audit + docs**
 - Check BOUND-1a (§2): archived cards are restore-only on the web, by
@@ -176,5 +180,5 @@ phase 3's server to exist, not phases 4/5's specific routes.
 | -------- | ------ | ----- |
 | TUI delete/picker has a bug | Revert the U3/U4 commits; U1/U2 can stay (additive, backward compatible) | Only the TUI-facing commits need reverting |
 | Web server crashes or misbehaves | Don't run `kando web`; the TUI is a separate entry point and keeps working | Failure in one surface never affects the other |
-| SSE fan-out leaks goroutines/fds under many tabs | Stop serving `/b/{board}/events`; the page still works without live push, just without automatic refresh | Degrades gracefully — SSE is additive, not required for basic function |
+| SSE fan-out leaks goroutines/fds under many tabs | Revert the U9 commit: the route, the `static/` embed, the `<script>` in `layout.html`'s `foot` and the `script-src`/`connect-src` CSP widening travel together (the CSP string is pinned by a test, so a partial revert fails the suite). The pages keep working unchanged | Degrades gracefully — SSE is additive, not required for basic function; there is also a per-board stream cap |
 | A board created via the picker or the web page is malformed | `store.Open` already creates a canonical empty `board.md` on first open (`internal/store/store.go`) | This class of bug is unlikely at the storage layer |

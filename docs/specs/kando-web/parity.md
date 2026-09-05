@@ -21,7 +21,7 @@ does the same thing on the right. Verified against `internal/tui/help.go`,
 | `/` filter | `?q=` on the board and the archive | Same `board.Parse`, so the operators are identical by construction. |
 | `D` archive view | `GET /b/{board}/archive` | |
 | `B` boards | `GET /boards` | |
-| `?` help | — | The web page labels its own controls; there is no hidden key to explain. |
+| `?` help | — | Bound on every TUI screen (board, detail, archive, boards). The web page labels its own controls, so there is no hidden key to explain. |
 | `q` quit | — | Closing a tab is not a server action. |
 
 ## Card detail
@@ -32,7 +32,7 @@ does the same thing on the right. Verified against `internal/tui/help.go`,
 | `t` tag | same route (`tag`) | |
 | `e` notes | same route (`notes`) | |
 | `b` block reason (empty clears) | `POST …/block` | |
-| `o` new checklist item | `POST …/checklist` | |
+| `o` new checklist item | `POST …/checklist` | The TUI inserts at the checklist cursor; the page has no cursor, so a new item is appended. Same `Card.InsertChecklistItem`. |
 | `x` toggle item | `POST …/checklist/{i}/toggle` | The web form carries the item text it was rendered with, so a stale index is a 409 rather than an edit of the wrong item. |
 | `enter` edit item | `POST …/checklist/{i}` | |
 | `m` move (lane picker) | `POST …/move` | |
@@ -57,13 +57,17 @@ does the same thing on the right. Verified against `internal/tui/help.go`,
 
 | TUI | Web | Notes |
 | --- | --- | --- |
-| fsnotify watcher → reload | `GET /b/{board}/events` (SSE) → `location.reload()` | One `store.WatchBoard` watcher per watched board, fanned out to every open tab (KD-2). Both treat a signal as "re-read", never as a countable event. |
+| fsnotify watcher → reload | `GET /b/{board}/events` (SSE) → `location.reload()` | One `store.WatchBoard` watcher per watched board, fanned out to every open tab (KD-2). Both treat a signal as "re-read", never as a countable event. Board pages only: `$KANDO_HOME` is not watched, so `/boards` updates on its next load (KD-2, §4). The page defers a reload while a field is focused and flushes it on blur. |
 
 ## Web-only
 
-Nothing. Every route above exists to serve a capability the TUI already has,
-and the two write paths share `internal/board` and `internal/store` rather
-than reimplementing the rules.
+No capability the TUI lacks. Every route above exists to serve something the
+TUI already does, and the two write paths share `internal/board` and
+`internal/store` rather than reimplementing the rules.
+
+One route has no TUI counterpart because it is plumbing rather than a
+capability: `GET /static/live.js` serves the listener that turns an SSE
+event into a reload. It is in §5 for completeness.
 
 ## Where the surfaces deliberately differ
 
