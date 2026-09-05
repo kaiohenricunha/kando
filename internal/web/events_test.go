@@ -402,6 +402,14 @@ func TestBoardPageLoadsTheDragListener(t *testing.T) {
 	if !strings.Contains(body, `<script src="/static/dnd.js"></script>`) {
 		t.Errorf("the board page should load the drag listener: %s", grepLine(body, "script"))
 	}
+	// Neither script defers or asyncs, so tag order is execution order and
+	// therefore listener-registration order for the same event on the same
+	// target. dnd.js's dragend handler relies on live.js's own dragend
+	// handler having already run first (it checks a flag dnd.js has not yet
+	// cleared) — reordering the tags would silently break that.
+	if i, j := strings.Index(body, "/static/live.js"), strings.Index(body, "/static/dnd.js"); i < 0 || j < 0 || i > j {
+		t.Errorf("live.js must load before dnd.js: live at %d, dnd at %d", i, j)
+	}
 	rec, js := get(t, h, "/static/dnd.js")
 	if rec.Code != 200 || !strings.Contains(js, "dragstart") {
 		t.Errorf("dnd.js: %d %q", rec.Code, js)

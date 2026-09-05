@@ -179,8 +179,10 @@ func (s *server) updateCard() http.HandlerFunc {
 	})
 }
 
-// moveCard mirrors H/L, d and the m picker: the card goes to the top of the
-// target lane with the same date stamping the TUI applies.
+// moveCard mirrors H/L, d and the m picker, plus the board page's drag: the
+// card goes to the top of the target lane with the same date stamping the
+// TUI applies, or to a named position in it when the form asks for one
+// (BOUND-1b, the one thing here the TUI cannot do).
 func (s *server) moveCard() http.HandlerFunc {
 	return s.withCard(afterMove, func(b *board.Board, from board.Lane, i int, _ *board.Card, f url.Values) error {
 		to, ok := board.ParseLane(f.Get("lane"))

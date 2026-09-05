@@ -633,8 +633,8 @@ func TestMoveCardWithinALaneReordersWithoutRestamping(t *testing.T) {
 	if got := laneIDs(t, root, "life", board.Done); got != "g4h5i6j7 k2l3m4n5 "+done.ID {
 		t.Errorf("reorder inside Done: done=%q", got)
 	}
-	if _, _, c := after.Find(done.ID); !c.DoneAt.Equal(done.DoneAt) {
-		t.Errorf("a reorder must not restamp DoneAt: %v → %v", done.DoneAt, c.DoneAt)
+	if _, _, c := after.Find(done.ID); !c.DoneAt.Equal(done.DoneAt) || !c.MovedAt.Equal(done.MovedAt) {
+		t.Errorf("a reorder must not restamp: moved %v → %v, done %v → %v", done.MovedAt, c.MovedAt, done.DoneAt, c.DoneAt)
 	}
 }
 

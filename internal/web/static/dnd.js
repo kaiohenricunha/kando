@@ -11,6 +11,7 @@
   var dragged = null; // the card being dragged
   var drop = null; // where it would land: {pos: "before"|"after"|"start", id}
   var lane = null; // the lane the pointer is over
+  var submitting = false; // a move has been posted; this page is about to navigate away
 
   // Where a drop at y lands, named against a card the user can actually see.
   // Never an index: this page may be filtered, so the last card on screen is
@@ -53,7 +54,6 @@
   function reset() {
     if (dragged) dragged.classList.remove("dragging");
     dragged = drop = lane = null;
-    document.body.removeAttribute("data-busy");
     paint();
   }
 
@@ -91,8 +91,8 @@
     dragged = card;
     card.classList.add("dragging");
     // A reload mid-drag cancels the gesture, and a native drag cannot be
-    // restarted programmatically. live.js waits while this is set and
-    // reloads on dragend.
+    // restarted programmatically. live.js waits while this is set; the
+    // dragend listener below decides when it is actually safe to clear.
     document.body.setAttribute("data-busy", "");
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = "move";
@@ -102,7 +102,17 @@
     }
   });
 
-  document.addEventListener("dragend", reset);
+  document.addEventListener("dragend", function () {
+    reset();
+    // A submit already under way is about to navigate this page away.
+    // Clearing the flag here would let live.js's own dragend listener
+    // (registered first, so it runs first) schedule a reload that could beat
+    // the POST's own navigation and silently drop the move — dragend fires
+    // right after drop, well before a same-origin POST's response returns.
+    // Leave it set; the navigation replaces the whole document, flag
+    // included. An abandoned drag (no submit) still clears it normally.
+    if (!submitting) document.body.removeAttribute("data-busy");
+  });
 
   for (var i = 0; i < lanes.length; i++) {
     lanes[i].addEventListener("dragover", function (e) {
@@ -125,7 +135,10 @@
       var key = e.currentTarget.dataset.lane;
       var where = drop;
       reset();
-      if (where) submit(card, key, where);
+      if (where) {
+        submitting = true;
+        submit(card, key, where);
+      }
     });
   }
 })();
