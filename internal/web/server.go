@@ -46,13 +46,31 @@ type Options struct {
 //go:embed templates/*.html
 var templateFS embed.FS
 
+//go:embed static/live.js
+var staticFS embed.FS
+
 type server struct {
-	root  string
-	def   string
-	now   func() time.Time
-	tpl   *template.Template
-	errw  io.Writer // operational errors (OPS-4); os.Stderr outside tests
-	locks sync.Map  // board name → *sync.Mutex, held across load-mutate-save
+	root      string
+	def       string
+	now       func() time.Time
+	tpl       *template.Template
+	errw      io.Writer // operational errors (OPS-4); os.Stderr outside tests
+	locks     sync.Map  // board name → *sync.Mutex, held across load-mutate-save
+	hub       *hub      // one file watcher per board with an open SSE stream
+	port      int
+	mux       *http.ServeMux
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+// Close releases the file watchers and ends every open SSE stream. Serve
+// calls it on shutdown. It is idempotent and safe from several goroutines
+// at once, which matters because Serve calls it from two.
+func (s *server) Close() {
+	s.closeOnce.Do(func() {
+		close(s.done)
+		s.hub.close()
+	})
 }
 
 // writeLock serialises the read-modify-write of one board against other
@@ -72,15 +90,23 @@ func (s *server) logf(format string, a ...any) {
 }
 
 // New builds the HTTP handler: the routes of §5 behind the security headers
-// and the same-origin guard.
-func New(o Options) http.Handler {
+// and the same-origin guard. The watchers it allocates are released only by
+// Serve, so a handler built here and served by something else keeps its SSE
+// streams open until each client disconnects — fine for tests, which is what
+// this constructor is for now; production goes through Serve.
+func New(o Options) http.Handler { return newServer(o).handler() }
+
+// newServer is New with the concrete type, so a caller that must release the
+// watchers (Serve, and the tests) can reach Close.
+func newServer(o Options) *server {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	s := &server{root: o.Root, def: o.Board, now: o.Now, errw: o.ErrorLog}
+	s := &server{root: o.Root, def: o.Board, now: o.Now, errw: o.ErrorLog, port: o.Port, done: make(chan struct{})}
 	if s.errw == nil {
 		s.errw = os.Stderr
 	}
+	s.hub = newHub(o.Root, s.logf)
 	funcs := template.FuncMap{"urlpath": url.PathEscape}
 	s.tpl = template.Must(template.New("").Funcs(funcs).ParseFS(templateFS, "templates/*.html"))
 	mux := http.NewServeMux()
@@ -90,11 +116,13 @@ func New(o Options) http.Handler {
 	mux.HandleFunc("GET /b/{board}/cards/new", s.newCard)
 	mux.HandleFunc("GET /b/{board}/cards/{id}", s.card)
 	mux.HandleFunc("GET /b/{board}/archive", s.archive)
-	// U9 adds GET /b/{board}/events here. Note the CSP below: it has no
-	// script-src and no connect-src, so an EventSource and the script that
-	// opens it are both refused today — serve the listener from an embedded
-	// /static/live.js under script-src 'self' rather than relaxing the
-	// policy to 'unsafe-inline'. store.WatchBoard is its read-only watcher.
+	mux.HandleFunc("GET /b/{board}/events", s.events)
+	// The one asset, pinned by path: a file server would also answer
+	// GET /static/ with a directory listing and would depend on the embed
+	// layout for its prefix.
+	mux.HandleFunc("GET /static/live.js", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFileFS(w, r, staticFS, "static/live.js")
+	})
 	// Mutations (§5): one form POST per TUI key; see cards.go, boards.go,
 	// archive.go. The same-origin guard is what makes a bare POST safe.
 	mux.HandleFunc("POST /boards", s.createBoard)
@@ -107,7 +135,14 @@ func New(o Options) http.Handler {
 	mux.HandleFunc("POST /b/{board}/cards/{id}/checklist/{index}", s.editChecklistItem)
 	mux.HandleFunc("POST /b/{board}/cards/{id}/delete", s.deleteCard())
 	mux.HandleFunc("POST /b/{board}/archive/{id}/restore", s.restoreCard)
-	return secureHeaders(sameOrigin(o.Port, mux))
+	s.mux = mux
+	return s
+}
+
+// handler is the mux behind the middlewares. Both New and Serve go through
+// it, so a middleware added here cannot miss one of them.
+func (s *server) handler() http.Handler {
+	return secureHeaders(sameOrigin(s.port, s.mux))
 }
 
 // Listen binds the loopback interface only (OPS-1, §7). A busy port is an
@@ -129,19 +164,34 @@ func Serve(ctx context.Context, ln net.Listener, o Options) error {
 	if addr, ok := ln.Addr().(*net.TCPAddr); ok {
 		o.Port = addr.Port
 	}
+	h := newServer(o)
+	defer h.Close()
 	srv := &http.Server{
-		Handler:           New(o),
+		Handler:           h.handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}
+	// Shutdown closes the listener, which makes Serve return straight away,
+	// so the drain has to be waited for explicitly or the process exits
+	// mid-request.
+	ctx, cancelAll := context.WithCancel(ctx)
+	defer cancelAll()
+	drained := make(chan struct{})
 	go func() {
+		defer close(drained)
 		<-ctx.Done()
+		// End the streams first: an open SSE connection would otherwise hold
+		// Shutdown until its grace period expires.
+		h.Close()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		srv.Shutdown(shutdownCtx)
 	}()
-	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	err := srv.Serve(ln)
+	cancelAll() // Serve may have returned for its own reasons
+	<-drained
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
@@ -182,15 +232,16 @@ func sameOrigin(port int, next http.Handler) http.Handler {
 }
 
 // secureHeaders is set on every response, errors and redirects included. The
-// page has no scripts yet, so the policy allows none; the inline stylesheet
-// in layout.html needs 'unsafe-inline' for styles only. frame-ancestors
+// only script is /static/live.js, served from this origin, which opens the
+// SSE stream connect-src allows; the inline stylesheet in layout.html needs
+// 'unsafe-inline' for styles only, and no inline script is ever allowed. frame-ancestors
 // 'none' keeps the board out of other sites' frames, form-action 'self'
 // keeps an injected form from posting elsewhere, and no-store keeps personal
 // board content out of the browser cache (PERF-2).
 func secureHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")

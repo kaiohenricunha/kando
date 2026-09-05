@@ -18,11 +18,23 @@ kando web                     # serves the boards at http://127.0.0.1:4242/
 kando web work --port 8080    # a specific board, a specific port
 ```
 
-The web page is the same board as a local website: add a card, edit its
-title, tag and notes, move it between lanes, block it, tick checklist items,
-delete it, create a board, and restore from the archive. It does not yet
-refresh itself when a file changes — reload the page. Loopback only, no
-login: the loopback bind is the whole security boundary.
+### `kando web`
+
+The same board as a local web page: add a card, edit its title, tag and
+notes, move it between lanes, block it, tick checklist items, delete it,
+create a board, filter with the same query syntax as the TUI, and restore
+from the archive. Every page reflects the files as they are on disk, and an
+open *board* page refreshes itself within a couple of seconds of any change
+— whether it came from another tab, from `kando` in a terminal, or from
+your text editor. The boards list updates on its next load instead, since
+`$KANDO_HOME` itself is not watched. A page with a focused field waits
+until you click away before refreshing, so a reload never eats what you are
+typing.
+
+It binds `127.0.0.1` only and has no login: the loopback bind is the whole
+security boundary, and requests from other origins are refused. Everything
+`kando web` does, the TUI does too, and the other way round —
+`docs/specs/kando-web/parity.md` is the audit, key by key.
 A board literally named `web` opens in the terminal with `kando -- web`.
 
 Minimum terminal size is 60×16; the design target is 120×40. Below 100 columns

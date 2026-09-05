@@ -266,7 +266,7 @@ func TestSecurityHeadersOnEveryResponse(t *testing.T) {
 	for _, path := range []string{"/b/life", "/b/nope", "/"} {
 		rec, _ := get(t, h, path)
 		for k, want := range map[string]string{
-			"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+			"Content-Security-Policy": "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
 			"X-Frame-Options":         "DENY",
 			"X-Content-Type-Options":  "nosniff",
 			"Referrer-Policy":         "no-referrer",
