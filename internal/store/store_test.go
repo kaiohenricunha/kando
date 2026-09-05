@@ -289,3 +289,16 @@ func TestListBoardsIgnoresInvalidNames(t *testing.T) {
 		t.Errorf("ListBoards = %v, want %v (the listed set must equal the openable set)", got, want)
 	}
 }
+
+func TestExists(t *testing.T) {
+	root := t.TempDir()
+	if _, _, err := Open(root, "life"); err != nil {
+		t.Fatal(err)
+	}
+	if !Exists(root, "life") || Exists(root, "nope") || Exists(root, ".hidden") || Exists(root, "../life") {
+		t.Errorf("Exists: life=%v nope=%v hidden=%v traversal=%v", Exists(root, "life"), Exists(root, "nope"), Exists(root, ".hidden"), Exists(root, "../life"))
+	}
+	if _, err := os.Stat(filepath.Join(root, "nope")); err == nil {
+		t.Errorf("Exists must not create anything")
+	}
+}

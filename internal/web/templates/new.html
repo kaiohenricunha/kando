@@ -1,0 +1,10 @@
+{{template "head" .Page}}
+<h1>new card</h1>
+<form method="post" action="/b/{{.Board}}/cards">
+  <label for="title">title</label>
+  <input type="text" id="title" name="title" required autofocus>
+  <label for="lane">lane</label>
+  <select id="lane" name="lane">{{range .Lanes}}<option value="{{.}}"{{if eq . $.Lane}} selected{{end}}>{{.}}</option>{{end}}</select>
+  <div style="margin-top:.75rem"><button type="submit">add</button> <a href="/b/{{.Board}}">cancel</a></div>
+</form>
+{{template "foot"}}

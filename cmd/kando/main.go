@@ -1,15 +1,20 @@
-// Command kando opens a personal kanban board in the terminal.
+// Command kando opens a personal kanban board in the terminal, or serves it
+// as a local web page.
 //
 //	kando [board]
+//	kando web [board] [--port N]
 //
 // Boards live under $KANDO_HOME (default ~/.kando) as plain Markdown files.
 // KANDO_THEME=paper|ember forces the light or dark palette; NO_COLOR drops colours.
 package main
 
 import (
+	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,20 +23,83 @@ import (
 
 	"github.com/kaiohenricunha/kando/internal/store"
 	"github.com/kaiohenricunha/kando/internal/tui"
+	"github.com/kaiohenricunha/kando/internal/web"
 )
 
 const version = "0.1.0"
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage: kando [board]
+       kando web [board] [--port N]
 
-Opens the board (default "life") from $KANDO_HOME (default ~/.kando).
-Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR`)
+Opens the board (default "life") from $KANDO_HOME (default ~/.kando) in the
+terminal, or serves it at http://127.0.0.1:<port>/ (default 4242).
+Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR, KANDO_WEB_PORT`)
+}
+
+// kandoRoot is $KANDO_HOME, defaulting to ~/.kando.
+func kandoRoot() string {
+	if root := os.Getenv("KANDO_HOME"); root != "" {
+		return root
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fatal(err)
+	}
+	return filepath.Join(home, ".kando")
+}
+
+// runWeb serves the board over HTTP on the loopback interface until interrupted.
+func runWeb(args []string) {
+	fs := flag.NewFlagSet("kando web", flag.ExitOnError)
+	port := fs.Int("port", envPort(4242), "port to listen on (or KANDO_WEB_PORT)")
+	fs.Usage = usage
+	// Accept the board name before or after the flags: `kando web life --port 1234`.
+	fs.Parse(args)
+	name := ""
+	if fs.NArg() > 0 {
+		name = fs.Arg(0)
+		fs.Parse(fs.Args()[1:])
+	}
+	if fs.NArg() > 0 || strings.HasPrefix(name, "-") {
+		usage()
+		os.Exit(2)
+	}
+	root := kandoRoot()
+	if name != "" {
+		// Like the TUI, naming a board on the command line creates it if needed.
+		if _, _, err := store.Open(root, name); err != nil {
+			fatal(err)
+		}
+	}
+	ln, err := web.Listen(*port)
+	if err != nil {
+		fatal(err)
+	}
+	fmt.Fprintf(os.Stderr, "kando web: serving %s at http://127.0.0.1:%d/ (ctrl+c to stop)\n", root, *port)
+	if err := http.Serve(ln, web.New(web.Options{Root: root, Board: name, Port: *port})); err != nil {
+		fatal(err)
+	}
+}
+
+// envPort reads KANDO_WEB_PORT, falling back to def.
+func envPort(def int) int {
+	if v := os.Getenv("KANDO_WEB_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n < 65536 {
+			return n
+		}
+		fmt.Fprintf(os.Stderr, "kando: ignoring invalid KANDO_WEB_PORT %q\n", v)
+	}
+	return def
 }
 
 func main() {
 	name := "life"
 	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "web" {
+		runWeb(args[1:])
+		return
+	}
 	if len(args) > 1 {
 		usage()
 		os.Exit(2)
@@ -53,14 +121,7 @@ func main() {
 		}
 	}
 
-	root := os.Getenv("KANDO_HOME")
-	if root == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			fatal(err)
-		}
-		root = filepath.Join(home, ".kando")
-	}
+	root := kandoRoot()
 
 	st, b, err := store.Open(root, name)
 	if err != nil {

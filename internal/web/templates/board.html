@@ -1,0 +1,24 @@
+{{template "head" .Page}}
+<div class="bar">
+  <form method="get" action="/b/{{.Board}}"><input type="text" name="q" value="{{.Query}}" placeholder="filter: title, #tag, !blocked, age>7d"></form>
+  {{if .Query}}<span>{{.Matched}} of {{.Total}} match · <a href="/b/{{.Board}}">clear</a></span>{{end}}
+  <a href="/b/{{.Board}}/archive">archive</a>
+  <a href="/boards">boards</a>
+</div>
+<div class="lanes">
+{{range .Lanes}}
+  <section class="lane" id="lane-{{.Key}}">
+    <h2><span>{{.Name}}</span><span class="count">{{.Count}}</span></h2>
+    {{range .Cards}}
+    <a class="card{{if .Done}} done{{end}}" href="/b/{{$.Board}}/cards/{{.ID}}">
+      <div class="title">{{if .Done}}<span><span class="check">✓</span> <span class="t">{{.Title}}</span></span>{{else}}<span>{{.Title}}</span><span class="age">{{.Age}}</span>{{end}}</div>
+      <div class="notes">{{.Notes}}</div>
+      <div class="meta">{{if .Tag}}<span class="tag">#{{.Tag}}</span>{{end}}{{if .Done}} <span class="age">{{.Age}}</span>{{else}}{{if .Progress}} <span>{{.Progress}}</span>{{end}}{{if .Blocked}} <span class="blocked">⊘ {{.Blocked}}</span>{{end}}{{end}}</div>
+    </a>
+    {{else}}<div class="empty">· · ·</div>{{end}}
+    <a class="add" href="/b/{{$.Board}}/cards/new?lane={{.Key}}">+ add</a>
+  </section>
+{{end}}
+</div>
+<footer><span></span><span>{{.Matched}} cards</span></footer>
+{{template "foot"}}

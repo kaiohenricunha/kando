@@ -102,6 +102,16 @@ func Open(root, name string) (*Store, *board.Board, error) {
 	return s, b, nil
 }
 
+// Exists reports whether root/name is an openable board: a valid name whose
+// board.md is present. It never creates anything, unlike Open.
+func Exists(root, name string) bool {
+	if !ValidBoardName(name) {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(root, name, boardFile))
+	return err == nil
+}
+
 // ListBoards returns the names of every board under root — every subdirectory
 // with a valid board name (see ValidBoardName) that contains a board.md —
 // sorted alphabetically for a stable list/picker UI, so the listed set is
