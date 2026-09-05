@@ -240,6 +240,13 @@ func TestSameOriginMiddleware(t *testing.T) {
 		{"wrong port", []string{"Host", "127.0.0.1:9999"}, http.StatusForbidden},
 		{"foreign origin (CSRF)", []string{"Origin", "http://evil.example"}, http.StatusForbidden},
 		{"null origin", []string{"Origin", "null"}, http.StatusForbidden},
+		// Chrome withholds the origin on a form POST whenever the page's
+		// Referrer-Policy is no-referrer, which secureHeaders sets — so
+		// every mutation form in this app arrives like this. Withheld is
+		// not cross-origin, and Sec-Fetch-Site has already said which it is.
+		{"origin withheld, browser says same-origin", []string{"Origin", "null", "Sec-Fetch-Site", "same-origin"}, 200},
+		{"origin withheld, browser says cross-site", []string{"Origin", "null", "Sec-Fetch-Site", "cross-site"}, http.StatusForbidden},
+		{"foreign origin, browser says same-origin", []string{"Origin", "http://evil.example", "Sec-Fetch-Site", "same-origin"}, http.StatusForbidden},
 		{"cross-site GET without Origin (img/iframe)", []string{"Sec-Fetch-Site", "cross-site"}, http.StatusForbidden},
 		{"same-site subdomain fetch", []string{"Sec-Fetch-Site", "same-site"}, http.StatusForbidden},
 		{"same-origin fetch", []string{"Sec-Fetch-Site", "same-origin"}, 200},

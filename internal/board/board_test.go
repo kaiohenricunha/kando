@@ -233,3 +233,153 @@ func TestFieldsAreCapped(t *testing.T) {
 		}
 	}
 }
+
+// laneIDs is the ids of lane l in order — the readable form for a
+// reordering assertion.
+func laneIDs(b *Board, l Lane) string {
+	ids := make([]string, len(b.Lanes[l]))
+	for i, c := range b.Lanes[l] {
+		ids[i] = c.ID
+	}
+	return strings.Join(ids, " ")
+}
+
+// MoveAt's `at` is insert-before against the lane as it stood before the
+// move, so a same-lane move down has to account for the removal shifting
+// everything below it up one. These are the cases that pin that arithmetic,
+// including both ways of dropping a card on itself.
+func TestMoveAtReordersWithinALane(t *testing.T) {
+	old := now.AddDate(0, 0, -5)
+	cases := []struct {
+		i, at, wantIdx int
+		want           string
+	}{
+		{0, 2, 1, "b a c"}, // a in front of c
+		{2, 0, 0, "c a b"}, // c in front of a
+		{0, 3, 2, "b c a"}, // a appended
+		{1, 1, 1, "a b c"}, // b in front of itself
+		{1, 2, 1, "a b c"}, // b in front of the card below it
+		{0, 0, 0, "a b c"}, // a in front of itself
+		{2, 3, 2, "a b c"}, // c appended, already last
+	}
+	for _, tc := range cases {
+		b := &Board{}
+		for _, id := range []string{"a", "b", "c"} {
+			b.Lanes[Todo] = append(b.Lanes[Todo], &Card{ID: id, MovedAt: old})
+		}
+		idx := b.MoveAt(Todo, tc.i, Todo, tc.at, now)
+		if got := laneIDs(b, Todo); got != tc.want || idx != tc.wantIdx {
+			t.Errorf("MoveAt(Todo, %d, Todo, %d) = %d %q, want %d %q", tc.i, tc.at, idx, got, tc.wantIdx, tc.want)
+		}
+		for _, c := range b.Lanes[Todo] {
+			if !c.MovedAt.Equal(old) {
+				t.Errorf("MoveAt(Todo, %d, Todo, %d) restamped %q: a reorder is not a lane change", tc.i, tc.at, c.ID)
+			}
+		}
+	}
+}
+
+// A cross-lane MoveAt is Move with a chosen position: the same stamping
+// rule, a different insert index.
+func TestMoveAtPlacesACardAcrossLanes(t *testing.T) {
+	b := &Board{}
+	for _, id := range []string{"x", "y", "z"} {
+		b.Lanes[Doing] = append(b.Lanes[Doing], &Card{ID: id})
+	}
+	a := &Card{ID: "a", MovedAt: now.AddDate(0, 0, -5)}
+	b.Lanes[Todo] = []*Card{a}
+
+	if idx := b.MoveAt(Todo, 0, Doing, 2, now); idx != 2 || laneIDs(b, Doing) != "x y a z" {
+		t.Fatalf("into the middle of a lane: idx=%d doing=%q", idx, laneIDs(b, Doing))
+	}
+	if len(b.Lanes[Todo]) != 0 {
+		t.Errorf("the card should have left Todo: %q", laneIDs(b, Todo))
+	}
+	if !a.MovedAt.Equal(now) {
+		t.Errorf("a cross-lane move stamps MovedAt: %v", a.MovedAt)
+	}
+	later := now.Add(time.Hour)
+	b.MoveAt(Doing, 2, Done, 0, later)
+	if !a.DoneAt.Equal(later) || !a.MovedAt.Equal(later) {
+		t.Errorf("entering Done: doneAt=%v movedAt=%v", a.DoneAt, a.MovedAt)
+	}
+	b.MoveAt(Done, 0, Backlog, 0, later)
+	if !a.DoneAt.IsZero() {
+		t.Errorf("DoneAt should clear leaving Done: %v", a.DoneAt)
+	}
+	if idx := b.MoveAt(Backlog, 0, Todo, 0, now); idx != 0 || laneIDs(b, Todo) != "a" {
+		t.Errorf("an empty lane takes the card at its only position: idx=%d todo=%q", idx, laneIDs(b, Todo))
+	}
+}
+
+func TestMoveAtClampsThePositionAndRejectsABadSource(t *testing.T) {
+	b := &Board{}
+	b.Lanes[Todo] = []*Card{{ID: "a"}, {ID: "b"}}
+	b.Lanes[Doing] = []*Card{{ID: "x"}}
+
+	if idx := b.MoveAt(Todo, 0, Doing, 99, now); idx != 1 || laneIDs(b, Doing) != "x a" {
+		t.Errorf("an at past the end should clamp to the end: idx=%d doing=%q", idx, laneIDs(b, Doing))
+	}
+	if idx := b.MoveAt(Todo, 0, Doing, -3, now); idx != 0 || laneIDs(b, Doing) != "b x a" {
+		t.Errorf("a negative at should clamp to the top: idx=%d doing=%q", idx, laneIDs(b, Doing))
+	}
+	if idx := b.MoveAt(Todo, 5, Doing, 0, now); idx != -1 {
+		t.Errorf("an out-of-range source index should be -1, got %d", idx)
+	}
+	if idx := b.MoveAt(Todo, -1, Doing, 0, now); idx != -1 {
+		t.Errorf("a negative source index should be -1, got %d", idx)
+	}
+	if got := laneIDs(b, Doing); got != "b x a" {
+		t.Errorf("a rejected move must not touch the board: %q", got)
+	}
+}
+
+// MoveAt at the top of a lane must be Move: the two are one rule for what a
+// lane change does, and only the position differs. Cheap insurance against
+// them drifting apart.
+func TestMoveAtAtTheTopMatchesMove(t *testing.T) {
+	build := func() *Board {
+		b := &Board{}
+		old := now.AddDate(0, 0, -5)
+		b.Lanes[Todo] = []*Card{{ID: "a", MovedAt: old}, {ID: "b", MovedAt: old}}
+		b.Lanes[Done] = []*Card{{ID: "d", MovedAt: old, DoneAt: old}}
+		return b
+	}
+	for _, to := range Lanes {
+		byMove, byMoveAt := build(), build()
+		from, i := Todo, 1
+		if to == Todo {
+			from, i = Done, 0
+		}
+		byMove.Move(from, i, to, now)
+		byMoveAt.MoveAt(from, i, to, 0, now)
+		for _, l := range Lanes {
+			if laneIDs(byMove, l) != laneIDs(byMoveAt, l) {
+				t.Fatalf("into %v: Move gave %q, MoveAt gave %q", to, laneIDs(byMove, l), laneIDs(byMoveAt, l))
+			}
+			for j, c := range byMove.Lanes[l] {
+				if got := byMoveAt.Lanes[l][j]; !got.MovedAt.Equal(c.MovedAt) || !got.DoneAt.Equal(c.DoneAt) {
+					t.Errorf("into %v, card %q: Move stamped %v/%v, MoveAt %v/%v",
+						to, c.ID, c.MovedAt, c.DoneAt, got.MovedAt, got.DoneAt)
+				}
+			}
+		}
+	}
+}
+
+// Tidying the order inside Done must not touch DoneAt: it is what the age
+// both surfaces show is measured from, and what the archive groups by week.
+func TestMoveAtWithinDoneKeepsDoneAt(t *testing.T) {
+	old := now.AddDate(0, 0, -5)
+	b := &Board{}
+	b.Lanes[Done] = []*Card{{ID: "d", MovedAt: old, DoneAt: old}, {ID: "e", MovedAt: old, DoneAt: old}}
+	b.MoveAt(Done, 0, Done, 2, now)
+	if laneIDs(b, Done) != "e d" {
+		t.Fatalf("done = %q, want %q", laneIDs(b, Done), "e d")
+	}
+	for _, c := range b.Lanes[Done] {
+		if !c.DoneAt.Equal(old) || !c.MovedAt.Equal(old) {
+			t.Errorf("%q restamped: moved=%v done=%v", c.ID, c.MovedAt, c.DoneAt)
+		}
+	}
+}

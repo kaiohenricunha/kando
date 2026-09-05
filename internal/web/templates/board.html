@@ -7,10 +7,10 @@
 </div>
 <div class="lanes">
 {{range .Lanes}}
-  <section class="lane" id="lane-{{.Key}}">
+  <section class="lane" id="lane-{{.Key}}" data-lane="{{.Key}}">
     <h2><span>{{.Name}}</span><span class="count">{{.Count}}</span></h2>
     {{range .Cards}}
-    <a class="card{{if .Done}} done{{end}}" href="/b/{{urlpath $.Board}}/cards/{{urlpath .ID}}">
+    <a class="card{{if .Done}} done{{end}}" href="/b/{{urlpath $.Board}}/cards/{{urlpath .ID}}" draggable="true" data-id="{{.ID}}">
       <div class="title">{{if .Done}}<span><span class="check">✓</span> <span class="t">{{.Title}}</span></span>{{else}}<span>{{.Title}}</span><span class="age">{{.Age}}</span>{{end}}</div>
       <div class="notes">{{.Notes}}</div>
       <div class="meta">{{if .Tag}}<span class="tag">#{{.Tag}}</span>{{end}}{{if .Done}} <span class="age">{{.Age}}</span>{{else}}{{if .Progress}} <span>{{.Progress}}</span>{{end}}{{if .Blocked}} <span class="blocked">⊘ {{.Blocked}}</span>{{end}}{{end}}</div>

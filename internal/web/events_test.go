@@ -392,3 +392,51 @@ func TestAReplacedWatcherDoesNotTearDownItsSuccessor(t *testing.T) {
 	default:
 	}
 }
+
+// The board page's drag-and-drop is a second file beside live.js, pinned by
+// its own route for the same reason: a file server over the embed would also
+// answer for anything else that lands in static/.
+func TestBoardPageLoadsTheDragListener(t *testing.T) {
+	h := newHandler(t, newRoot(t), "life")
+	_, body := get(t, h, "/b/life")
+	if !strings.Contains(body, `<script src="/static/dnd.js"></script>`) {
+		t.Errorf("the board page should load the drag listener: %s", grepLine(body, "script"))
+	}
+	rec, js := get(t, h, "/static/dnd.js")
+	if rec.Code != 200 || !strings.Contains(js, "dragstart") {
+		t.Errorf("dnd.js: %d %q", rec.Code, js)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "javascript") {
+		t.Errorf("dnd.js content type: %q", ct)
+	}
+	// Still no widening of the embed: the guard above must hold with two
+	// assets pinned, not one.
+	for _, path := range []string{"/static/", "/static/../static/dnd.js", "/static/dnd.js/../live.js", "/static/../../go.mod"} {
+		if rec, _ := get(t, h, path); rec.Code == http.StatusOK {
+			t.Errorf("GET %s should not be served: %d", path, rec.Code)
+		}
+	}
+}
+
+// The drag script needs an id per card and a drag source it is allowed to
+// pick up; the lane key it drops into is the section id the page already has.
+func TestBoardCardsAreDragSources(t *testing.T) {
+	root := newRoot(t)
+	h := newHandler(t, root, "life")
+	_, body := get(t, h, "/b/life")
+	id := todoCard(t, root)
+	if !strings.Contains(body, `draggable="true"`) {
+		t.Errorf("cards should be draggable: %s", grepLine(body, "class=\"card"))
+	}
+	if !strings.Contains(body, `data-id="`+id+`"`) {
+		t.Errorf("cards should carry their id: %s", grepLine(body, "class=\"card"))
+	}
+	if !strings.Contains(body, `data-lane="todo"`) {
+		t.Errorf("lanes should name the key a drop posts: %s", grepLine(body, "class=\"lane"))
+	}
+	// The drop builds its action from the card's own href, which the server
+	// escaped; that link must survive the new attributes untouched.
+	if !strings.Contains(body, `href="/b/life/cards/`+id+`"`) {
+		t.Errorf("the card link should be unchanged: %s", grepLine(body, "class=\"card"))
+	}
+}

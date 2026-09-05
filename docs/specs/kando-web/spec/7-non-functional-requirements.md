@@ -89,3 +89,15 @@ token to fire — and a remote page could read the board via DNS rebinding
 (binding a hostname it controls to `127.0.0.1`). A CSRF token is still not
 required: the Host/Origin check already blocks the browser-driven path,
 and SEC-1 accepts same-machine process access as the remaining risk.
+
+One clarification, found in U11 by driving a real browser rather than
+`httptest`: an `Origin` of `null` is an origin *withheld*, not a foreign
+one, and the two must not be conflated. Chrome sends `Origin: null` on every
+form `POST` from a page whose `Referrer-Policy` is `no-referrer` — which is
+the policy this server sets — so before U11 every mutation form in
+`kando web` was refused with a 403 in Chrome, while the `httptest` suite
+passed because it set the header a real browser never sends. A withheld
+origin is accepted only when `Sec-Fetch-Site` says `same-origin`; the
+browser sets that header and script cannot forge it, a cross-site value is
+already refused, and an `Origin` naming any other host is still refused
+outright.

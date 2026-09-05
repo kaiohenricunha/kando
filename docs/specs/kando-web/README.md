@@ -45,6 +45,16 @@ Files line is corrected, and §6.6's SSE rollback row now lists all four
 coupled edits. KD-1 ("no JS dependency") and OPS-2 ("no build step") are
 unaffected: it is one embedded file in the same binary.
 
+Finalization pass (2026-09-05, U11): drag-and-drop placement makes the web
+page the first surface with a capability the other lacks, so §2 gains
+BOUND-1b and the parity audit's "Web-only" section is no longer empty. The
+exception is *precision*, not capability — both surfaces put a card in a
+lane; only the browser picks where in it — and it shrinks further on touch
+and keyboard, where HTML5 drag never fires at all. §5's `/move` row gains
+the `pos`/`anchor` vocabulary and, with it, the first redirect in this
+server that depends on what the form asked for; that rule is now stated
+under the route table. §6.1, §6.3, §6.4 and §6.6 gain U11 entries.
+
 ## Parity audit
 
 [parity.md](parity.md) — every TUI key against the §5 route that does the

@@ -550,3 +550,204 @@ func TestNotesCannotBreakTheBoardFile(t *testing.T) {
 		t.Errorf("board page after structural notes: %d", rec.Code)
 	}
 }
+
+// laneIDs is the ids of one lane as it is on disk, in order — the readable
+// form for a drop-position assertion.
+func laneIDs(t *testing.T, root, name string, l board.Lane) string {
+	t.Helper()
+	var ids []string
+	for _, c := range reload(t, root, name).Lanes[l] {
+		ids = append(ids, c.ID)
+	}
+	return strings.Join(ids, " ")
+}
+
+// A drop names the card it landed against, so the position survives a
+// filtered page and a board that changed underneath, and returns to the
+// board it was dragged on rather than to the card's own page.
+func TestMoveCardToAPosition(t *testing.T) {
+	root := newRoot(t)
+	h := newHandler(t, root, "life")
+	if got := laneIDs(t, root, "life", board.Doing); got != "u4v5w6x7 y2z3a4b5" {
+		t.Fatalf("fixture changed: doing=%q", got)
+	}
+	id := todoCard(t, root) // k7q2m9ab, the first Todo card
+	wantRedirect(t, post(t, h, "/b/life/cards/"+id+"/move",
+		url.Values{"lane": {"doing"}, "pos": {"after"}, "anchor": {"u4v5w6x7"}}), "/b/life")
+	if got := laneIDs(t, root, "life", board.Doing); got != "u4v5w6x7 "+id+" y2z3a4b5" {
+		t.Errorf("after u4v5w6x7: doing=%q", got)
+	}
+
+	next := reload(t, root, "life").Lanes[board.Todo][0].ID // m2n3o4p5
+	wantRedirect(t, post(t, h, "/b/life/cards/"+next+"/move",
+		url.Values{"lane": {"doing"}, "pos": {"before"}, "anchor": {"u4v5w6x7"}}), "/b/life")
+	if got := laneIDs(t, root, "life", board.Doing); got != next+" u4v5w6x7 "+id+" y2z3a4b5" {
+		t.Errorf("before u4v5w6x7: doing=%q", got)
+	}
+
+	// A lane rendering no cards has one position, and it is the top — the
+	// same place `+ add` and a plain lane move put a card.
+	last := reload(t, root, "life").Lanes[board.Todo][0].ID
+	wantRedirect(t, post(t, h, "/b/life/cards/"+last+"/move",
+		url.Values{"lane": {"backlog"}, "pos": {"start"}}), "/b/life")
+	if got := laneIDs(t, root, "life", board.Backlog); got != last+" a2b3c4d5 e6f7g2h3 i4j5k6l7" {
+		t.Errorf("start of a lane: backlog=%q", got)
+	}
+}
+
+// The board page a card was dragged on may be filtered, so the redirect has
+// to carry the filter back or the drag silently clears the view.
+func TestMoveToAPositionKeepsTheFilter(t *testing.T) {
+	root := newRoot(t)
+	h := newHandler(t, root, "life")
+	id := todoCard(t, root)
+	wantRedirect(t, post(t, h, "/b/life/cards/"+id+"/move",
+		url.Values{"lane": {"doing"}, "pos": {"start"}, "q": {"#home"}}), "/b/life?q=%23home")
+}
+
+// Reordering inside a lane is not a lane change, so the dates must survive
+// it: MovedAt drives nothing visible, but DoneAt drives the age both
+// surfaces show and the week the archive groups a card under.
+func TestMoveCardWithinALaneReordersWithoutRestamping(t *testing.T) {
+	root := newRoot(t)
+	h := newHandler(t, root, "life")
+	first := todoCard(t, root)
+	last := "q6r7s2t3"
+	_, _, was := reload(t, root, "life").Find(last)
+	moved := was.MovedAt
+
+	wantRedirect(t, post(t, h, "/b/life/cards/"+last+"/move",
+		url.Values{"lane": {"todo"}, "pos": {"before"}, "anchor": {first}}), "/b/life")
+	if got := laneIDs(t, root, "life", board.Todo); got != last+" "+first+" m2n3o4p5" {
+		t.Errorf("reorder to the top: todo=%q", got)
+	}
+	_, _, now := reload(t, root, "life").Find(last)
+	if !now.MovedAt.Equal(moved) {
+		t.Errorf("a reorder must not restamp MovedAt: %v → %v", moved, now.MovedAt)
+	}
+
+	done := reload(t, root, "life").Lanes[board.Done][0]
+	wantRedirect(t, post(t, h, "/b/life/cards/"+done.ID+"/move",
+		url.Values{"lane": {"done"}, "pos": {"after"}, "anchor": {"k2l3m4n5"}}), "/b/life")
+	after := reload(t, root, "life")
+	if got := laneIDs(t, root, "life", board.Done); got != "g4h5i6j7 k2l3m4n5 "+done.ID {
+		t.Errorf("reorder inside Done: done=%q", got)
+	}
+	if _, _, c := after.Find(done.ID); !c.DoneAt.Equal(done.DoneAt) {
+		t.Errorf("a reorder must not restamp DoneAt: %v → %v", done.DoneAt, c.DoneAt)
+	}
+}
+
+// The guard on the dispatch: a move with no position is the lane picker's,
+// which has always been a top-insert and a same-lane no-op. Routing it
+// through MoveAt instead would turn a stray click on the picker — it
+// pre-selects the lane the card is already in — into a jump to the top,
+// restamping the dates on the way.
+func TestMoveWithoutAPositionIsUnchanged(t *testing.T) {
+	root := newRoot(t)
+	h := newHandler(t, root, "life")
+	mid := reload(t, root, "life").Lanes[board.Todo][1] // m2n3o4p5
+	before := laneIDs(t, root, "life", board.Todo)
+
+	wantRedirect(t, post(t, h, "/b/life/cards/"+mid.ID+"/move",
+		url.Values{"lane": {"todo"}}), "/b/life/cards/"+mid.ID)
+	if got := laneIDs(t, root, "life", board.Todo); got != before {
+		t.Errorf("a same-lane move with no position must not reorder: %q → %q", before, got)
+	}
+	_, _, now := reload(t, root, "life").Find(mid.ID)
+	if !now.MovedAt.Equal(mid.MovedAt) {
+		t.Errorf("nor restamp: %v → %v", mid.MovedAt, now.MovedAt)
+	}
+}
+
+// The anchor is a card that was on the page when it rendered. If it has left
+// the destination lane the page is stale, and the write is refused rather
+// than landing the card somewhere it was not dropped.
+func TestMoveRejectsABadOrStalePosition(t *testing.T) {
+	root := newRoot(t)
+	h := newHandler(t, root, "life")
+	id := todoCard(t, root)
+	before, err := os.ReadFile(filepath.Join(root, "life", "board.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name   string
+		form   url.Values
+		status int
+	}{
+		{"an anchor in another lane", url.Values{"lane": {"todo"}, "pos": {"before"}, "anchor": {"u4v5w6x7"}}, http.StatusConflict},
+		{"an anchor that is gone", url.Values{"lane": {"todo"}, "pos": {"after"}, "anchor": {"zzzzzzzz"}}, http.StatusConflict},
+		{"a position with no anchor", url.Values{"lane": {"todo"}, "pos": {"before"}}, http.StatusBadRequest},
+		{"an empty anchor", url.Values{"lane": {"todo"}, "pos": {"after"}, "anchor": {""}}, http.StatusBadRequest},
+		{"a position nobody defines", url.Values{"lane": {"todo"}, "pos": {"sideways"}}, http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		if rec := post(t, h, "/b/life/cards/"+id+"/move", tc.form); rec.Code != tc.status {
+			t.Errorf("%s: status = %d, want %d", tc.name, rec.Code, tc.status)
+		}
+	}
+	after, err := os.ReadFile(filepath.Join(root, "life", "board.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Errorf("a refused move must not write to board.md")
+	}
+}
+
+// Dropping a card on its own edge is a real gesture, not an error: both
+// halves of its own box name a position it already holds.
+func TestDroppingACardOnItselfChangesNothing(t *testing.T) {
+	root := newRoot(t)
+	h := newHandler(t, root, "life")
+	id := todoCard(t, root)
+	before, err := os.ReadFile(filepath.Join(root, "life", "board.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pos := range []string{"before", "after"} {
+		wantRedirect(t, post(t, h, "/b/life/cards/"+id+"/move",
+			url.Values{"lane": {"todo"}, "pos": {pos}, "anchor": {id}}), "/b/life")
+		after, err := os.ReadFile(filepath.Join(root, "life", "board.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(after) != string(before) {
+			t.Errorf("pos=%s on itself rewrote the board", pos)
+		}
+	}
+}
+
+// data-id is the first place a card id reaches a plain HTML attribute —
+// everywhere else it goes through urlpath. A hand-edited board.md assigns
+// ids verbatim (internal/store/markdown.go), so one can carry quotes.
+func TestHandWrittenCardIdIsSafeInADragAttribute(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "hand"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	md := "## Todo\n\n### Ordinary\nid: start\n\n### Sneaky\nid: x\" onmouseover=\"alert(1)\n"
+	if err := os.WriteFile(filepath.Join(root, "hand", "board.md"), []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := newHandler(t, root, "hand")
+	rec, body := get(t, h, "/b/hand")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /b/hand: %d", rec.Code)
+	}
+	if strings.Contains(body, `onmouseover="alert(1)"`) {
+		t.Errorf("a hand-written id must not escape its attribute: %s", grepLine(body, "Sneaky"))
+	}
+	if !strings.Contains(body, `data-id="x&#34; onmouseover=&#34;alert(1)"`) {
+		t.Errorf("the id should be there, escaped: %s", grepLine(body, "Sneaky"))
+	}
+	// An id that spells a position word is still just an id: pos and anchor
+	// are separate fields, so nothing about it is reserved.
+	wantRedirect(t, post(t, h, "/b/hand/cards/start/move",
+		url.Values{"lane": {"doing"}, "pos": {"start"}}), "/b/hand")
+	if got := laneIDs(t, root, "hand", board.Doing); got != "start" {
+		t.Errorf("a card named \"start\": doing=%q", got)
+	}
+}

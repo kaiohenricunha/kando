@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/kaiohenricunha/kando/internal/board"
 	"github.com/kaiohenricunha/kando/internal/store"
@@ -81,7 +82,7 @@ type cardOp func(b *board.Board, lane board.Lane, i int, c *board.Card, f url.Va
 
 // withCard is the shape every card route shares: parse the form, open the
 // board for writing, find the card, apply op, save, redirect to `to`.
-func (s *server) withCard(to func(name, id string) string, op cardOp) http.HandlerFunc {
+func (s *server) withCard(to func(name, id string, f url.Values) string, op cardOp) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name, id := r.PathValue("board"), r.PathValue("id")
 		f, err := form(w, r)
@@ -104,13 +105,33 @@ func (s *server) withCard(to func(name, id string) string, op cardOp) http.Handl
 			s.fail(w, err)
 			return
 		}
-		s.commit(w, r, st, b, to(name, id))
+		s.commit(w, r, st, b, to(name, id, f))
 	}
 }
 
-func toCard(name, id string) string { return cardURL(name, id) }
+func toCard(name, id string, _ url.Values) string { return cardURL(name, id) }
 
-func toBoard(name, _ string) string { return boardURL(name) }
+func toBoard(name, _ string, _ url.Values) string { return boardURL(name) }
+
+// withQuery puts back the ?q= the page carried, so a redirect lands the user
+// on the view they acted from rather than an unfiltered one.
+func withQuery(base string, f url.Values) string {
+	if q := strings.TrimSpace(f.Get("q")); q != "" {
+		return base + "?q=" + url.QueryEscape(q)
+	}
+	return base
+}
+
+// afterMove sends a move back where it came from: a positioned move is a drag
+// on the board page, so it returns to the board with the filter intact; a
+// move with no position came from the card detail page's lane picker, so it
+// returns to the card.
+func afterMove(name, id string, f url.Values) string {
+	if f.Get("pos") == "" {
+		return cardURL(name, id)
+	}
+	return withQuery(boardURL(name), f)
+}
 
 // createCard mirrors `a`: a new card at the top of the chosen lane.
 func (s *server) createCard(w http.ResponseWriter, r *http.Request) {
@@ -161,14 +182,72 @@ func (s *server) updateCard() http.HandlerFunc {
 // moveCard mirrors H/L, d and the m picker: the card goes to the top of the
 // target lane with the same date stamping the TUI applies.
 func (s *server) moveCard() http.HandlerFunc {
-	return s.withCard(toCard, func(b *board.Board, from board.Lane, i int, _ *board.Card, f url.Values) error {
+	return s.withCard(afterMove, func(b *board.Board, from board.Lane, i int, _ *board.Card, f url.Values) error {
 		to, ok := board.ParseLane(f.Get("lane"))
 		if !ok {
 			return &httpError{http.StatusBadRequest, "invalid lane"}
 		}
-		b.Move(from, i, to, s.now())
+		at, positioned, err := movePos(b, to, f)
+		if err != nil {
+			return err
+		}
+		if !positioned {
+			// No position asked for: the lane picker's move, unchanged —
+			// including its same-lane no-op, which MoveAt would otherwise
+			// turn into a jump to the top of the lane the card is in.
+			b.Move(from, i, to, s.now())
+			return nil
+		}
+		b.MoveAt(from, i, to, at, s.now())
 		return nil
 	})
+}
+
+// movePos resolves where in the destination lane a move lands. It names a
+// position relative to a card the user was looking at, never an index:
+//
+//	(no pos)             not positioned — Board.Move, the top of the lane
+//	pos=start            index 0
+//	pos=before, anchor=X immediately above X
+//	pos=after,  anchor=X immediately below X
+//
+// An index would be wrong twice over. The board page filters with ?q=
+// (board.go), so the nth card on screen is not the nth card in the lane —
+// which is also why there is no "append": the last card the user can see is
+// not the last card in the lane, and "after the last one I can see" is the
+// only reading of that gesture that is true on a filtered board. And the TUI
+// or a text editor can move a card between the render and the drop, so an
+// anchor that has left this lane means the page is stale: that is a 409,
+// the same answer a stale checklist index gets, rather than a card landing
+// somewhere it was not dropped.
+//
+// pos and anchor are separate fields so no id-shaped value is ever reserved;
+// a hand-edited board.md may give a card any id at all, "start" included.
+func movePos(b *board.Board, to board.Lane, f url.Values) (at int, positioned bool, err error) {
+	switch pos := f.Get("pos"); pos {
+	case "":
+		return 0, false, nil
+	case "start":
+		return 0, true, nil
+	case "before", "after":
+		anchor := f.Get("anchor")
+		if anchor == "" {
+			return 0, false, &httpError{http.StatusBadRequest, "a position needs an anchor card"}
+		}
+		// A card dropped against itself resolves to a position it already
+		// holds, which MoveAt treats as the no-op it is.
+		for i, c := range b.Lanes[to] {
+			if c.ID == anchor {
+				if pos == "after" {
+					return i + 1, true, nil
+				}
+				return i, true, nil
+			}
+		}
+		return 0, false, &httpError{http.StatusConflict, "that card moved — reload and try again"}
+	default:
+		return 0, false, &httpError{http.StatusBadRequest, "invalid position"}
+	}
 }
 
 // blockCard mirrors `b`: a reason blocks, an empty reason clears.
