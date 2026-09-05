@@ -2,6 +2,8 @@ package store
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -226,7 +228,7 @@ func TestListBoardsIgnoresNonBoardDirs(t *testing.T) {
 
 func TestValidBoardName(t *testing.T) {
 	valid := []string{"life", "work-2024", "a", "My Board", "日本"}
-	invalid := []string{"", ".", "..", ".hidden", "a/b", "../evil", "a\\b", "/etc", "a\nb", "tab\there", strings.Repeat("x", 65), "bad\xffutf8"}
+	invalid := []string{"", ".", "..", ".hidden", "a/b", "../evil", "a\\b", "/etc", "a\nb", "tab\there", strings.Repeat("x", 65), "bad\xffutf8", "q#1", "a?b", "50%", "a&b", "a+b", "a;b"}
 	for _, n := range valid {
 		if !ValidBoardName(n) {
 			t.Errorf("ValidBoardName(%q) = false, want true", n)
@@ -300,5 +302,32 @@ func TestExists(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "nope")); err == nil {
 		t.Errorf("Exists must not create anything")
+	}
+}
+
+func TestLoadIsReadOnly(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "life")
+	os.MkdirAll(dir, 0o755)
+	idless := []byte("## Todo\n\n### No id yet\n")
+	os.WriteFile(filepath.Join(dir, "board.md"), idless, 0o644)
+	b, err := Load(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Name != "life" || b.Count() != 1 || len(b.Lanes[board.Todo][0].ID) != 8 {
+		t.Errorf("Load: %+v", b)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "board.md")); !bytes.Equal(got, idless) {
+		t.Errorf("Load must not rewrite board.md:\n%s", got)
+	}
+	if _, err := Load(root, "nope"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("missing board should be fs.ErrNotExist, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "nope")); err == nil {
+		t.Errorf("Load must not create a directory")
+	}
+	if _, err := Load(root, "../evil"); err == nil {
+		t.Errorf("invalid name should error")
 	}
 }

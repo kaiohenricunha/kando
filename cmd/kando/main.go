@@ -9,13 +9,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"net/http"
+	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -33,7 +36,9 @@ func usage() {
        kando web [board] [--port N]
 
 Opens the board (default "life") from $KANDO_HOME (default ~/.kando) in the
-terminal, or serves it at http://127.0.0.1:<port>/ (default 4242).
+terminal, or serves it at http://127.0.0.1:<port>/ (default 4242). The board
+name may come before or after the flags. A board literally named "web" opens
+in the terminal with: kando -- web
 Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR, KANDO_WEB_PORT`)
 }
 
@@ -65,6 +70,9 @@ func runWeb(args []string) {
 		usage()
 		os.Exit(2)
 	}
+	if *port < 1 || *port > 65535 {
+		fatal(fmt.Errorf("invalid port %d: must be 1-65535", *port))
+	}
 	root := kandoRoot()
 	if name != "" {
 		// Like the TUI, naming a board on the command line creates it if needed.
@@ -76,8 +84,12 @@ func runWeb(args []string) {
 	if err != nil {
 		fatal(err)
 	}
-	fmt.Fprintf(os.Stderr, "kando web: serving %s at http://127.0.0.1:%d/ (ctrl+c to stop)\n", root, *port)
-	if err := http.Serve(ln, web.New(web.Options{Root: root, Board: name, Port: *port})); err != nil {
+	bound := ln.Addr().(*net.TCPAddr).Port
+	fmt.Fprintf(os.Stderr, "kando web: serving %s at http://127.0.0.1:%d/ (ctrl+c to stop)\n", root, bound)
+	// ctrl+c / SIGTERM drain in-flight requests instead of cutting them off.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := web.Serve(ctx, ln, web.Options{Root: root, Board: name}); err != nil {
 		fatal(err)
 	}
 }
@@ -96,7 +108,9 @@ func envPort(def int) int {
 func main() {
 	name := "life"
 	args := os.Args[1:]
-	if len(args) > 0 && args[0] == "web" {
+	if len(args) > 0 && args[0] == "--" { // `kando -- web` opens the TUI on a board named "web"
+		args = args[1:]
+	} else if len(args) > 0 && args[0] == "web" {
 		runWeb(args[1:])
 		return
 	}

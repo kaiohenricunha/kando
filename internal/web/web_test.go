@@ -1,11 +1,14 @@
 package web
 
 import (
+	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -150,9 +153,6 @@ func TestUnknownAndInvalidBoards(t *testing.T) {
 	if rec, _ := get(t, h, "/b/.hidden"); rec.Code != http.StatusBadRequest {
 		t.Errorf("invalid board name: %d", rec.Code)
 	}
-	if _, err := os.Stat(filepath.Join(t.TempDir(), "nope")); err == nil {
-		t.Errorf("a GET must never create a board directory")
-	}
 }
 
 func TestGetNeverCreatesABoard(t *testing.T) {
@@ -201,6 +201,10 @@ func TestSameOriginMiddleware(t *testing.T) {
 		{"wrong port", []string{"Host", "127.0.0.1:9999"}, http.StatusForbidden},
 		{"foreign origin (CSRF)", []string{"Origin", "http://evil.example"}, http.StatusForbidden},
 		{"null origin", []string{"Origin", "null"}, http.StatusForbidden},
+		{"cross-site GET without Origin (img/iframe)", []string{"Sec-Fetch-Site", "cross-site"}, http.StatusForbidden},
+		{"same-site subdomain fetch", []string{"Sec-Fetch-Site", "same-site"}, http.StatusForbidden},
+		{"same-origin fetch", []string{"Sec-Fetch-Site", "same-origin"}, 200},
+		{"typed into the address bar", []string{"Sec-Fetch-Site", "none"}, 200},
 	}
 	for _, c := range cases {
 		if rec, _ := get(t, h, "/b/life", c.hdr...); rec.Code != c.want {
@@ -216,4 +220,119 @@ func grepLine(body, needle string) string {
 		}
 	}
 	return ""
+}
+
+func TestSecurityHeadersOnEveryResponse(t *testing.T) {
+	h := newHandler(t, newRoot(t), "life")
+	for _, path := range []string{"/b/life", "/b/nope", "/"} {
+		rec, _ := get(t, h, path)
+		for k, want := range map[string]string{
+			"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+			"X-Frame-Options":         "DENY",
+			"X-Content-Type-Options":  "nosniff",
+			"Referrer-Policy":         "no-referrer",
+			"Cache-Control":           "no-store",
+		} {
+			if got := rec.Header().Get(k); got != want {
+				t.Errorf("%s: %s = %q, want %q", path, k, got, want)
+			}
+		}
+	}
+}
+
+func TestGetDoesNotRewriteIdlessBoard(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "hand")
+	os.MkdirAll(dir, 0o755)
+	idless := []byte("## Todo\n\n### Typed by hand\n")
+	os.WriteFile(filepath.Join(dir, "board.md"), idless, 0o644)
+	h := newHandler(t, root, "hand")
+	rec, body := get(t, h, "/b/hand")
+	if rec.Code != 200 || !strings.Contains(body, "Typed by hand") {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "board.md")); string(got) != string(idless) {
+		t.Errorf("a GET rewrote board.md:\n%s", got)
+	}
+	names, _ := store.ListBoards(root)
+	if len(names) != 1 {
+		t.Errorf("a GET created something: %v", names)
+	}
+}
+
+func TestBoardNameIsEscapedInLinks(t *testing.T) {
+	root := newRoot(t)
+	if _, _, err := store.Open(root, "My Board"); err != nil {
+		t.Fatal(err)
+	}
+	h := newHandler(t, root, "My Board")
+	rec, _ := get(t, h, "/")
+	if loc := rec.Header().Get("Location"); loc != "/b/My%20Board" {
+		t.Errorf("redirect = %q", loc)
+	}
+	_, body := get(t, h, "/boards")
+	if !strings.Contains(body, `href="/b/My%20Board"`) {
+		t.Errorf("boards list should escape the name: %s", grepLine(body, "My"))
+	}
+	if rec, _ := get(t, h, "/b/My%20Board"); rec.Code != 200 {
+		t.Errorf("escaped link must resolve: %d", rec.Code)
+	}
+}
+
+func TestArchiveStubUntilU8(t *testing.T) {
+	if rec, _ := get(t, newHandler(t, newRoot(t), "life"), "/b/life/archive"); rec.Code != http.StatusNotImplemented {
+		t.Errorf("archive should answer 501 until U8, got %d", rec.Code)
+	}
+}
+
+func TestListenBindsLoopbackOnly(t *testing.T) {
+	ln, err := Listen(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	if host, _, _ := net.SplitHostPort(ln.Addr().String()); host != "127.0.0.1" {
+		t.Errorf("bound %s, want 127.0.0.1 (OPS-1)", ln.Addr())
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_, err = Listen(port)
+	if err == nil {
+		t.Fatal("a busy port must be an error, never a fallback (OPS-3)")
+	}
+	for _, want := range []string{strconv.Itoa(port), "--port", "KANDO_WEB_PORT"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %q: %v", want, err)
+		}
+	}
+}
+
+func TestServeDerivesOriginFromListenerAndShutsDown(t *testing.T) {
+	root := newRoot(t)
+	ln, err := Listen(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Serve(ctx, ln, Options{Root: root, Board: "life", Now: func() time.Time { return fixedNow }})
+	}()
+	// Options.Port was not set; the guard must still accept the real port.
+	resp, err := http.Get("http://" + ln.Addr().String() + "/b/life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("GET via the bound port: %d", resp.StatusCode)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Serve returned %v", err)
+		}
+	case <-time.After(6 * time.Second):
+		t.Fatal("Serve did not return after cancel")
+	}
 }

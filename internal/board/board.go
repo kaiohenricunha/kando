@@ -3,6 +3,7 @@
 package board
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -30,6 +31,10 @@ func (l Lane) String() string {
 	}
 	return laneNames[l]
 }
+
+// Key is the lane's lower-case name as used in URLs and forms; ParseLane
+// accepts it back.
+func (l Lane) Key() string { return strings.ToLower(l.String()) }
 
 // ParseLane maps a display name (case-insensitive) back to a Lane.
 func ParseLane(s string) (Lane, bool) {
@@ -77,6 +82,28 @@ func (c *Card) ChecklistProgress() (done, total int) {
 		}
 	}
 	return done, len(c.Checklist)
+}
+
+// ProgressLabel is "done/total" for the checklist, or "" when there is none.
+// Both renderers show exactly this.
+func (c *Card) ProgressLabel() string {
+	done, total := c.ChecklistProgress()
+	if total == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d/%d", done, total)
+}
+
+// BlockedLabel is the reason a blocked card shows ("blocked" when none was
+// given), or "" when the card is not blocked. Both renderers show exactly this.
+func (c *Card) BlockedLabel() string {
+	if !c.Blocked {
+		return ""
+	}
+	if c.BlockedReason == "" {
+		return "blocked"
+	}
+	return c.BlockedReason
 }
 
 // AgeSince is the instant ages are measured from: DoneAt for done cards, else CreatedAt.

@@ -1,6 +1,7 @@
+{{/* The create form posts to POST /boards, which lands in U7 (§5 contract, frozen here). */}}
 {{template "head" .}}
 <h1>boards</h1>
-<ul class="boards">{{range .Boards}}<li><a href="/b/{{.}}">{{.}}</a></li>{{else}}<li class="empty">no boards yet</li>{{end}}</ul>
+<ul class="boards">{{range .Boards}}<li><a href="/b/{{urlpath .}}">{{.}}</a></li>{{else}}<li class="empty">no boards yet</li>{{end}}</ul>
 <form method="post" action="/boards">
   <label for="name">new board</label>
   <input type="text" id="name" name="name" required> <button type="submit">create</button>

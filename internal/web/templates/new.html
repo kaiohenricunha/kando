@@ -1,10 +1,11 @@
+{{/* This form posts to POST /b/{board}/cards, which lands in U6 (§5 contract, frozen here). */}}
 {{template "head" .Page}}
 <h1>new card</h1>
-<form method="post" action="/b/{{.Board}}/cards">
+<form method="post" action="/b/{{urlpath .Board}}/cards">
   <label for="title">title</label>
   <input type="text" id="title" name="title" required autofocus>
   <label for="lane">lane</label>
-  <select id="lane" name="lane">{{range .Lanes}}<option value="{{.}}"{{if eq . $.Lane}} selected{{end}}>{{.}}</option>{{end}}</select>
-  <div style="margin-top:.75rem"><button type="submit">add</button> <a href="/b/{{.Board}}">cancel</a></div>
+  <select id="lane" name="lane">{{range .Lanes}}<option value="{{.Key}}"{{if eq .Key $.Lane}} selected{{end}}>{{.Key}}</option>{{end}}</select>
+  <div style="margin-top:.75rem"><button type="submit">add</button> <a href="/b/{{urlpath .Board}}">cancel</a></div>
 </form>
 {{template "foot"}}

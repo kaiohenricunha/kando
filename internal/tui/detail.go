@@ -249,9 +249,9 @@ func (m Model) detailRight(c *board.Card, rp int) []string {
 	}
 	rows = append(rows, "")
 
-	done, total := c.ChecklistProgress()
-	if total > 0 {
-		rows = append(rows, s.Muted.Render("CHECKLIST")+" "+s.Accent.Render(fmt.Sprintf("%d/%d", done, total)))
+	total := len(c.Checklist)
+	if pl := c.ProgressLabel(); pl != "" {
+		rows = append(rows, s.Muted.Render("CHECKLIST")+" "+s.Accent.Render(pl))
 	} else {
 		rows = append(rows, s.Muted.Render("CHECKLIST"))
 	}
@@ -286,11 +286,7 @@ func (m Model) detailRight(c *board.Card, rp int) []string {
 	case d.edit == editBlock:
 		rows = append(rows, s.Accent2.Render("⊘ ")+d.in.View())
 	case c.Blocked:
-		reason := sanitize(c.BlockedReason)
-		if reason == "" {
-			reason = "blocked"
-		}
-		rows = append(rows, s.Accent2.Render("⊘ "+reason))
+		rows = append(rows, s.Accent2.Render("⊘ "+sanitize(c.BlockedLabel())))
 	default:
 		rows = append(rows, s.Muted.Render("— not blocked. ")+s.Bold.Render("b")+s.Muted.Render(" to set a reason"))
 	}

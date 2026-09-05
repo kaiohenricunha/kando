@@ -2,6 +2,7 @@ package board
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -88,5 +89,30 @@ func TestNewID(t *testing.T) {
 			t.Fatalf("duplicate id %q", id)
 		}
 		seen[id] = true
+	}
+}
+
+func TestLaneKey(t *testing.T) {
+	for _, l := range Lanes {
+		got, ok := ParseLane(l.Key())
+		if !ok || got != l || l.Key() != strings.ToLower(l.String()) {
+			t.Errorf("Key(%v) = %q, ParseLane → %v,%v", l, l.Key(), got, ok)
+		}
+	}
+}
+
+func TestCardLabels(t *testing.T) {
+	c := &Card{}
+	if c.ProgressLabel() != "" || c.BlockedLabel() != "" {
+		t.Errorf("empty card: %q %q", c.ProgressLabel(), c.BlockedLabel())
+	}
+	c.Checklist = []Item{{Done: true}, {}, {}, {}}
+	c.Blocked = true
+	if c.ProgressLabel() != "1/4" || c.BlockedLabel() != "blocked" {
+		t.Errorf("labels: %q %q", c.ProgressLabel(), c.BlockedLabel())
+	}
+	c.BlockedReason = "waiting on pads"
+	if c.BlockedLabel() != "waiting on pads" {
+		t.Errorf("reason: %q", c.BlockedLabel())
 	}
 }
