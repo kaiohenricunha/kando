@@ -42,7 +42,7 @@ ul.items li { display:flex; gap:.4rem; align-items:center; margin:.2rem 0; } ul.
 .muted { color:var(--muted); }
 </style>
 </head>
-<body>
+<body{{if .Board}} data-board="{{.Board}}"{{end}}>
 <header>
   <a class="brand" href="/boards">kando</a>
   {{if .Board}}<a href="/b/{{urlpath .Board}}">{{.Board}}</a>{{end}}
@@ -51,6 +51,7 @@ ul.items li { display:flex; gap:.4rem; align-items:center; margin:.2rem 0; } ul.
 </header>
 {{end}}
 {{define "foot"}}
+<script src="/static/live.js"></script>
 </body>
 </html>
 {{end}}

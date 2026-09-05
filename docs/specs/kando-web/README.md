@@ -36,6 +36,11 @@ is a design reference, not a benchmark, so nothing needed promoting into
 `GET`-only routes in §5 (the card detail page, the new-card form) — fixed
 in U5.
 
+## Parity audit
+
+[parity.md](parity.md) — every TUI key against the §5 route that does the
+same thing (U10), including the one accepted BOUND-1 exception.
+
 ## Research Sources
 
 See [research/sources.md](research/sources.md) for indexed source documents.
