@@ -50,18 +50,39 @@ type Reload struct {
 const maxBoardName = 64
 
 // ValidBoardName reports whether name is acceptable as a board directory
-// name: non-empty, at most maxBoardName bytes, valid UTF-8, no control
-// runes, no path separators, and no leading dot (which also excludes "." and
+// name and as a URL path segment: non-empty, at most maxBoardName bytes,
+// valid UTF-8, no control runes, no path separators, none of the URL
+// delimiters "#?%&+;", and no leading dot (which also excludes "." and
 // ".."). A valid name always resolves to a directory directly under root;
 // what a symlink placed under root points at is the user's own business.
 func ValidBoardName(name string) bool {
 	if name == "" || len(name) > maxBoardName || !utf8.ValidString(name) {
 		return false
 	}
-	if strings.HasPrefix(name, ".") || strings.ContainsAny(name, `/\`) {
+	if strings.HasPrefix(name, ".") || strings.ContainsAny(name, `/\#?%&+;`) {
 		return false
 	}
 	return strings.IndexFunc(name, unicode.IsControl) < 0
+}
+
+// Load reads root/name read-only: no directory is created, nothing is
+// written, and cards missing an id get one in memory only (the next writer
+// persists them). A missing board is fs.ErrNotExist. This is the read path
+// for GET handlers; Open is the create-or-repair path for writers.
+func Load(root, name string) (*board.Board, error) {
+	if !ValidBoardName(name) {
+		return nil, fmt.Errorf("invalid board name %q", name)
+	}
+	data, err := os.ReadFile(filepath.Join(root, name, boardFile))
+	if err != nil {
+		return nil, err
+	}
+	b, _, err := Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	b.Name = name
+	return b, nil
 }
 
 // Open loads (or creates) the board under root/name. Cards missing an id are
@@ -100,6 +121,16 @@ func Open(root, name string) (*Store, *board.Board, error) {
 	}
 	s.noteArchive()
 	return s, b, nil
+}
+
+// Exists reports whether root/name is an openable board: a valid name whose
+// board.md is present. It never creates anything, unlike Open.
+func Exists(root, name string) bool {
+	if !ValidBoardName(name) {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(root, name, boardFile))
+	return err == nil
 }
 
 // ListBoards returns the names of every board under root — every subdirectory

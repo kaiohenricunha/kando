@@ -36,7 +36,17 @@ func TestWatchSignalsOnBoardWriteAndClosesOnStop(t *testing.T) {
 		t.Fatalf("expected a change signal after writing board.md (got=%v ok=%v)", got, ok)
 	}
 	stop()
-	if got, ok := recv(t, ch); !got || ok {
-		t.Fatalf("stop() must close the channel (got=%v ok=%v)", got, ok)
+	// A single write can produce more than one fsnotify event, so one more
+	// coalesced signal may still be buffered; the contract is that the channel
+	// closes once stopped, so drain until it does.
+	for i := 0; i < 3; i++ {
+		got, ok := recv(t, ch)
+		if !got {
+			t.Fatal("stop() must close the channel: receive timed out")
+		}
+		if !ok {
+			return
+		}
 	}
+	t.Fatal("stop() must close the channel: still receiving values after three reads")
 }

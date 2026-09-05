@@ -1,0 +1,12 @@
+{{template "head" .Page}}
+<h1>{{.Card.Title}}</h1>
+<div class="meta">{{if .Card.Tag}}<span class="tag">#{{.Card.Tag}}</span>  {{end}}{{if .Created}}<span>created {{.Created}}</span>  {{end}}{{if .Since}}<span>in {{.Lane}} since {{.Since}}</span>{{end}}</div>
+<div class="section">NOTES</div>
+{{if .Notes}}<div class="notes-block">{{range .Notes}}{{.}}
+{{end}}</div>{{else}}<div class="empty">— no notes</div>{{end}}
+<div class="section">CHECKLIST{{if .Card.Progress}} <span class="check">{{.Card.Progress}}</span>{{end}}</div>
+<ul class="items">{{range .Checklist}}<li{{if .Done}} class="done"{{end}}>{{if .Done}}▣{{else}}▢{{end}} {{.Text}}</li>{{end}}</ul>
+<div class="section">BLOCKED</div>
+{{if .Card.Blocked}}<div class="blocked">⊘ {{.Card.Blocked}}</div>{{else}}<div class="empty">— not blocked</div>{{end}}
+<footer><a href="/b/{{urlpath .Board}}">← board</a><span></span></footer>
+{{template "foot"}}

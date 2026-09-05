@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -57,15 +56,11 @@ func (m Model) cardRows(c *board.Card, l board.Lane, outerW int, selected bool) 
 		if c.Tag != "" {
 			meta = append(meta, p.accent.Render("#"+sanitize(c.Tag)))
 		}
-		if d, n := c.ChecklistProgress(); n > 0 {
-			meta = append(meta, p.muted.Render(fmt.Sprintf("%d/%d", d, n)))
+		if pl := c.ProgressLabel(); pl != "" {
+			meta = append(meta, p.muted.Render(pl))
 		}
-		if c.Blocked {
-			reason := sanitize(c.BlockedReason)
-			if reason == "" {
-				reason = "blocked"
-			}
-			meta = append(meta, p.accent2.Render("⊘ "+reason))
+		if bl := c.BlockedLabel(); bl != "" {
+			meta = append(meta, p.accent2.Render("⊘ "+sanitize(bl)))
 		}
 	}
 	r1 := p.muted.Render(fit(sanitize(c.FirstNoteLine()), tw))

@@ -1,0 +1,51 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kando{{if .Title}} · {{.Title}}{{end}}</title>
+<style>
+:root { --bg:#f6f1e8; --fg:#2b2622; --muted:#8f8579; --border:#d9cfc0; --accent:#1f7a6d; --accent2:#b5532b; --sel:#ece4d6; }
+@media (prefers-color-scheme: dark) { :root { --bg:#1a1512; --fg:#ead9c8; --muted:#7d6b5c; --border:#33291f; --accent:#e0a458; --accent2:#8fb98a; --sel:#2a211a; } }
+* { box-sizing: border-box; }
+body { margin:0; padding:1rem 1.25rem; background:var(--bg); color:var(--fg); font:15px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+a { color:inherit; text-decoration:none; } a:hover { text-decoration:underline; }
+header { display:flex; align-items:baseline; gap:.75rem; margin-bottom:1rem; }
+header .brand { font-weight:700; color:var(--accent); } header .crumb, header .date { color:var(--muted); } header .date { margin-left:auto; }
+.lanes { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:1rem; align-items:start; }
+.lane { border:1px solid var(--border); border-radius:8px; padding:.6rem .75rem; }
+.lane h2 { display:flex; justify-content:space-between; margin:0 0 .5rem; font-size:.85rem; letter-spacing:.08em; color:var(--muted); font-weight:700; }
+.lane h2 .count { font-weight:400; }
+.card { display:block; border:1px solid var(--border); border-radius:8px; padding:.5rem .75rem; margin-bottom:.6rem; }
+.card:hover { background:var(--sel); text-decoration:none; }
+.card .title { display:flex; justify-content:space-between; gap:.5rem; } .card .age, .card .notes, .card .meta { color:var(--muted); }
+.card .notes { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.card .done .t { text-decoration:line-through; color:var(--muted); }
+.tag { color:var(--accent); } .blocked { color:var(--accent2); } .check { color:var(--accent); }
+.empty { color:var(--border); }
+.bar { display:flex; gap:1rem; align-items:center; margin:.25rem 0 1rem; color:var(--muted); }
+.bar input[type=text] { background:transparent; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.3rem .5rem; font:inherit; width:22rem; }
+.bar .add { color:var(--accent); }
+footer { margin-top:1.25rem; color:var(--muted); display:flex; justify-content:space-between; }
+h1 { font-size:1.15rem; margin:0 0 .25rem; } .section { margin:1rem 0 .25rem; color:var(--muted); font-size:.85rem; letter-spacing:.08em; }
+ul.items { list-style:none; padding:0; margin:0; } ul.items li.done { color:var(--muted); text-decoration:line-through; }
+.notes-block { white-space:pre-wrap; max-width:64ch; }
+.boards li { margin:.25rem 0; }
+form.inline { display:inline; }
+label { display:block; margin:.5rem 0 .2rem; color:var(--muted); }
+input[type=text], select { background:transparent; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.35rem .5rem; font:inherit; }
+button { background:var(--accent); color:var(--bg); border:0; border-radius:6px; padding:.4rem .8rem; font:inherit; cursor:pointer; }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="/boards">kando</a>
+  {{if .Board}}<a href="/b/{{urlpath .Board}}">{{.Board}}</a>{{end}}
+  {{if and .Title (ne .Title .Board)}}<span class="crumb">›</span><span>{{.Title}}</span>{{end}}
+  <span class="date">{{.Date}}</span>
+</header>
+{{end}}
+{{define "foot"}}
+</body>
+</html>
+{{end}}
