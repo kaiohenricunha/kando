@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -24,6 +25,9 @@ func moveArgs(args []string) (card, lane, name string, err error) {
 		if strings.HasPrefix(name, "-") {
 			return "", "", "", fmt.Errorf("unexpected flag %q", name)
 		}
+		if strings.TrimSpace(name) == "" {
+			return "", "", "", fmt.Errorf("board name required")
+		}
 	default:
 		return "", "", "", fmt.Errorf("unexpected argument %q", args[3])
 	}
@@ -46,10 +50,12 @@ func findCard(b *board.Board, arg string) (board.Lane, int, *board.Card, error) 
 	var l board.Lane
 	i, n := -1, 0
 	var c *board.Card
+	var ids []string
 	for _, lane := range board.Lanes {
 		for idx, card := range b.Lanes[lane] {
 			if strings.EqualFold(card.Title, arg) {
 				l, i, c = lane, idx, card
+				ids = append(ids, card.ID)
 				n++
 			}
 		}
@@ -60,7 +66,7 @@ func findCard(b *board.Board, arg string) (board.Lane, int, *board.Card, error) 
 	case 1:
 		return l, i, c, nil
 	default:
-		return 0, -1, nil, fmt.Errorf("%d cards match title %q; use the card's id instead", n, arg)
+		return 0, -1, nil, fmt.Errorf("%d cards match title %q; use one of these ids instead: %s", n, arg, strings.Join(ids, ", "))
 	}
 }
 
@@ -75,6 +81,14 @@ func findCard(b *board.Board, arg string) (board.Lane, int, *board.Card, error) 
 // creates: store.Exists is checked first deliberately, because move
 // requires an existing card, so auto-creating an empty board would only
 // turn one clear error into a confusing two-step one.
+//
+// The save uses SaveBoardIfUnchanged, not SaveBoard: this is a short-lived
+// process that opens its own Store, same as a kando web request, so nothing
+// else stops a concurrent edit (the TUI, kando web, a text editor) landing
+// between this Store's Open and its save. A same-lane move skips both the
+// mutation and the save entirely — Board.Move already treats it as a no-op,
+// and writing anyway would spuriously bump the board's on-disk version for
+// every connected kando web client.
 //
 // to must already be a value from board.ParseLane (0-3): Board.Move/Insert
 // index b.Lanes (a fixed [4][]*Card array) with it directly and will panic
@@ -99,8 +113,16 @@ func moveCard(root, name, cardArg string, to board.Lane, now time.Time) (title s
 		return "", 0, err
 	}
 	title = c.Title
-	b.Move(from, i, to, now)
-	if err := st.SaveBoard(b); err != nil {
+	if from == to {
+		return title, from, nil
+	}
+	if b.Move(from, i, to, now) < 0 {
+		return "", 0, fmt.Errorf("card %q could not be moved", title)
+	}
+	if err := st.SaveBoardIfUnchanged(b); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return "", 0, fmt.Errorf("the board changed on disk — try again")
+		}
 		return "", 0, err
 	}
 	return title, from, nil
@@ -109,6 +131,10 @@ func moveCard(root, name, cardArg string, to board.Lane, now time.Time) (title s
 // runMove is kando move's process-level wrapper: parse, validate the lane,
 // mutate, report one line of confirmation to stdout.
 func runMove(args []string) {
+	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		usage()
+		return
+	}
 	cardArg, laneArg, name, err := moveArgs(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "kando:", err)
@@ -124,6 +150,10 @@ func runMove(args []string) {
 	title, from, err := moveCard(kandoRoot(), name, cardArg, to, time.Now())
 	if err != nil {
 		fatal(err)
+	}
+	if from == to {
+		fmt.Printf("%q is already in %s\n", title, to)
+		return
 	}
 	fmt.Printf("moved %q: %s -> %s\n", title, from, to)
 }

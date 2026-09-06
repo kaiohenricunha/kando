@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,6 +29,8 @@ func TestMoveArgs(t *testing.T) {
 		{name: "whitespace-only card", args: []string{"   ", "Doing"}, wantErr: true},
 		{name: "board starting with a dash", args: []string{"card", "Doing", "--oops"}, wantErr: true},
 		{name: "card starting with a dash is not a flag", args: []string{"-1 point bug", "Doing"}, wantCard: "-1 point bug", wantLane: "Doing"},
+		{name: "empty board name", args: []string{"card", "Doing", ""}, wantErr: true},
+		{name: "whitespace-only board name", args: []string{"card", "Doing", "   "}, wantErr: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -88,12 +91,18 @@ func TestFindCard(t *testing.T) {
 		if err == nil || c != nil || i != -1 {
 			t.Fatalf("got i=%d c=%v err=%v, want an ambiguity error", i, c, err)
 		}
+		if !strings.Contains(err.Error(), dup1.ID) || !strings.Contains(err.Error(), dup2.ID) {
+			t.Errorf("error %q should list both ids so the ambiguity is self-service", err.Error())
+		}
 	})
 
 	t.Run("ambiguous within the same lane", func(t *testing.T) {
 		_, i, c, err := findCard(b, "same")
 		if err == nil || c != nil || i != -1 {
 			t.Fatalf("got i=%d c=%v err=%v, want an ambiguity error", i, c, err)
+		}
+		if !strings.Contains(err.Error(), sameLane1.ID) || !strings.Contains(err.Error(), sameLane2.ID) {
+			t.Errorf("error %q should list both ids so the ambiguity is self-service", err.Error())
 		}
 	})
 
@@ -251,6 +260,7 @@ func TestMoveCard(t *testing.T) {
 		seed(t, root, "life", map[board.Lane][]*board.Card{
 			board.Doing: {{ID: "aaaaaaaa", Title: "Renew passport", MovedAt: created}},
 		})
+		before := readBoardFile(t, root, "life")
 		_, from, err := moveCard(root, "life", "aaaaaaaa", board.Doing, now)
 		if err != nil {
 			t.Fatalf("moveCard: %v", err)
@@ -261,6 +271,9 @@ func TestMoveCard(t *testing.T) {
 		b := loadBoard(t, root, "life")
 		if !b.Lanes[board.Doing][0].MovedAt.Equal(created) {
 			t.Errorf("MovedAt changed on a same-lane no-op: got %v, want %v", b.Lanes[board.Doing][0].MovedAt, created)
+		}
+		if after := readBoardFile(t, root, "life"); before != after {
+			t.Errorf("board.md rewritten despite a same-lane no-op")
 		}
 	})
 
@@ -281,8 +294,8 @@ func TestMoveCard(t *testing.T) {
 	t.Run("invalid board name", func(t *testing.T) {
 		root := t.TempDir()
 		_, _, err := moveCard(root, "has/slash", "anything", board.Doing, now)
-		if err == nil {
-			t.Fatal("want an error for an invalid board name")
+		if err == nil || !strings.Contains(err.Error(), "invalid board name") {
+			t.Fatalf("got err=%v, want an invalid board name error", err)
 		}
 	})
 }
