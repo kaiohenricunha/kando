@@ -60,10 +60,18 @@ go run ./cmd/kando work       # opens board "work"
 make build && ./bin/kando
 kando web                     # serves the boards at http://127.0.0.1:4242/
 kando web work --port 8080    # a specific board, a specific port
-kando board list                          # every board under $KANDO_HOME
+kando board create work && kando board list   # every board under $KANDO_HOME
+kando add "Renew passport" --tag errand   # new card at the top of Todo
 kando list --filter "#errand !blocked"    # the board as text; --json for scripts
 kando show "Renew passport" --json        # one card, every field
 kando move "Renew passport" Doing         # move a card by title (or id) to a lane
+kando tag "Renew passport" urgent
+kando notes "Renew passport" --file plan.md   # or --set TEXT, or - for stdin
+kando block "Renew passport" --reason "waiting on photos"
+kando unblock "Renew passport"
+kando checklist add "Renew passport" "Fill in the form"
+kando checklist toggle "Renew passport" 1     # 1-based, as "kando show" lists them
+kando delete "Renew passport"
 kando archive list --filter "#money"      # the archive, grouped by week
 ```
 
@@ -116,13 +124,25 @@ verb. Unlike `kando [board]` and `kando web [board]`, a board that does not
 already exist is an error, not something `move` creates for you: there is no
 card to move on a board that was never opened.
 
-### `kando board list`
+### `kando board`
 
-`kando board list [--json]` prints every board under `$KANDO_HOME`, one name
-per line — the CLI's counterpart to the web's boards page and the TUI's `B`.
-`--json` emits an array of `{name, cards, lanes}`, `lanes` keyed by the
-lowercase lane name (`todo`, `doing`, …), for a script that wants counts
-without opening each board itself.
+`kando board create <name>` makes a new board — safe to run more than once;
+an existing board is left exactly as is and reported rather than treated as
+an error, so a script can call it unconditionally. `kando board list
+[--json]` prints every board under `$KANDO_HOME`, one name per line — the
+CLI's counterpart to the web's boards page and the TUI's `B`. `--json` emits
+an array of `{name, cards, lanes}`, `lanes` keyed by the lowercase lane name
+(`todo`, `doing`, …), for a script that wants counts without opening each
+board itself.
+
+### `kando add`
+
+`kando add <title> [board] [--lane L] [--tag T]` is the TUI's `a`: a new
+card at the top of a lane, `Todo` unless `--lane` says otherwise (`--lane
+Done` stamps it done, like a move into Done would). The title is sanitized
+and capped at 512 bytes the same way every other title-setting verb is; the
+tag loses any leading `#`. The new card's id is printed, so a script can
+address it in a later command without relying on its title staying unique.
 
 ### `kando show`
 
@@ -150,6 +170,48 @@ the same `#tag` / `!blocked` / `age>7d` query syntax as the TUI's `/`. All
 four lanes are always shown, even when empty. `--json` emits
 `{board, filter, matched, total, lanes: [{lane, cards}]}` with the same
 per-card shape as `kando show --json`.
+
+### `kando tag`
+
+`kando tag <card> <tag> [board]` sets a card's tag, the TUI's `t`. `<tag>` is
+sanitized and loses a leading `#` just as it would if typed there; an empty
+tag (`kando tag "Renew passport" ""`) clears it, mirroring how `block`'s
+empty reason clears a block.
+
+### `kando notes`
+
+`kando notes <card> [board] --set TEXT`, `--file PATH`, or `-` (stdin)
+replaces a card's notes — there is no `$EDITOR` integration. Line endings
+are normalized to `\n`, trailing blank lines are dropped, and anything past
+16 KiB is clipped, the same rules the TUI's notes editor and the web's
+textarea already apply. An empty value clears the notes. Exactly one of the
+three sources must be given.
+
+### `kando block` / `kando unblock`
+
+`kando block <card> --reason "..." [board]` sets or updates a card's blocked
+reason; `--reason` is required and may not be blank (an empty reason is
+`unblock`'s job, not a shorthand for it — `Card.SetBlocked("")` would
+otherwise silently clear the flag instead of setting it). `kando unblock
+<card> [board]` clears it, reporting `"X" was not blocked` rather than an
+error when there was nothing to clear.
+
+### `kando delete`
+
+`kando delete <card> [board]` removes a card immediately — no confirmation,
+matching every other surface: neither the TUI's `x` nor the web's delete
+button asks first.
+
+### `kando checklist`
+
+`kando checklist add <card> <text> [board]` appends an item, mirroring how
+the web's own add-item form always appends rather than inserting at a
+cursor. `checklist toggle <card> <n> [board]` and `checklist edit <card> <n>
+<text> [board]` address items by their 1-based position, exactly as `kando
+show` numbers them — items have positions, not ids. A script that already
+read the card can pass `--was "current text"`, and the command refuses if
+item `<n>` no longer reads that way in the meantime: the CLI's equivalent of
+the web page's stale-checklist-form guard.
 
 ### `kando archive list`
 

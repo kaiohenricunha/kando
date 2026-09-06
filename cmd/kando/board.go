@@ -5,23 +5,93 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/kaiohenricunha/kando/internal/board"
 	"github.com/kaiohenricunha/kando/internal/store"
 )
 
-// runBoard dispatches kando board's subcommands. Only "list" exists so far;
-// "create" is a later PR's addition to this same switch.
+// runBoard dispatches kando board's subcommands.
 func runBoard(args []string) {
 	if helpWanted(args) {
 		usage()
 		return
 	}
-	if len(args) > 0 && args[0] == "list" {
-		runBoardList(args[1:])
+	if len(args) > 0 {
+		switch args[0] {
+		case "list":
+			runBoardList(args[1:])
+			return
+		case "create":
+			runBoardCreate(args[1:])
+			return
+		}
+	}
+	usageErr(fmt.Errorf("kando board needs create or list"))
+}
+
+// boardCreateArgs parses kando board create's arguments: exactly one name,
+// no flags and — unlike every other verb's trailing [board] — no optional
+// second positional either, since there is no board to scope the creation
+// to; splitBoard's n+1-means-a-trailing-board shape does not fit here, so
+// this is a small dedicated parser rather than a misuse of it.
+func boardCreateArgs(args []string) (name string, err error) {
+	switch len(args) {
+	case 0:
+		return "", fmt.Errorf("kando board create needs a board name")
+	case 1:
+		name = args[0]
+	default:
+		return "", fmt.Errorf("unexpected argument %q", args[1])
+	}
+	if strings.HasPrefix(name, "-") {
+		return "", fmt.Errorf("unexpected flag %q", name)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("board name required")
+	}
+	return name, nil
+}
+
+// createBoard mirrors the web's createBoard handler (internal/web/boards.go)
+// and the TUI picker's n: a valid name becomes a directory with a canonical
+// board.md, exactly as store.Open already does for a bare `kando <board>`.
+// An existing board is left as is — created reports which happened, so the
+// caller can tell "made a new one" from "it was already there" — both
+// exit 0, since board create is meant to be safe to run unconditionally in
+// a script.
+func createBoard(root, name string) (created bool, err error) {
+	if !store.ValidBoardName(name) {
+		return false, fmt.Errorf(`invalid board name %q: 1-64 characters, no / \ # ? %% & + ; and no leading dot`, name)
+	}
+	if store.Exists(root, name) {
+		return false, nil
+	}
+	if _, _, err := store.Open(root, name); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func runBoardCreate(args []string) {
+	if helpWanted(args) {
+		usage()
 		return
 	}
-	usageErr(fmt.Errorf("kando board needs list"))
+	name, err := boardCreateArgs(args)
+	if err != nil {
+		usageErr(err)
+	}
+	created, err := createBoard(kandoRoot(), name)
+	if err != nil {
+		fatal(err)
+	}
+	if created {
+		fmt.Printf("created board %q\n", name)
+		return
+	}
+	fmt.Printf("board %q already exists\n", name)
 }
 
 // boardListArgs parses kando board list's arguments: no positionals, just
