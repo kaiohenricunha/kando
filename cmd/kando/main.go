@@ -35,11 +35,14 @@ const version = "0.1.0"
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage: kando [board]
        kando web [board] [--port N]
+       kando move <card> <lane> [board]
 
 Opens the board (default "life") from $KANDO_HOME (default ~/.kando) in the
 terminal, or serves it at http://127.0.0.1:<port>/ (default 4242). The board
-name may come before or after the flags. A board literally named "web" opens
-in the terminal with: kando -- web
+name may come before or after the flags. kando move moves <card> — an id or
+an exact, case-insensitive title — to <lane> (Backlog, Todo, Doing or Done)
+on an existing board; it never creates one. A board literally named "web" or
+"move" opens in the terminal with: kando -- web or kando -- move
 Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR, KANDO_WEB_PORT`)
 }
 
@@ -136,6 +139,9 @@ func main() {
 		args = args[1:]
 	} else if len(args) > 0 && args[0] == "web" {
 		runWeb(args[1:])
+		return
+	} else if len(args) > 0 && args[0] == "move" {
+		runMove(args[1:])
 		return
 	}
 	if len(args) > 1 {
