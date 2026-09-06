@@ -16,6 +16,7 @@ go run ./cmd/kando work       # opens board "work"
 make build && ./bin/kando
 kando web                     # serves the boards at http://127.0.0.1:4242/
 kando web work --port 8080    # a specific board, a specific port
+kando move "Renew passport" Doing         # move a card by title (or id) to a lane
 ```
 
 ### `kando web`
@@ -53,6 +54,18 @@ Environment:
 | `KANDO_THEME` | `paper` (light) or `ember` (dark). Otherwise the terminal background is detected at startup. |
 | `NO_COLOR` | Drop all colours; bold, strikethrough and borders stay. |
 | `KANDO_WEB_PORT` | Port for `kando web` (default 4242); `--port` overrides it. |
+
+### `kando move`
+
+The scriptable equivalent of the TUI's `H`/`L`/`m`+digit and the web's lane
+picker: `kando move <card> <lane> [board]` moves one card to a lane without
+opening the terminal or the browser. `<card>` is a card's id or its exact
+title, matched case-insensitively; a title matching more than one card is
+refused — use the id instead. `<lane>` is `Backlog`, `Todo`, `Doing` or
+`Done`, case-insensitive. `[board]` defaults to `life`, like every other
+verb. Unlike `kando [board]` and `kando web [board]`, a board that does not
+already exist is an error, not something `move` creates for you: there is no
+card to move on a board that was never opened.
 
 ## Keys
 
