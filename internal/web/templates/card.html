@@ -3,6 +3,7 @@
 <div class="meta">{{if .Card.Tag}}<span class="tag">#{{.Card.Tag}}</span>  {{end}}{{if .Created}}<span>created {{.Created}}</span>  {{end}}{{if .Since}}<span>in {{.Lane}} since {{.Since}}</span>{{end}}</div>
 <div class="actions">
   <form class="inline" method="post" action="{{.URL}}/move"><select name="lane" aria-label="lane">{{range .Lanes}}<option value="{{.Key}}"{{if eq .Key $.LaneKey}} selected{{end}}>{{.}}</option>{{end}}</select> <button type="submit">move</button></form>
+  {{if eq .LaneKey "done"}}<form class="inline" method="post" action="{{.URL}}/archive"><button type="submit">archive</button></form>{{end}}
   <form class="inline" method="post" action="{{.URL}}/delete"><button type="submit" class="danger">delete</button></form>
 </div>
 <form class="edit" method="post" action="{{.URL}}">

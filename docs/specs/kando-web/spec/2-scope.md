@@ -43,6 +43,9 @@ gap is accepted, not overlooked: an archived card is finished work, and the
 one action worth having on it is undo. Re-open the decision, rather than the
 audit, if a `GET /b/{board}/archive/{id}` is ever wanted. U10's parity
 checklist records this exception so the audit has something to check against.
+U12 adds the write path in the other direction — a Done card moving *into*
+the archive, on all three surfaces — which is a new capability, not a
+narrowing of this exception: an already-archived card is still restore-only.
 
 **BOUND-1b — accepted exception: a chosen drop position is web-only.** The
 board page lets a card be dragged to an exact place in a lane — in front of a

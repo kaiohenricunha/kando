@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCardSetTagStripsHash(t *testing.T) {
@@ -179,5 +180,154 @@ func TestBoardDeleteCard(t *testing.T) {
 	}
 	if got := b.DeleteCard(Todo, 5); got != nil {
 		t.Errorf("out-of-range delete should return nil, got %v", got)
+	}
+}
+
+// archiveIDs is the ids of the archive in order, the readable form for an
+// ordering assertion — laneIDs for the archive.
+func archiveIDs(a *Archive) string {
+	ids := make([]string, len(a.Cards))
+	for i, c := range a.Cards {
+		ids[i] = c.ID
+	}
+	return strings.Join(ids, " ")
+}
+
+func TestArchiveDoneMovesCardToTopOfArchive(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	b := &Board{}
+	keep := &Card{ID: "keep", DoneAt: now.AddDate(0, 0, -1)}
+	done := &Card{ID: "done", DoneAt: now.AddDate(0, 0, -2)}
+	b.Lanes[Done] = []*Card{keep, done}
+	a := &Archive{Cards: []*Card{{ID: "older", DoneAt: now.AddDate(0, 0, -10)}}}
+	if c := b.ArchiveDone(a, 1, now); c != done {
+		t.Fatalf("ArchiveDone returned %v, want the Done[1] card", c)
+	}
+	if got := laneIDs(b, Done); got != "keep" {
+		t.Errorf("Done after archiving: %q, want %q", got, "keep")
+	}
+	if got := archiveIDs(a); got != "done older" {
+		t.Errorf("archive should be newest-first: %q, want %q", got, "done older")
+	}
+}
+
+func TestArchiveDoneRejectsOutOfRange(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	b := &Board{}
+	b.Lanes[Done] = []*Card{{ID: "only", DoneAt: now}}
+	a := &Archive{}
+	for _, i := range []int{-1, 1, 5} {
+		if c := b.ArchiveDone(a, i, now); c != nil {
+			t.Errorf("index %d: got %v, want nil", i, c)
+		}
+	}
+	if len(b.Lanes[Done]) != 1 || len(a.Cards) != 0 {
+		t.Errorf("an out-of-range archive must change nothing: done=%d archive=%d", len(b.Lanes[Done]), len(a.Cards))
+	}
+}
+
+func TestArchiveDoneKeepsDoneAtAndMovedAt(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	then := now.AddDate(0, 0, -3)
+	b := &Board{}
+	c := &Card{ID: "c", DoneAt: then, MovedAt: then}
+	b.Lanes[Done] = []*Card{c}
+	b.ArchiveDone(&Archive{}, 0, now)
+	if !c.DoneAt.Equal(then) || !c.MovedAt.Equal(then) {
+		t.Errorf("archiving must not restamp: done=%v moved=%v, want both %v", c.DoneAt, c.MovedAt, then)
+	}
+}
+
+func TestArchiveDoneStampsAMissingDoneAt(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	then := now.AddDate(0, 0, -3)
+	b := &Board{}
+	c := &Card{ID: "c", MovedAt: then} // hand-edited: in Done without a done: date
+	b.Lanes[Done] = []*Card{c}
+	b.ArchiveDone(&Archive{}, 0, now)
+	if !c.DoneAt.Equal(now) {
+		t.Errorf("a zero DoneAt should become now so the card gets a real week, got %v", c.DoneAt)
+	}
+	if !c.MovedAt.Equal(then) {
+		t.Errorf("MovedAt must still be untouched: %v", c.MovedAt)
+	}
+}
+
+func TestArchiveInsertKeepsNewestFirst(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	day := func(n int) time.Time { return now.AddDate(0, 0, -n) }
+	a := &Archive{Cards: []*Card{{ID: "d1", DoneAt: day(1)}, {ID: "d3", DoneAt: day(3)}, {ID: "d5", DoneAt: day(5)}}}
+	cases := []struct {
+		id   string
+		at   time.Time
+		want int
+	}{
+		{"newest", day(0), 0},
+		{"between", day(2), 2},
+		{"tie", day(3), 3}, // a tie lands ahead of the card already there
+		{"oldest", day(9), 6},
+	}
+	for _, tc := range cases {
+		if got := a.Insert(&Card{ID: tc.id, DoneAt: tc.at}); got != tc.want {
+			t.Errorf("Insert(%s): index %d, want %d (order now %q)", tc.id, got, tc.want, archiveIDs(a))
+		}
+	}
+	if got, want := archiveIDs(a), "newest d1 between tie d3 d5 oldest"; got != want {
+		t.Errorf("order: %q, want %q", got, want)
+	}
+}
+
+func TestArchiveInsertIsVisibleAtTheCap(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	a := &Archive{}
+	for i := 0; i < ArchiveMax; i++ {
+		a.Cards = append(a.Cards, &Card{ID: DeriveID(string(rune('a' + i%26))), Title: "old", DoneAt: now.AddDate(0, 0, -30-i)})
+	}
+	fresh := &Card{ID: "fresh", Title: "just done", DoneAt: now}
+	a.Insert(fresh)
+	groups, _, scanned, total := ArchiveView(a, Parse(""), now)
+	if total != ArchiveMax+1 || scanned != ArchiveMax {
+		t.Fatalf("scanned=%d total=%d", scanned, total)
+	}
+	// ArchiveView takes the first ArchiveMax cards without sorting, so an
+	// appended card would be exactly the one it drops.
+	if len(groups) == 0 || groups[0].Label != ThisWeek.Label() || groups[0].Cards[0] != fresh {
+		t.Errorf("a freshly archived card must show under THIS WEEK even at the cap; got %+v", groups)
+	}
+}
+
+func TestArchiveFind(t *testing.T) {
+	x, y := &Card{ID: "x"}, &Card{ID: "y"}
+	a := &Archive{Cards: []*Card{x, y}}
+	if i, c := a.Find("y"); i != 1 || c != y {
+		t.Errorf("Find(y) = %d,%v, want 1,y", i, c)
+	}
+	if i, c := a.Find("nope"); i != -1 || c != nil {
+		t.Errorf("Find(nope) = %d,%v, want -1,nil", i, c)
+	}
+	if i, c := (&Archive{}).Find("x"); i != -1 || c != nil {
+		t.Errorf("Find on an empty archive = %d,%v, want -1,nil", i, c)
+	}
+}
+
+func TestArchiveDoneThenRestoreRoundTrip(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	then := now.AddDate(0, 0, -2)
+	b := &Board{}
+	c := &Card{ID: "c", Title: "round trip", DoneAt: then, MovedAt: then}
+	b.Lanes[Done] = []*Card{c}
+	a := &Archive{}
+	if b.ArchiveDone(a, 0, now) != c {
+		t.Fatal("archive")
+	}
+	i, _ := a.Find("c")
+	if got := b.Restore(a, i, now); got != c {
+		t.Fatalf("restore returned %v", got)
+	}
+	if len(a.Cards) != 0 || laneIDs(b, Doing) != "c" {
+		t.Errorf("after the round trip: archive=%d doing=%q", len(a.Cards), laneIDs(b, Doing))
+	}
+	if !c.DoneAt.IsZero() || !c.MovedAt.Equal(now) {
+		t.Errorf("restore must stamp like a move: done=%v moved=%v", c.DoneAt, c.MovedAt)
 	}
 }

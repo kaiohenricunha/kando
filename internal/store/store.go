@@ -274,6 +274,47 @@ func (s *Store) SaveRestore(b *board.Board, a *board.Archive) error {
 	return s.SaveArchive(a)
 }
 
+// SaveArchival writes both files of an archive move in the order that fails
+// safely — the inverse of SaveRestore: archive.md first, so a failure leaves
+// the card in both files (a duplicate the restore and archive guards both
+// refuse until one copy is deleted) and never in neither. The TUI calls it:
+// the unchecked writer that wins on purpose.
+func (s *Store) SaveArchival(b *board.Board, a *board.Archive) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveArchival(b, a)
+}
+
+// SaveArchivalIfUnchanged is SaveArchival for a caller that loaded, edited
+// and is writing back both files — kando web and kando archive: it refuses
+// with ErrConflict, touching neither file, when board.md or archive.md no
+// longer holds the bytes this Store last read or wrote. Load the archive
+// through (*Store).LoadArchive first so its state is on record; a missing
+// archive.md is simply not a conflict.
+func (s *Store) SaveArchivalIfUnchanged(b *board.Board, a *board.Archive) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, changed, err := changedContent(s.BoardPath(), &s.board); err != nil {
+		return err
+	} else if changed {
+		return ErrConflict
+	}
+	if _, changed, err := changedContent(s.ArchivePath(), &s.archive); err != nil {
+		return err
+	} else if changed {
+		return ErrConflict
+	}
+	return s.saveArchival(b, a)
+}
+
+// saveArchival writes archive.md, then board.md; the caller holds s.mu.
+func (s *Store) saveArchival(b *board.Board, a *board.Archive) error {
+	if err := s.saveArchive(a); err != nil {
+		return err
+	}
+	return s.saveBoard(b)
+}
+
 // saveBoard writes board.md; the caller holds s.mu.
 func (s *Store) saveBoard(b *board.Board) error {
 	data := Marshal(b)
@@ -314,6 +355,11 @@ func (s *Store) LoadArchive() (*board.Archive, error) {
 func (s *Store) SaveArchive(a *board.Archive) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.saveArchive(a)
+}
+
+// saveArchive writes archive.md; the caller holds s.mu.
+func (s *Store) saveArchive(a *board.Archive) error {
 	data := MarshalArchive(a)
 	if err := writeAtomic(s.ArchivePath(), data); err != nil {
 		return err

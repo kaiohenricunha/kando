@@ -418,6 +418,20 @@ func (m *Model) saveRestore() {
 	m.err = nil
 }
 
+// saveArchival writes both files of an archive move through the store,
+// which owns the order that fails safely (archive.md first) — A's
+// counterpart to saveRestore.
+func (m *Model) saveArchival() {
+	if m.st == nil || m.archive == nil {
+		return
+	}
+	if err := m.st.SaveArchival(m.b, m.archive); err != nil {
+		m.err = err
+		return
+	}
+	m.err = nil
+}
+
 func (m *Model) saveArchive() {
 	if m.st == nil || m.archive == nil {
 		return

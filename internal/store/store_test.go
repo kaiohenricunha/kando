@@ -404,6 +404,166 @@ func TestSaveRestoreWritesTheBoardFirst(t *testing.T) {
 	}
 }
 
+func TestSaveArchivalWritesTheArchiveFirst(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	b.Insert(board.Done, 0, &board.Card{ID: "aaaaaaaa", Title: "was done", DoneAt: now})
+	a := &board.Archive{}
+	b.ArchiveDone(a, 0, now)
+	if err := st.SaveArchival(b, a); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := Parse(mustRead(t, st.BoardPath()))
+	left, _ := LoadArchive(root, "life")
+	if len(got.Lanes[board.Done]) != 0 || len(left.Cards) != 1 || left.Cards[0].ID != "aaaaaaaa" {
+		t.Errorf("after archiving: done=%v archive=%v", titlesOf(got.Lanes[board.Done]), titlesOf(left.Cards))
+	}
+	data := string(mustRead(t, st.ArchivePath()))
+	if !strings.Contains(data, "## "+board.ISOWeekKey(now)) || !strings.Contains(data, "id: aaaaaaaa") {
+		t.Errorf("archive.md should file the card under its ISO week with its id:\n%s", data)
+	}
+}
+
+// The write order is what makes a half failure recoverable: archive.md goes
+// first, so if board.md then cannot be written the card is in both files (a
+// duplicate both guards refuse) rather than in neither. A directory cannot be
+// renamed over, which fails the second write for root and non-root alike.
+func TestSaveArchivalHalfFailureDuplicatesRatherThanLoses(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	b.Insert(board.Done, 0, &board.Card{ID: "aaaaaaaa", Title: "was done", DoneAt: now})
+	if err := st.SaveBoard(b); err != nil {
+		t.Fatal(err)
+	}
+	a := &board.Archive{}
+	b.ArchiveDone(a, 0, now)
+	if err := os.Remove(st.BoardPath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(st.BoardPath(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveArchival(b, a); err == nil {
+		t.Fatal("the board write should have failed")
+	}
+	left, err := LoadArchive(root, "life")
+	if err != nil || len(left.Cards) != 1 || left.Cards[0].ID != "aaaaaaaa" {
+		t.Errorf("archive.md must already hold the card when the board write fails: %v %v", titlesOf(left.Cards), err)
+	}
+}
+
+func TestSaveArchivalIfUnchangedRefusesAStaleBoard(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	b.Insert(board.Done, 0, &board.Card{ID: "aaaaaaaa", Title: "mine", DoneAt: now})
+	if err := st.SaveBoard(b); err != nil {
+		t.Fatal(err)
+	}
+	a, err := st.LoadArchive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Somebody else (the TUI, an editor) rewrites board.md in between.
+	other := &board.Board{Name: "life"}
+	other.Insert(board.Todo, 0, &board.Card{ID: "bbbbbbbb", Title: "theirs"})
+	if err := os.WriteFile(st.BoardPath(), Marshal(other), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := mustRead(t, st.BoardPath())
+	b.ArchiveDone(a, 0, now)
+	if err := st.SaveArchivalIfUnchanged(b, a); !errors.Is(err, ErrConflict) {
+		t.Errorf("a changed board.md should be ErrConflict, got %v", err)
+	}
+	if !bytes.Equal(mustRead(t, st.BoardPath()), before) {
+		t.Errorf("a refused save must not touch board.md")
+	}
+	if _, err := os.Stat(st.ArchivePath()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a refused save must not create archive.md: %v", err)
+	}
+}
+
+func TestSaveArchivalIfUnchangedRefusesAStaleArchive(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	b.Insert(board.Done, 0, &board.Card{ID: "aaaaaaaa", Title: "mine", DoneAt: now})
+	if err := st.SaveBoard(b); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveArchive(&board.Archive{Cards: []*board.Card{{ID: "cccccccc", Title: "old", DoneAt: now.AddDate(0, 0, -7)}}}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := st.LoadArchive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Somebody else rewrites archive.md in between.
+	theirs := &board.Archive{Cards: []*board.Card{{ID: "dddddddd", Title: "theirs", DoneAt: now}}}
+	if err := os.WriteFile(st.ArchivePath(), MarshalArchive(theirs), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	beforeBoard, beforeArchive := mustRead(t, st.BoardPath()), mustRead(t, st.ArchivePath())
+	b.ArchiveDone(a, 0, now)
+	if err := st.SaveArchivalIfUnchanged(b, a); !errors.Is(err, ErrConflict) {
+		t.Errorf("a changed archive.md should be ErrConflict, got %v", err)
+	}
+	if !bytes.Equal(mustRead(t, st.BoardPath()), beforeBoard) || !bytes.Equal(mustRead(t, st.ArchivePath()), beforeArchive) {
+		t.Errorf("a refused save must touch neither file")
+	}
+}
+
+// Open rewrites an id-less board.md and LoadArchive an id-less archive.md,
+// each recording what it wrote — so the checked save that follows must not
+// mistake our own rewrites for somebody else's edit, and the archived card
+// must be written with an id.
+func TestSaveArchivalPersistsHandWrittenArchiveIds(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "life")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(dir, "board.md"), []byte("## Done\n\n### Finished by hand\ndone: 2026-09-02\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "archive.md"), []byte("## 2026-W35\n\n### Older, by hand\ndone: 2026-08-26\n"), 0o644)
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := st.LoadArchive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	if c := b.ArchiveDone(a, 0, now); c == nil {
+		t.Fatal("nothing archived")
+	}
+	if err := st.SaveArchivalIfUnchanged(b, a); err != nil {
+		t.Fatalf("our own rewrites must not read as a conflict: %v", err)
+	}
+	data := string(mustRead(t, st.ArchivePath()))
+	if n := strings.Count(data, "\nid: "); n != 2 {
+		t.Errorf("every archived card should carry an id, found %d:\n%s", n, data)
+	}
+	got, _, _ := Parse(mustRead(t, st.BoardPath()))
+	if len(got.Lanes[board.Done]) != 0 {
+		t.Errorf("the card should have left Done: %v", titlesOf(got.Lanes[board.Done]))
+	}
+}
+
 func TestStructuralNotesSurviveARoundTrip(t *testing.T) {
 	notes := "## Nope\n### Ghost\n- [ ] not an item\n#### deep\nplain"
 	b := &board.Board{Name: "life"}

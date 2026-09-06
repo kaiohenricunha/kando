@@ -85,15 +85,16 @@ var invariantSizes = [][2]int{{60, 16}, {80, 24}, {100, 30}, {119, 40}, {120, 40
 
 // boardStates are the board-screen states every size must render exactly.
 var boardStates = map[string][]string{
-	"todo":         nil,
-	"done":         {"l", "l"},
-	"backlog":      {"h"},
-	"quick add":    {"a", "H", "e", "l", "l", "o"},
-	"help":         {"?"},
-	"filter typed": {"/", "#", "h", "o", "m", "e"},
-	"filter kept":  {"/", "#", "h", "o", "m", "e", "enter"},
-	"filter empty": {"/", "z", "z", "z"},
-	"scrolled":     {"j", "j", "j", "j"},
+	"todo":          nil,
+	"done":          {"l", "l"},
+	"backlog":       {"h"},
+	"quick add":     {"a", "H", "e", "l", "l", "o"},
+	"help":          {"?"},
+	"filter typed":  {"/", "#", "h", "o", "m", "e"},
+	"filter kept":   {"/", "#", "h", "o", "m", "e", "enter"},
+	"filter empty":  {"/", "z", "z", "z"},
+	"scrolled":      {"j", "j", "j", "j"},
+	"done archived": {"l", "l", "A"},
 }
 
 func TestWidthInvariantsBoard(t *testing.T) {

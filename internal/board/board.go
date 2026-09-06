@@ -253,3 +253,31 @@ func (a *Archive) Remove(i int) *Card {
 	a.Cards = append(a.Cards[:i], a.Cards[i+1:]...)
 	return c
 }
+
+// Insert adds c keeping the archive newest-DoneAt-first: before the first
+// card whose DoneAt is not after c's, so a card done today lands at index 0
+// and a tie goes ahead of what was already there. Returns c's index. The
+// order is functional, not cosmetic: ArchiveView takes a.Cards[:ArchiveMax]
+// without sorting, so an appended card would vanish from both archive
+// screens once the archive held ArchiveMax entries.
+func (a *Archive) Insert(c *Card) int {
+	i := 0
+	for i < len(a.Cards) && a.Cards[i].DoneAt.After(c.DoneAt) {
+		i++
+	}
+	a.Cards = append(a.Cards, nil)
+	copy(a.Cards[i+1:], a.Cards[i:])
+	a.Cards[i] = c
+	return i
+}
+
+// Find locates an archived card by id, as Board.Find does on the board:
+// (index, card), or (-1, nil) when no archived card has that id.
+func (a *Archive) Find(id string) (int, *Card) {
+	for i, c := range a.Cards {
+		if c.ID == id {
+			return i, c
+		}
+	}
+	return -1, nil
+}

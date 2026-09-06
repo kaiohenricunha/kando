@@ -345,6 +345,8 @@ func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.startEdit(editBlock, c.BlockedReason)
 	case "m":
 		m.mode = modeLanePick
+	case "A":
+		m.archiveDetailCard()
 	case "?":
 		m.help = true
 	}
@@ -514,4 +516,24 @@ func (m *Model) moveDetailCard(to board.Lane) {
 	m.setLane(to)
 	m.selectByID(c.ID)
 	m.ensureVisible()
+}
+
+// archiveDetailCard is A on an open board card: archive it and return to the
+// board. A no-op when the card is already archived (nothing to archive
+// twice) or is not in Done (the same guard the board screen's A applies).
+func (m *Model) archiveDetailCard() {
+	if m.detail.archived {
+		return
+	}
+	c := m.detailCard()
+	if c == nil {
+		return
+	}
+	if l, _, _ := m.b.Find(c.ID); l != board.Done {
+		return
+	}
+	m.archiveDone(c)
+	m.scr = screenBoard
+	m.mode = modeNormal
+	m.clampSel()
 }

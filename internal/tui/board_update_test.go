@@ -361,7 +361,7 @@ func TestHelpOverlayListsDeleteAndBoards(t *testing.T) {
 	m := newTestModel(t, 120, 40)
 	m = press(m, "?")
 	view := plainView(m)
-	for _, want := range []string{"x        delete card", "B        boards", "?        close help"} {
+	for _, want := range []string{"x        delete card", "A        archive (Done)", "B        boards", "?        close help"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("help overlay missing %q", want)
 		}

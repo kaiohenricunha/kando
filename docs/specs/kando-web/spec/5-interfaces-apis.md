@@ -31,6 +31,7 @@ their meaning, are identical by construction.
 | POST | `/b/{board}/cards/{id}/checklist/{index}/toggle` | Toggle one item done | `x` |
 | POST | `/b/{board}/cards/{id}/checklist/{index}` | Edit one item's text | `enter` on item |
 | POST | `/b/{board}/cards/{id}/delete` | Delete the card | new capability, §2 |
+| POST | `/b/{board}/cards/{id}/archive` | Move a Done card into archive.md (409 if not in Done or already archived, or if the board changed underneath) → redirect to the board | `A` |
 | GET | `/b/{board}/archive` | Archive view, grouped by week; optional `?q=` | `D` |
 | POST | `/b/{board}/archive/{id}/restore` | Undo, back to Doing | `u` |
 | GET | `/b/{board}/events` | Server-Sent Events stream: one `board-changed` event per `Store.Watch()` firing (KD-2, §4); each frame carries the board's version as its event id, so a reconnecting client replaying `Last-Event-ID` is told at once if it missed a change | — |

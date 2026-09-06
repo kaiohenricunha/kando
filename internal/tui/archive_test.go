@@ -184,6 +184,124 @@ var archiveStates = map[string][]string{
 	"archive detail": {"D", "enter"},
 	"archive help":   {"D", "?"},
 	"archive end":    {"D", "k"},
+	"archived one":   {"l", "l", "A", "D"},
+}
+
+func TestArchiveKeyMovesDoneCardToArchive(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Lanes = sampleBoard(t).Lanes
+	if err := os.WriteFile(st.ArchivePath(), []byte(store.MarshalArchive(sampleArchive(t))), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := New(Options{Store: st, Board: b, Styles: testStyles, Now: func() time.Time { return fixedNow }, Width: 120, Height: 40})
+	m = press(m, "l", "l") // Done lane
+	if m.lane != board.Done {
+		t.Fatalf("l,l should reach Done, got %v", m.lane)
+	}
+	top := m.b.Lanes[board.Done][0]
+	if top.Title != "Cancel gym membership" {
+		t.Fatalf("fixture drifted: top of Done is %q", top.Title)
+	}
+	doneAt := top.DoneAt
+
+	m = press(m, "A")
+	if got := len(m.b.Lanes[board.Done]); got != 2 {
+		t.Fatalf("Done should shrink to 2, has %d", got)
+	}
+	if m.archive == nil || len(m.archive.Cards) != 11 {
+		t.Fatalf("archive should grow to 11, has %v", m.archive)
+	}
+	got := m.archive.Cards[0]
+	if got.Title != "Cancel gym membership" || !got.DoneAt.Equal(doneAt) {
+		t.Errorf("archived card: %+v, want the fixture's DoneAt %v (not restamped)", got, doneAt)
+	}
+
+	// A outside Done must be a no-op.
+	before := len(m.b.Lanes[board.Doing])
+	m2 := press(m, "h", "A")
+	if len(m2.b.Lanes[board.Doing]) != before || len(m2.archive.Cards) != 11 {
+		t.Errorf("A outside Done must do nothing")
+	}
+
+	boardData, _ := os.ReadFile(st.BoardPath())
+	archiveData, _ := os.ReadFile(st.ArchivePath())
+	if strings.Contains(string(boardData), "Cancel gym membership") {
+		t.Errorf("board.md should no longer have the archived card")
+	}
+	if !strings.Contains(string(archiveData), "### Cancel gym membership") {
+		t.Errorf("archive.md should have the archived card")
+	}
+}
+
+func TestArchiveKeyFromDetail(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Lanes = sampleBoard(t).Lanes
+	if err := os.WriteFile(st.ArchivePath(), []byte(store.MarshalArchive(sampleArchive(t))), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := New(Options{Store: st, Board: b, Styles: testStyles, Now: func() time.Time { return fixedNow }, Width: 120, Height: 40})
+	m = press(m, "l", "l", "enter")
+	if m.scr != screenDetail || m.detail.archived {
+		t.Fatalf("enter should open the Done card in detail")
+	}
+	m = press(m, "A")
+	if m.scr != screenBoard {
+		t.Fatalf("A from detail should return to the board, got %v", m.scr)
+	}
+	if len(m.b.Lanes[board.Done]) != 2 || m.archive == nil || len(m.archive.Cards) != 11 {
+		t.Errorf("archiving from detail: done=%d archive=%v", len(m.b.Lanes[board.Done]), m.archive)
+	}
+
+	// A on an already-open archived card is a no-op.
+	m = press(m, "D", "enter")
+	if !m.detail.archived {
+		t.Fatalf("expected an archived detail view")
+	}
+	before := len(m.archive.Cards)
+	m = press(m, "A")
+	if m.scr != screenDetail || len(m.archive.Cards) != before {
+		t.Errorf("A on an archived card's detail must be a no-op")
+	}
+}
+
+func TestArchiveKeyLoadsArchiveLazily(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Lanes = sampleBoard(t).Lanes
+	if err := os.WriteFile(st.ArchivePath(), []byte(store.MarshalArchive(sampleArchive(t))), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Archive intentionally left nil: A must load it, not silently no-op
+	// (saveRestore's own nil-archive guard is the trap this pins).
+	m := New(Options{Store: st, Board: b, Styles: testStyles, Now: func() time.Time { return fixedNow }, Width: 120, Height: 40})
+	if m.archive != nil {
+		t.Fatal("test setup: archive should start nil")
+	}
+	m = press(m, "l", "l", "A")
+	if m.archive == nil || len(m.archive.Cards) != 11 {
+		t.Fatalf("A should load the existing archive.md and then add to it, got %v", m.archive)
+	}
+}
+
+func TestArchiveKeyRefusesADuplicate(t *testing.T) {
+	m := newTestModel(t, 120, 40)
+	dup := m.archive.Cards[0].ID
+	m.b.Lanes[board.Done][0].ID = dup // a previous half-failed archive
+	m = press(m, "l", "l", "A")
+	if len(m.b.Lanes[board.Done]) != 3 || len(m.archive.Cards) != 10 {
+		t.Errorf("a duplicate id must refuse the archive: done=%d archive=%d", len(m.b.Lanes[board.Done]), len(m.archive.Cards))
+	}
 }
 
 func TestWidthInvariantsArchive(t *testing.T) {

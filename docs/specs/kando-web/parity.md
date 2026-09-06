@@ -4,8 +4,10 @@ BOUND-1 (§2) says the two surfaces must never present different
 capabilities. This is the audit: every TUI key on the left, the route that
 does the same thing on the right. Verified against `internal/tui/help.go`,
 `internal/tui/board_update.go`, `internal/tui/detail.go`,
-`internal/tui/archive.go`, `internal/tui/boards.go` and
-`internal/web/server.go` at U9/U10.
+`internal/tui/archive.go`, `internal/tui/boards.go`, `internal/web/server.go`
+and `internal/web/archive.go` at U9/U10/U12. The CLI (`kando <verb>`) is a
+third surface with the same no-divergence rule; `README.md`'s "What each
+surface can do" table is that audit at capability granularity.
 
 ## Board screen
 
@@ -19,6 +21,7 @@ does the same thing on the right. Verified against `internal/tui/help.go`,
 | `d` move to Done | `POST …/move` (`lane=done`) | |
 | `u` undo (Done → Doing) | `POST …/move` (`lane=doing`) | |
 | `x` delete card | `POST /b/{board}/cards/{id}/delete` | Immediate on both, no confirmation (§2). |
+| `A` archive (Done only) | `POST /b/{board}/cards/{id}/archive` | Both go through `board.ArchiveDone` and `store.SaveArchival`/`SaveArchivalIfUnchanged`; the button only renders on a Done card, the key only fires in Done. `DoneAt` is kept — it is the week bucket archive.md files the card under. |
 | `/` filter | `?q=` on the board and the archive | Same `board.Parse`, so the operators are identical by construction. |
 | `D` archive view | `GET /b/{board}/archive` | |
 | `B` boards | `GET /boards` | |

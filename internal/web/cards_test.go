@@ -298,6 +298,116 @@ func TestArchiveRestoreRoute(t *testing.T) {
 	}
 }
 
+func TestArchiveCardRoute(t *testing.T) {
+	root := archiveRoot(t)
+	h := newHandler(t, root, "life")
+	before := reload(t, root, "life")
+	lane, _, c := before.Find("c6d7e2f3") // "Cancel gym membership", Done, done: 2026-09-02
+	if c == nil || lane != board.Done {
+		t.Fatalf("fixture card missing or moved: lane=%v c=%v", lane, c)
+	}
+	doneAt := c.DoneAt
+	wantRedirect(t, post(t, h, "/b/life/cards/c6d7e2f3/archive", nil), "/b/life")
+	b := reload(t, root, "life")
+	if lane, _, c := b.Find("c6d7e2f3"); c != nil {
+		t.Errorf("archived card should be gone from the board: lane=%v", lane)
+	}
+	a, _ := store.LoadArchive(root, "life")
+	if len(a.Cards) != 11 {
+		t.Fatalf("archive should have 11 cards, has %d", len(a.Cards))
+	}
+	got := a.Cards[0]
+	if got.ID != "c6d7e2f3" {
+		t.Fatalf("archived card should be newest (index 0): %+v", got)
+	}
+	if !got.DoneAt.Equal(doneAt) {
+		t.Errorf("DoneAt must be kept, not restamped to fixedNow: got %v, want %v", got.DoneAt, doneAt)
+	}
+	if !got.MovedAt.Equal(c.MovedAt) {
+		t.Errorf("MovedAt must be untouched: got %v, want %v", got.MovedAt, c.MovedAt)
+	}
+	if rec := post(t, h, "/b/life/cards/c6d7e2f3/archive", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("archiving a card no longer on the board: %d", rec.Code)
+	}
+}
+
+func TestArchiveCardRefusesACardNotInDone(t *testing.T) {
+	root := archiveRoot(t)
+	h := newHandler(t, root, "life")
+	id := todoCard(t, root)
+	before, _ := os.ReadFile(filepath.Join(root, "life", "board.md"))
+	beforeArchive, _ := os.ReadFile(filepath.Join(root, "life", "archive.md"))
+	rec := post(t, h, "/b/life/cards/"+id+"/archive", nil)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("archiving a Todo card: %d, want 409", rec.Code)
+	}
+	after, _ := os.ReadFile(filepath.Join(root, "life", "board.md"))
+	afterArchive, _ := os.ReadFile(filepath.Join(root, "life", "archive.md"))
+	if string(before) != string(after) || string(beforeArchive) != string(afterArchive) {
+		t.Errorf("a refused archive must touch neither file")
+	}
+}
+
+func TestArchiveCardWithNoDoneAtStampsNow(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "life")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "board.md"), []byte("## Done\n\n### Done by hand\n"), 0o644)
+	h := newHandler(t, root, "life")
+	_, body := get(t, h, "/b/life")
+	id := idRe.FindStringSubmatch(body)[1]
+	wantRedirect(t, post(t, h, "/b/life/cards/"+id+"/archive", nil), "/b/life")
+	a, _ := store.LoadArchive(root, "life")
+	if len(a.Cards) != 1 || !a.Cards[0].DoneAt.Equal(fixedNow) {
+		t.Fatalf("a missing done: date should be stamped now: %+v", a.Cards)
+	}
+	data := string(mustReadWeb(t, filepath.Join(dir, "archive.md")))
+	if !strings.Contains(data, "## "+board.ISOWeekKey(fixedNow)) || strings.Contains(data, "undated") {
+		t.Errorf("should file under this week, not undated:\n%s", data)
+	}
+}
+
+func TestArchivingACardAlreadyArchivedIsRefused(t *testing.T) {
+	root := archiveRoot(t)
+	h := newHandler(t, root, "life")
+	a, _ := store.LoadArchive(root, "life")
+	dupID := a.Cards[0].ID
+	b := reload(t, root, "life")
+	b.Insert(board.Done, 0, &board.Card{ID: dupID, Title: "duplicate of an archived id", DoneAt: fixedNow})
+	st, _, _ := store.Open(root, "life")
+	if err := st.SaveBoard(b); err != nil {
+		t.Fatal(err)
+	}
+	if rec := post(t, h, "/b/life/cards/"+dupID+"/archive", nil); rec.Code != http.StatusConflict {
+		t.Errorf("archiving a duplicate id: %d, want 409", rec.Code)
+	}
+	if a2, _ := store.LoadArchive(root, "life"); len(a2.Cards) != 10 {
+		t.Errorf("a refused archive must not touch the archive: %d", len(a2.Cards))
+	}
+}
+
+func TestCardPageShowsArchiveOnlyInDone(t *testing.T) {
+	root := archiveRoot(t)
+	h := newHandler(t, root, "life")
+	_, doneBody := get(t, h, "/b/life/cards/c6d7e2f3")
+	if !strings.Contains(doneBody, `action="/b/life/cards/c6d7e2f3/archive"`) {
+		t.Errorf("a Done card's page should offer archive:\n%s", grepLine(doneBody, "archive"))
+	}
+	_, todoBody := get(t, h, "/b/life/cards/"+todoCard(t, root))
+	if strings.Contains(todoBody, "/archive\"") {
+		t.Errorf("a Todo card's page must not offer archive")
+	}
+}
+
+func mustReadWeb(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
 // mutationRoutes is §5's mutation table in spec order. hasGET marks the two
 // paths that are also a page — a GET there renders, it does not mutate.
 func mutationRoutes(id, archived string) []struct {
@@ -313,6 +423,7 @@ func mutationRoutes(id, archived string) []struct {
 		{card + "/move", false}, {card + "/block", false},
 		{card + "/checklist", false}, {card + "/checklist/0/toggle", false},
 		{card + "/checklist/0", false}, {card + "/delete", false},
+		{card + "/archive", false},
 		{"/b/life/archive/" + archived + "/restore", false},
 	}
 }

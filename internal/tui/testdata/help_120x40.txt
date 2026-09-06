@@ -20,9 +20,9 @@
  │                    │  │ │  T│ tab      next lane           H/L      move card ±lane  │     │  │                    │ 
  │                    │  │ │  #│ H/L      move card           d        move to Done     │     │  │                    │ 
  │                    │  │ ╰───│ u        undo (Done → Doing) D        archive view     │     │  │                    │ 
- │                    │  │     │ x        delete card         B        boards           │     │  │                    │ 
- │                    │  │     │ /        filter              ?        close help       │     │  │                    │ 
- │                    │  │     │ q        quit                                          │     │  │                    │ 
+ │                    │  │     │ x        delete card         A        archive (Done)   │     │  │                    │ 
+ │                    │  │     │ /        filter              B        boards           │     │  │                    │ 
+ │                    │  │     │ q        quit                ?        close help       │     │  │                    │ 
  │                    │  │     ╰────────────────────────────────────────────────────────╯     │  │                    │ 
  │                    │  │                                            │  │                    │  │                    │ 
  │                    │  │                                            │  │                    │  │                    │ 

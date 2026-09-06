@@ -18,18 +18,26 @@ type archiveState struct {
 	cursor int
 }
 
-// openArchive loads archive.md on first use and shows the archive screen.
-func (m *Model) openArchive() {
-	if m.archive == nil {
-		m.archive = &board.Archive{}
-		if m.st != nil {
-			if a, err := m.st.LoadArchive(); err != nil {
-				m.err = err
-			} else {
-				m.archive = a
-			}
+// ensureArchive loads archive.md on first use, so a screen or a key that
+// touches the archive works whether or not the archive screen was opened
+// first — most notably A, which archives a card without ever showing it.
+func (m *Model) ensureArchive() {
+	if m.archive != nil {
+		return
+	}
+	m.archive = &board.Archive{}
+	if m.st != nil {
+		if a, err := m.st.LoadArchive(); err != nil {
+			m.err = err
+		} else {
+			m.archive = a
 		}
 	}
+}
+
+// openArchive loads archive.md on first use and shows the archive screen.
+func (m *Model) openArchive() {
+	m.ensureArchive()
 	m.scr = screenArchive
 	m.mode = modeNormal
 	m.arch.cursor = 0
@@ -235,4 +243,21 @@ func (m *Model) restoreArchived(c *board.Card) {
 	if m.lane == board.Doing {
 		m.clampSel()
 	}
+}
+
+// archiveDone moves c — which must be in Done — into the archive and saves
+// both files. A no-op if c is not in Done or is already archived (a stale
+// selection racing an external edit), the same class of guard the web's
+// archive route enforces with a 409.
+func (m *Model) archiveDone(c *board.Card) {
+	i := m.laneIndex(board.Done, c)
+	if i < 0 {
+		return
+	}
+	m.ensureArchive()
+	if _, dup := m.archive.Find(c.ID); dup != nil {
+		return
+	}
+	m.b.ArchiveDone(m.archive, i, m.now())
+	m.saveArchival()
 }
