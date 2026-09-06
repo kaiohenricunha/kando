@@ -73,8 +73,15 @@ kando unblock "Renew passport"
 kando checklist add "Renew passport" "Fill in the form"
 kando checklist toggle "Renew passport" 1     # 1-based, as "kando show" lists them
 kando delete "Renew passport"
+kando archive "Cancel gym membership"     # Done → archive.md
 kando archive list --filter "#money"      # the archive, grouped by week
+kando archive restore "Cancel gym membership"   # back to Doing
 ```
+
+A board, or a card, named the same as a verb (`add`, `list`, `board`, …) is
+still reachable — a card by its id, a board with `kando -- <board>` — see
+"A board literally named like a verb" below and `kando archive`'s own note
+on `list`/`restore`.
 
 ### `kando web`
 
@@ -214,7 +221,17 @@ read the card can pass `--was "current text"`, and the command refuses if
 item `<n>` no longer reads that way in the meantime: the CLI's equivalent of
 the web page's stale-checklist-form guard.
 
-### `kando archive list`
+### `kando archive`
+
+`kando archive <card> [board]` moves a Done card into the archive — the
+TUI's `A` and the web page's archive button. The card must be in Done
+(anywhere else is an error naming its actual lane) and must not already be
+archived. Its `done:` date is kept — that is the week `archive.md` files it
+under — except when it has none (a hand-edited board), which is stamped to
+now rather than filed under an undated heading. `list` and `restore` are
+reserved subcommand words below; a card literally titled one of them is
+still reachable by its id, the same trade-off `kando -- web` already makes
+for a board literally named like a verb.
 
 `kando archive list [board] [--filter "..."] [--json]` prints the archive
 exactly as the TUI's `D` screen and the web's archive page do: the newest 50
@@ -223,6 +240,21 @@ yet prints `nothing archived on "life"` rather than an empty table. `--json`
 mirrors the plain output's groups, plus `matched`/`scanned`/`total` so a
 script can tell "12 of the newest 50 match" from "12 of 200, the rest
 untouched by this filter."
+
+`kando archive restore <card> [board]` brings an archived card back to the
+top of Doing — the TUI's `u` and the web's restore button, going through the
+exact same `board.Restore` call. Refused if a card with that id is already
+on the board (a previous restore or archive half failed; one copy has to be
+deleted by hand first) or if the board has nothing archived at all.
+
+## Exit codes
+
+Every verb uses the same three, so a script can rely on them without
+checking which one ran: `0` the command did what it says; `1` it could not
+— a store, filesystem, or on-disk-conflict error, nothing was necessarily
+touched but nothing further was attempted either; `2` the arguments
+themselves were wrong (a missing value, an unknown flag, a bad lane name) —
+caught before any file was opened, so a `2` always means nothing changed.
 
 ## Keys
 

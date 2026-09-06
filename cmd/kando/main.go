@@ -52,7 +52,7 @@ const usageText = `usage: kando [board]
        kando checklist add <card> <text> [board]
        kando checklist toggle <card> <n> [board] [--was TEXT]
        kando checklist edit <card> <n> <text> [board] [--was TEXT]
-       kando archive list [board] [--filter "..."] [--json]
+       kando archive <card> [board] | archive list [board] [--filter "..."] [--json] | archive restore <card> [board]
 
 Boards live under $KANDO_HOME (default ~/.kando). [board] defaults to "life"
 and may come before or after a verb's flags; only "board create",
@@ -63,9 +63,16 @@ the error lists the matching ids so a script has an unambiguous way to
 retry. <lane> is Backlog, Todo, Doing or Done, case-insensitive. <n> counts
 checklist items from 1, as "kando show" lists them; --was TEXT refuses the
 change if the item no longer reads that way. --filter takes the same query
-syntax as the TUI's / (title text, #tag, !blocked, age>7d, age<3d). A board
-literally named like a verb opens in the terminal with: kando -- <board>
-Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR, KANDO_WEB_PORT`
+syntax as the TUI's / (title text, #tag, !blocked, age>7d, age<3d). kando
+archive moves a Done card to the archive; "list" and "restore" are reserved
+subcommand words there, so a card literally titled one of them needs its id.
+A board literally named like a verb opens in the terminal with:
+kando -- <board>
+Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR, KANDO_WEB_PORT
+
+Exit codes: 0 ok, 1 the command could not complete (a store, IO or conflict
+error), 2 bad arguments (nothing was touched). Stable across every verb, so
+a script can rely on them.`
 
 func usage() {
 	fmt.Fprintln(os.Stderr, usageText)

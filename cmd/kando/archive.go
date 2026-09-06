@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,28 +13,34 @@ import (
 	"github.com/kaiohenricunha/kando/internal/store"
 )
 
-// runArchive dispatches kando archive's subcommands. Only "list" exists so
-// far; the bare <card> form and "restore" are a later PR's addition to this
-// same switch.
+// runArchive dispatches kando archive's subcommands: "list" and "restore"
+// are reserved subcommand words, checked before the bare <card> form, which
+// gets everything else — so a card literally titled "list" or "restore" is
+// still reachable by its id, the same accepted collision class as
+// `kando -- web` for a board literally named like a verb.
 //
-// Open question for that PR, not this one: this switch does not honour "--"
-// the way the top-level dispatch does. It does not need to yet, because
-// every argument here is a subcommand name. Once a bare <card> form exists,
-// a card titled "list" is only reachable if `kando archive -- list` means
-// "not a subcommand" — the same escape dispatch already gives verbs, and
-// the same one the usage text teaches. Deciding it here would be building a
-// table for one entry; deciding it there is the point at which it earns its
-// place, in both this switch and runBoard's.
+// That answers the question the previous unit left open here: rather than
+// teaching this switch the "--" escape the top-level dispatch uses, the
+// collision is accepted and the id is the way out. Addressing by id is
+// something a script can always do, whereas `kando archive -- list` would be
+// a second escape convention to learn for one card in a thousand.
+// TestArchiveReservedWordsAreReachableByID pins it.
 func runArchive(args []string) {
 	if helpWanted(args) {
 		usage()
 		return
 	}
-	if len(args) > 0 && args[0] == "list" {
-		runArchiveList(args[1:])
-		return
+	if len(args) > 0 {
+		switch args[0] {
+		case "list":
+			runArchiveList(args[1:])
+			return
+		case "restore":
+			runArchiveRestore(args[1:])
+			return
+		}
 	}
-	usageErr(fmt.Errorf("kando archive needs list"))
+	runArchiveCard(args)
 }
 
 // archiveListArgs parses kando archive list's arguments: an optional board,
@@ -151,4 +158,156 @@ func runArchiveList(args []string) {
 		return
 	}
 	fmt.Println(formatArchiveList(root, resolvedName, groups, query, matched, scanned, total))
+}
+
+// archiveArgs parses kando archive <card>'s arguments: a card and an
+// optional board — "list" and "restore" are reserved subcommand words,
+// checked by runArchive before this ever runs.
+func archiveArgs(args []string) (card, name string, err error) {
+	vals, name, err := splitBoard("archive", "a card", args, 1)
+	if err != nil {
+		return "", "", err
+	}
+	return vals[0], name, nil
+}
+
+// findArchived resolves arg against a: an id first (Archive.Find), then —
+// on a miss — a case-insensitive exact title match, mirroring findCard's
+// own id-then-title shape and ambiguity handling (ids listed on a tie).
+func findArchived(a *board.Archive, arg string) (int, *board.Card, error) {
+	if i, c := a.Find(arg); c != nil {
+		return i, c, nil
+	}
+	i, n := -1, 0
+	var c *board.Card
+	var ids []string
+	for idx, card := range a.Cards {
+		if strings.EqualFold(card.Title, arg) {
+			i, c = idx, card
+			ids = append(ids, card.ID)
+			n++
+		}
+	}
+	switch n {
+	case 0:
+		return -1, nil, fmt.Errorf("no archived card matches id or title %q", arg)
+	case 1:
+		return i, c, nil
+	default:
+		return -1, nil, fmt.Errorf("%d archived cards match title %q; use one of these ids instead: %s", n, arg, strings.Join(ids, ", "))
+	}
+}
+
+// archiveCard is kando archive <card>'s testable core: the card must be in
+// Done and not already archived — the same two guards the web's archive
+// route and the TUI's A key enforce — then Board.ArchiveDone and the
+// checked, two-file save. doneAt is returned (not just the input now)
+// because ArchiveDone stamps a zero DoneAt to now, and the caller reports
+// whichever one actually landed.
+func archiveCard(root, name, cardArg string, now time.Time) (title string, doneAt time.Time, err error) {
+	st, b, err := openBoard(root, name)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	lane, i, c, err := findCard(b, cardArg)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if lane != board.Done {
+		return "", time.Time{}, fmt.Errorf("%q is in %s, not Done", c.Title, lane)
+	}
+	a, err := st.LoadArchive()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	// The archive already holding this id means a previous archive half
+	// failed after archive.md was written: archiving again would file the
+	// card twice. One copy has to be deleted first.
+	if _, dup := a.Find(c.ID); dup != nil {
+		return "", time.Time{}, fmt.Errorf("%q is already archived", c.Title)
+	}
+	title = c.Title
+	b.ArchiveDone(a, i, now)
+	if err := st.SaveArchivalIfUnchanged(b, a); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return "", time.Time{}, errConflict
+		}
+		return "", time.Time{}, err
+	}
+	return title, c.DoneAt, nil
+}
+
+func runArchiveCard(args []string) {
+	if helpWanted(args) {
+		usage()
+		return
+	}
+	cardArg, name, err := archiveArgs(args)
+	if err != nil {
+		usageErr(err)
+	}
+	title, doneAt, err := archiveCard(kandoRoot(), name, cardArg, time.Now())
+	if err != nil {
+		fatal(err)
+	}
+	fmt.Printf("archived %q (done %s)\n", title, board.DayLabel(doneAt))
+}
+
+// archiveRestoreArgs parses kando archive restore's arguments: the same
+// shape as archiveArgs.
+func archiveRestoreArgs(args []string) (card, name string, err error) {
+	vals, name, err := splitBoard("archive restore", "a card", args, 1)
+	if err != nil {
+		return "", "", err
+	}
+	return vals[0], name, nil
+}
+
+// archiveRestore is kando archive restore's testable core: the same
+// Board.Restore + Store.SaveRestore call the TUI's u and the web's restore
+// button use, with the same duplicate-id guard the web route enforces
+// (internal/web/archive.go): if the card's id is already on the board, a
+// previous restore or archive half failed, and one copy has to be deleted
+// by hand before this can proceed.
+func archiveRestore(root, name, cardArg string, now time.Time) (title string, err error) {
+	st, b, err := openBoard(root, name)
+	if err != nil {
+		return "", err
+	}
+	a, err := st.LoadArchive()
+	if err != nil {
+		return "", err
+	}
+	if len(a.Cards) == 0 {
+		return "", fmt.Errorf("nothing archived on %q", b.Name)
+	}
+	i, c, err := findArchived(a, cardArg)
+	if err != nil {
+		return "", err
+	}
+	if _, _, dup := b.Find(c.ID); dup != nil {
+		return "", fmt.Errorf("%q is already on the board", c.Title)
+	}
+	title = c.Title
+	b.Restore(a, i, now)
+	if err := st.SaveRestore(b, a); err != nil {
+		return "", err
+	}
+	return title, nil
+}
+
+func runArchiveRestore(args []string) {
+	if helpWanted(args) {
+		usage()
+		return
+	}
+	cardArg, name, err := archiveRestoreArgs(args)
+	if err != nil {
+		usageErr(err)
+	}
+	title, err := archiveRestore(kandoRoot(), name, cardArg, time.Now())
+	if err != nil {
+		fatal(err)
+	}
+	fmt.Printf("restored %q to Doing\n", title)
 }

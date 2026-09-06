@@ -55,6 +55,21 @@ the `pos`/`anchor` vocabulary and, with it, the first redirect in this
 server that depends on what the form asked for; that rule is now stated
 under the route table. §6.1, §6.3, §6.4 and §6.6 gain U11 entries.
 
+Finalization pass (2026-09-06, U12): archiving a card (Done → `archive.md`)
+existed on no surface before this unit — only `Unarchive`/`Restore`
+(archive → board) did. §2's BOUND-1a note is extended (archiving *into* the
+archive is a new capability, not a narrowing of the restore-only exception,
+which still stands for an *already-archived* card), §5 gains the
+`/cards/{id}/archive` row, and the parity audit's Board-screen table gains
+the matching `A` row. §6.1, §6.4 and §6.6 gain U12 entries; the write order
+(`archive.md` then `board.md`, the inverse of `SaveRestore`) is the one
+deviation worth flagging — chosen so a half failure duplicates a card
+instead of losing it. This spec's scope stays the web frontend: the CLI
+verb built on the same U12 primitives (`kando archive`) is tracked outside
+`docs/specs/kando-web` entirely, alongside the dozen other headless verbs
+added in the same effort — see the "What each surface can do" table in the
+top-level `README.md`.
+
 ## Parity audit
 
 [parity.md](parity.md) — every TUI key against the §5 route that does the
