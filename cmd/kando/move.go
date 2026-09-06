@@ -117,7 +117,7 @@ func runMove(args []string) {
 	}
 	to, ok := board.ParseLane(laneArg)
 	if !ok {
-		fmt.Fprintln(os.Stderr, "kando:", fmt.Errorf("invalid lane %q", laneArg))
+		fmt.Fprintf(os.Stderr, "kando: invalid lane %q\n", laneArg)
 		usage()
 		os.Exit(2)
 	}

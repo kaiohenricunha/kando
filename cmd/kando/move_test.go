@@ -113,6 +113,27 @@ func TestFindCard(t *testing.T) {
 	})
 }
 
+// loadBoard reloads root/name from disk, failing the test on any error.
+func loadBoard(t *testing.T, root, name string) *board.Board {
+	t.Helper()
+	b, err := store.Load(root, name)
+	if err != nil {
+		t.Fatalf("store.Load: %v", err)
+	}
+	return b
+}
+
+// readBoardFile returns root/name/board.md's contents, failing the test on
+// any error.
+func readBoardFile(t *testing.T, root, name string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, name, "board.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
 func TestMoveCard(t *testing.T) {
 	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
 
@@ -142,10 +163,7 @@ func TestMoveCard(t *testing.T) {
 		if title != "Renew passport" || from != board.Todo {
 			t.Errorf("title=%q from=%v, want %q/%v", title, from, "Renew passport", board.Todo)
 		}
-		b, err := store.Load(root, "life")
-		if err != nil {
-			t.Fatalf("store.Load: %v", err)
-		}
+		b := loadBoard(t, root, "life")
 		if len(b.Lanes[board.Todo]) != 0 || len(b.Lanes[board.Doing]) != 1 {
 			t.Fatalf("card did not move: todo=%d doing=%d", len(b.Lanes[board.Todo]), len(b.Lanes[board.Doing]))
 		}
@@ -166,10 +184,7 @@ func TestMoveCard(t *testing.T) {
 		if from != board.Doing {
 			t.Errorf("from=%v, want %v", from, board.Doing)
 		}
-		b, err := store.Load(root, "life")
-		if err != nil {
-			t.Fatalf("store.Load: %v", err)
-		}
+		b := loadBoard(t, root, "life")
 		if len(b.Lanes[board.Done]) != 1 || !b.Lanes[board.Done][0].DoneAt.Equal(now) {
 			t.Fatalf("DoneAt not stamped: %+v", b.Lanes[board.Done])
 		}
@@ -195,10 +210,7 @@ func TestMoveCard(t *testing.T) {
 		if err != nil {
 			t.Fatalf("moveCard: %v", err)
 		}
-		b, err := store.Load(root, "life")
-		if err != nil {
-			t.Fatalf("store.Load: %v", err)
-		}
+		b := loadBoard(t, root, "life")
 		if len(b.Lanes[board.Doing]) != 1 {
 			t.Fatalf("default board \"life\" was not used")
 		}
@@ -209,18 +221,11 @@ func TestMoveCard(t *testing.T) {
 		seed(t, root, "life", map[board.Lane][]*board.Card{
 			board.Todo: {{ID: "aaaaaaaa", Title: "Renew passport"}},
 		})
-		before, err := os.ReadFile(filepath.Join(root, "life", "board.md"))
-		if err != nil {
-			t.Fatal(err)
-		}
+		before := readBoardFile(t, root, "life")
 		if _, _, err := moveCard(root, "life", "nope", board.Doing, now); err == nil {
 			t.Fatal("want an error for a nonexistent card")
 		}
-		after, err := os.ReadFile(filepath.Join(root, "life", "board.md"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(before) != string(after) {
+		if after := readBoardFile(t, root, "life"); before != after {
 			t.Errorf("board.md changed despite a failed move")
 		}
 	})
@@ -231,18 +236,11 @@ func TestMoveCard(t *testing.T) {
 			board.Todo:  {{ID: "aaaaaaaa", Title: "Dup"}},
 			board.Doing: {{ID: "bbbbbbbb", Title: "Dup"}},
 		})
-		before, err := os.ReadFile(filepath.Join(root, "life", "board.md"))
-		if err != nil {
-			t.Fatal(err)
-		}
+		before := readBoardFile(t, root, "life")
 		if _, _, err := moveCard(root, "life", "Dup", board.Done, now); err == nil {
 			t.Fatal("want an ambiguity error")
 		}
-		after, err := os.ReadFile(filepath.Join(root, "life", "board.md"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(before) != string(after) {
+		if after := readBoardFile(t, root, "life"); before != after {
 			t.Errorf("board.md changed despite a failed move")
 		}
 	})
@@ -260,10 +258,7 @@ func TestMoveCard(t *testing.T) {
 		if from != board.Doing {
 			t.Errorf("from=%v, want %v", from, board.Doing)
 		}
-		b, err := store.Load(root, "life")
-		if err != nil {
-			t.Fatalf("store.Load: %v", err)
-		}
+		b := loadBoard(t, root, "life")
 		if !b.Lanes[board.Doing][0].MovedAt.Equal(created) {
 			t.Errorf("MovedAt changed on a same-lane no-op: got %v, want %v", b.Lanes[board.Doing][0].MovedAt, created)
 		}
@@ -277,11 +272,7 @@ func TestMoveCard(t *testing.T) {
 		if _, _, err := moveCard(root, "life", "aaaaaaaa", board.Doing, now); err != nil {
 			t.Fatalf("moveCard: %v", err)
 		}
-		b, err := store.Load(root, "life")
-		if err != nil {
-			t.Fatalf("store.Load: %v", err)
-		}
-		c := b.Lanes[board.Doing][0]
+		c := loadBoard(t, root, "life").Lanes[board.Doing][0]
 		if !c.Blocked || c.BlockedReason != "waiting on photos" {
 			t.Errorf("blocked state changed: blocked=%v reason=%q", c.Blocked, c.BlockedReason)
 		}
