@@ -411,7 +411,7 @@ func TestBoardPageLoadsTheDragListener(t *testing.T) {
 		t.Errorf("live.js must load before dnd.js: live at %d, dnd at %d", i, j)
 	}
 	rec, js := get(t, h, "/static/dnd.js")
-	if rec.Code != 200 || !strings.Contains(js, "dragstart") {
+	if rec.Code != 200 || !strings.Contains(js, "dragstart") || !strings.Contains(js, "autoScroll") {
 		t.Errorf("dnd.js: %d %q", rec.Code, js)
 	}
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "javascript") {

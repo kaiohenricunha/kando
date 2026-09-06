@@ -57,6 +57,23 @@
     paint();
   }
 
+  // Native drag-and-drop never scrolls the window on its own, so a lane
+  // below the fold is unreachable without this: near the top or bottom
+  // edge, nudge the page toward it. dragover fires repeatedly while
+  // hovering even without pointer movement, which is what keeps this
+  // going without a separate timer.
+  var EDGE = 60; // px from the viewport edge that starts scrolling
+  var MAX_STEP = 18; // px per dragover tick, right at the edge
+  function autoScroll(y) {
+    var h = window.innerHeight;
+    var past;
+    if (y < EDGE) past = EDGE - y;
+    else if (y > h - EDGE) past = y - (h - EDGE);
+    else return;
+    var step = Math.max(2, Math.round((past / EDGE) * MAX_STEP));
+    window.scrollBy(0, y < EDGE ? -step : step);
+  }
+
   function hidden(form, name, value) {
     var input = document.createElement("input");
     input.type = "hidden";
@@ -100,6 +117,15 @@
       // which the browser would otherwise drag (and drop) as its link.
       e.dataTransfer.setData("text/plain", card.dataset.id);
     }
+  });
+
+  // Runs for every dragover regardless of what it lands on — the lane
+  // listeners below only cover the area a .lane's box actually fills, but
+  // the edge a user drags toward is a viewport edge, not a lane boundary.
+  // No preventDefault here: this only scrolls, it must never turn
+  // somewhere outside the lanes into a valid drop target.
+  document.addEventListener("dragover", function (e) {
+    if (dragged) autoScroll(e.clientY);
   });
 
   document.addEventListener("dragend", function () {
