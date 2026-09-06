@@ -67,3 +67,55 @@ func TestFilterDoneCardUsesDoneAt(t *testing.T) {
 		t.Errorf("done card age should be measured from DoneAt")
 	}
 }
+
+func TestBoardMatching(t *testing.T) {
+	sourdough := card("Learn to make sourdough", "home", 12, false)
+	brake := card("Fix bike brake", "home", 4, true)
+	dentist := card("Book dentist", "health", 1, false)
+
+	b := &Board{}
+	b.Lanes[Backlog] = []*Card{sourdough}
+	b.Lanes[Todo] = []*Card{brake, dentist}
+
+	t.Run("empty filter matches everything, lane order preserved", func(t *testing.T) {
+		lanes, matched, total := b.Matching(Parse(""), now)
+		if matched != 3 || total != 3 {
+			t.Fatalf("matched=%d total=%d", matched, total)
+		}
+		if len(lanes[Backlog]) != 1 || lanes[Backlog][0] != sourdough {
+			t.Errorf("Backlog: %v", lanes[Backlog])
+		}
+		if len(lanes[Todo]) != 2 || lanes[Todo][0] != brake || lanes[Todo][1] != dentist {
+			t.Errorf("Todo: %v", lanes[Todo])
+		}
+	})
+
+	t.Run("filter narrows matched but not total", func(t *testing.T) {
+		lanes, matched, total := b.Matching(Parse("#home"), now)
+		if matched != 2 || total != 3 {
+			t.Fatalf("matched=%d total=%d", matched, total)
+		}
+		if len(lanes[Backlog]) != 1 || len(lanes[Todo]) != 1 || lanes[Todo][0] != brake {
+			t.Errorf("lanes: backlog=%v todo=%v", lanes[Backlog], lanes[Todo])
+		}
+	})
+
+	t.Run("a lane with no matches is an empty, non-nil-checked slice", func(t *testing.T) {
+		lanes, matched, _ := b.Matching(Parse("#health"), now)
+		if matched != 1 || len(lanes[Backlog]) != 0 || len(lanes[Doing]) != 0 {
+			t.Errorf("matched=%d backlog=%v doing=%v", matched, lanes[Backlog], lanes[Doing])
+		}
+	})
+
+	t.Run("empty board", func(t *testing.T) {
+		lanes, matched, total := (&Board{}).Matching(Parse(""), now)
+		if matched != 0 || total != 0 {
+			t.Errorf("matched=%d total=%d", matched, total)
+		}
+		for _, l := range lanes {
+			if len(l) != 0 {
+				t.Errorf("expected every lane empty, got %v", l)
+			}
+		}
+	})
+}

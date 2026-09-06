@@ -15,8 +15,12 @@ import (
 // "help", "-h", "--help", "-v", "--version" and "version" are deliberately
 // not table keys — main's own switch handles those, unchanged.
 var verbs = map[string]func([]string){
-	"web":  runWeb,
-	"move": runMove,
+	"web":     runWeb,
+	"move":    runMove,
+	"board":   runBoard,
+	"show":    runShow,
+	"list":    runList,
+	"archive": runArchive,
 }
 
 // dispatch names the verb args select ("" when none matched) and the args

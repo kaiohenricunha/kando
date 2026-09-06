@@ -59,7 +59,11 @@ go run ./cmd/kando work       # opens board "work"
 make build && ./bin/kando
 kando web                     # serves the boards at http://127.0.0.1:4242/
 kando web work --port 8080    # a specific board, a specific port
+kando board list                          # every board under $KANDO_HOME
+kando list --filter "#errand !blocked"    # the board as text; --json for scripts
+kando show "Renew passport" --json        # one card, every field
 kando move "Renew passport" Doing         # move a card by title (or id) to a lane
+kando archive list --filter "#money"      # the archive, grouped by week
 ```
 
 ### `kando web`
@@ -110,6 +114,43 @@ refused — use the id instead. `<lane>` is `Backlog`, `Todo`, `Doing` or
 verb. Unlike `kando [board]` and `kando web [board]`, a board that does not
 already exist is an error, not something `move` creates for you: there is no
 card to move on a board that was never opened.
+
+### `kando board list`
+
+`kando board list [--json]` prints every board under `$KANDO_HOME`, one name
+per line — the CLI's counterpart to the web's boards page and the TUI's `B`.
+`--json` emits an array of `{name, cards, lanes}`, `lanes` keyed by the
+lowercase lane name (`todo`, `doing`, …), for a script that wants counts
+without opening each board itself.
+
+### `kando show`
+
+`kando show <card> [board] [--json]` prints one card's full detail — title,
+tag, id, dates, age, blocked reason, notes and checklist — the read-only
+equivalent of opening a card in the TUI or on the web page, without the
+editing session. `<card>` follows the same id-or-title rule as `move`.
+`--json` emits every field kando tracks, RFC 3339 timestamps, `checklist`
+always an array. A section with nothing in it (no tag, no notes, an empty
+checklist) is simply omitted from the plain-text output.
+
+### `kando list`
+
+`kando list [board] [--filter "..."] [--json]` prints every lane and its
+cards — id, title, tag, checklist progress, blocked reason and age — using
+the same `#tag` / `!blocked` / `age>7d` query syntax as the TUI's `/`. All
+four lanes are always shown, even when empty. `--json` emits
+`{board, filter, matched, total, lanes: [{lane, cards}]}` with the same
+per-card shape as `kando show --json`.
+
+### `kando archive list`
+
+`kando archive list [board] [--filter "..."] [--json]` prints the archive
+exactly as the TUI's `D` screen and the web's archive page do: the newest 50
+entries, grouped by week, oldest week last. A board with nothing archived
+yet prints `nothing archived on "life"` rather than an empty table. `--json`
+mirrors the plain output's groups, plus `matched`/`scanned`/`total` so a
+script can tell "12 of the newest 50 match" from "12 of 200, the rest
+untouched by this filter."
 
 ## Keys
 
