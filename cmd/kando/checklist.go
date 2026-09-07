@@ -40,7 +40,13 @@ func checklistAddArgs(args []string) (card, text, name string, err error) {
 	if err != nil {
 		return "", "", "", err
 	}
-	return vals[0], vals[1], name, nil
+	if card, err = required(vals[0], "card id or title"); err != nil {
+		return "", "", "", err
+	}
+	if text, err = required(vals[1], "text"); err != nil {
+		return "", "", "", err
+	}
+	return card, text, name, nil
 }
 
 // addChecklistItem appends text (InsertChecklistItem at the end, mirroring
@@ -127,6 +133,9 @@ func checklistToggleArgs(args []string, errOut io.Writer) (card string, n int, w
 	if err != nil {
 		return "", 0, nil, "", err
 	}
+	if card, err = required(vals[0], "card id or title"); err != nil {
+		return "", 0, nil, "", err
+	}
 	n, err = parseItemNumber(vals[1])
 	if err != nil {
 		return "", 0, nil, "", err
@@ -134,7 +143,7 @@ func checklistToggleArgs(args []string, errOut io.Writer) (card string, n int, w
 	if wasGiven(fs) {
 		was = wasFlag
 	}
-	return vals[0], n, was, name, nil
+	return card, n, was, name, nil
 }
 
 func toggleChecklistItem(root, name, cardArg string, n int, was *string) (title string, item board.Item, err error) {
@@ -186,14 +195,20 @@ func checklistEditArgs(args []string, errOut io.Writer) (card string, n int, tex
 	if err != nil {
 		return "", 0, "", nil, "", err
 	}
+	if card, err = required(vals[0], "card id or title"); err != nil {
+		return "", 0, "", nil, "", err
+	}
 	n, err = parseItemNumber(vals[1])
 	if err != nil {
+		return "", 0, "", nil, "", err
+	}
+	if text, err = required(vals[2], "text"); err != nil {
 		return "", 0, "", nil, "", err
 	}
 	if wasGiven(fs) {
 		was = wasFlag
 	}
-	return vals[0], n, vals[2], was, name, nil
+	return card, n, text, was, name, nil
 }
 
 func editChecklistItem(root, name, cardArg string, n int, text string, was *string) (title string, item board.Item, err error) {

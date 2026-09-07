@@ -12,7 +12,11 @@ func deleteArgs(args []string) (card, name string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	return vals[0], name, nil
+	card, err = required(vals[0], "card id or title")
+	if err != nil {
+		return "", "", err
+	}
+	return card, name, nil
 }
 
 // deleteCard is kando delete's testable core: immediate, no confirmation —

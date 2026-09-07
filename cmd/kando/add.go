@@ -26,11 +26,15 @@ func addArgs(args []string, errOut io.Writer) (title, name string, lane board.La
 	if err != nil {
 		return "", "", 0, "", err
 	}
+	title, err = required(vals[0], "title")
+	if err != nil {
+		return "", "", 0, "", err
+	}
 	l, ok := board.ParseLane(*laneFlag)
 	if !ok {
 		return "", "", 0, "", fmt.Errorf("invalid lane %q", *laneFlag)
 	}
-	return vals[0], name, l, *tagFlag, nil
+	return title, name, l, *tagFlag, nil
 }
 
 // addCard is kando add's testable core: a new card lands at the top of

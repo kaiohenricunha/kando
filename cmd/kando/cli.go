@@ -215,6 +215,23 @@ func parseMixed(fs *flag.FlagSet, args []string) (pos []string, err error) {
 	}
 }
 
+// required trims v and rejects it when nothing is left, naming what was
+// missing: "card id or title required", "title required", "text required".
+//
+// splitBoard deliberately hands required values back verbatim, because only
+// the verb knows what each positional means and can say which one is wrong.
+// This is that check, in one place rather than once per verb — every verb
+// with a required positional calls it, so a blank value is an argument error
+// (exit 2, with usage) rather than something a mutation path discovers after
+// it has already opened the board.
+func required(v, what string) (string, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", fmt.Errorf("%s required", what)
+	}
+	return v, nil
+}
+
 // splitBoard applies every verb's shared positional grammar: exactly n
 // required values, plus at most one trailing optional board name. need names
 // the required values for the "too few" error, e.g. "a card and a lane". A

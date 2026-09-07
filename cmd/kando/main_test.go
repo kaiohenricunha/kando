@@ -88,22 +88,32 @@ func runCLI(t *testing.T, home string, args ...string) (stdout, stderr string, e
 func TestUsageTextIsUnchanged(t *testing.T) {
 	const want = `usage: kando [board]
        kando web [board] [--port N]
-       kando board list [--json]
+       kando board create <name> | board list [--json]
+       kando add <title> [board] [--lane L] [--tag T]
        kando show <card> [board] [--json]
        kando list [board] [--filter "..."] [--json]
        kando move <card> <lane> [board]
+       kando tag <card> <tag> [board]
+       kando notes <card> [board] (--set TEXT | --file PATH | -)
+       kando block <card> --reason "..." [board]
+       kando unblock <card> [board]
+       kando delete <card> [board]
+       kando checklist add <card> <text> [board]
+       kando checklist toggle <card> <n> [board] [--was TEXT]
+       kando checklist edit <card> <n> <text> [board] [--was TEXT]
        kando archive list [board] [--filter "..."] [--json]
 
-Opens the board (default "life") from $KANDO_HOME (default ~/.kando) in the
-terminal, or serves it at http://127.0.0.1:<port>/ (default 4242). The board
-name may come before or after a verb's flags. <card> is a card's id or its
-exact, case-insensitive title; a title matching more than one card is
-refused. <lane> is Backlog, Todo, Doing or Done, case-insensitive.
-kando move moves <card> to <lane> on an existing board; it never creates
-one — none of these verbs do. --filter takes the same query syntax as the
-TUI's / (title text, #tag, !blocked, age>7d, age<3d). A board literally
-named "web", "move", "board", "show", "list" or "archive" opens in the
-terminal with: kando -- <board>
+Boards live under $KANDO_HOME (default ~/.kando). [board] defaults to "life"
+and may come before or after a verb's flags; only "board create",
+"kando [board]" and "kando web [board]" create a board — every other verb
+needs one that already exists. <card> is a card's id or its exact,
+case-insensitive title; a title matching more than one card is refused, and
+the error lists the matching ids so a script has an unambiguous way to
+retry. <lane> is Backlog, Todo, Doing or Done, case-insensitive. <n> counts
+checklist items from 1, as "kando show" lists them; --was TEXT refuses the
+change if the item no longer reads that way. --filter takes the same query
+syntax as the TUI's / (title text, #tag, !blocked, age>7d, age<3d). A board
+literally named like a verb opens in the terminal with: kando -- <board>
 Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR, KANDO_WEB_PORT`
 	if usageText != want {
 		t.Errorf("usageText changed:\n--- got ---\n%s\n--- want ---\n%s", usageText, want)
