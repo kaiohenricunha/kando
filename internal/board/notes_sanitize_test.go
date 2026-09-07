@@ -33,10 +33,15 @@ func TestSetNotesStripsControlRunesKeepingNewlinesAndTabs(t *testing.T) {
 		},
 		{
 			// C1 controls are real runes in UTF-8, and unicode.IsControl
-			// covers them as well as the C0 block.
+			// covers them as well as the C0 block. U+009B is CSI, the
+			// single-byte form of ESC [, so it starts a control sequence on
+			// its own; U+0085 is NEL. Written as escapes deliberately: a
+			// literal C1 byte is invisible in a diff and in every editor, so
+			// a normalizing hook could delete it and leave the case asserting
+			// "abc" == "abc" while still passing.
 			name: "c1 control",
-			in:   "abc",
-			want: "abc",
+			in:   "a\u0085b\u009b2Jc",
+			want: "ab2Jc",
 		},
 		{
 			name: "newlines and tabs are content, not control",
@@ -60,17 +65,39 @@ func TestSetNotesStripsControlRunesKeepingNewlinesAndTabs(t *testing.T) {
 	}
 }
 
-// TestSetNotesStillNormalizesAndTrims guards the behaviour that was already
-// there, since the sanitizing step was inserted into the middle of it.
-func TestSetNotesStillNormalizesAndTrims(t *testing.T) {
+// TestSetNotesStepOrdering pins the order of the three steps in SetNotes,
+// because inserting the strip in the middle of them created two ways to get
+// it wrong that no existing test can see.
+//
+// TestSetNotesNormalizesCRLF (ops_test.go) and TestFieldsAreCapped
+// (board_test.go) already cover CRLF and the byte cap, so repeating them here
+// would add nothing: "a\r\nb" yields "a\nb" under either ordering, and a
+// plain ASCII string cannot outgrow the cap. Each case below is chosen
+// because it fails if the steps are reordered.
+func TestSetNotesStepOrdering(t *testing.T) {
 	c := &Card{}
-	c.SetNotes("a\r\nb\r\n\r\n")
+
+	// Normalize must run BEFORE the strip. A lone CR is an old-Mac line
+	// ending and CR is itself a control rune, so stripping first deletes it
+	// and silently joins two lines into one. This is the only input that
+	// tells the two orderings apart.
+	c.SetNotes("a\rb")
 	if c.Notes != "a\nb" {
-		t.Errorf("CRLF normalization or trailing trim changed: %q", c.Notes)
+		t.Errorf("CR normalization must precede the strip: got %q, want %q", c.Notes, "a\nb")
 	}
 
-	c.SetNotes(strings.Repeat("x", maxNotesBytes+100))
+	// A control rune touching a line ending must not consume it.
+	c.SetNotes("a\x1b\r\n\x00b")
+	if c.Notes != "a\nb" {
+		t.Errorf("control rune beside a line ending: got %q, want %q", c.Notes, "a\nb")
+	}
+
+	// The strip must run BEFORE the clip. strings.Map rewrites each invalid
+	// UTF-8 byte to U+FFFD, which is 3 bytes, so sanitizing can grow the
+	// value threefold. Clipping first would spend the budget on bytes that
+	// are about to expand and blow the cap wide open.
+	c.SetNotes(strings.Repeat("\xff", maxNotesBytes))
 	if len(c.Notes) > maxNotesBytes {
-		t.Errorf("notes exceed the %d byte cap: %d", maxNotesBytes, len(c.Notes))
+		t.Errorf("strip must precede the clip: %d bytes exceeds the %d cap", len(c.Notes), maxNotesBytes)
 	}
 }

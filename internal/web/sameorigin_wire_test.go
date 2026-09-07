@@ -2,9 +2,14 @@ package web
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/kaiohenricunha/kando/internal/board"
 )
 
 // TestSameOriginOverARealConnection drives the guard through a real
@@ -21,10 +26,13 @@ import (
 // (the Go 1.25 -> 1.27 move in #16 shifts program-wide GODEBUG defaults, and
 // net/http request-parsing changes have historically shipped that way).
 //
-// So this asserts the outcomes that matter end to end rather than restating
-// the decision table: a forged Origin, a cross-site fetch and a foreign Host
-// are refused over the wire, and the legitimate browser form post still gets
-// through.
+// The two Host cases are what this test uniquely covers: httptest.NewRequest
+// assigns req.Host on the struct and skips net/http's own readRequest parse,
+// so nothing else in the suite exercises it. The POST cases are here because
+// sameOrigin is a CSRF guard and CSRF only has teeth on a state-changing
+// request — a GET carrying form-post headers would assert the outcome on a
+// path the attack cannot use. The allowed POST doubles as the control that
+// proves the refusals are the guard talking and not a broken fixture.
 func TestSameOriginOverARealConnection(t *testing.T) {
 	root := newRoot(t)
 	ln, err := Listen(0)
@@ -39,15 +47,23 @@ func TestSameOriginOverARealConnection(t *testing.T) {
 		done <- Serve(ctx, ln, Options{Root: root, Board: "life", Now: func() time.Time { return fixedNow }})
 	}()
 
-	// A client that never follows redirects, so a 303 is not mistaken for the
-	// guard having allowed something it did not.
+	// A client that never follows redirects, so the 303 a successful mutation
+	// returns is not mistaken for the guard having allowed something it did
+	// not — and so the allowed POST runs exactly once.
 	client := &http.Client{
 		Timeout:       10 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 
+	// The form a browser submits to create a card; the lane and title are the
+	// two fields createCard requires.
+	newCard := url.Values{"lane": {"todo"}, "title": {"wire test card"}}
+
 	cases := []struct {
 		name    string
+		method  string // defaults to GET
+		path    string // defaults to the board page
+		form    url.Values
 		host    string // overrides the Host header when set
 		headers []string
 		want    int
@@ -59,10 +75,25 @@ func TestSameOriginOverARealConnection(t *testing.T) {
 		{
 			// The shape a real browser form post takes against this app:
 			// secureHeaders sets Referrer-Policy: no-referrer, so Chrome sends
-			// Origin: null, and Sec-Fetch-Site says it is same-origin.
+			// Origin: null, and Sec-Fetch-Site says it is same-origin. A 303
+			// means the card was actually created.
 			name:    "browser form post with a withheld origin",
+			method:  http.MethodPost,
+			path:    "/b/life/cards",
+			form:    newCard,
 			headers: []string{"Origin", "null", "Sec-Fetch-Site", "same-origin"},
-			want:    200,
+			want:    http.StatusSeeOther,
+		},
+		{
+			// The attack sameOrigin exists to stop: a page on another origin
+			// submits a form at the loopback port. This must die at the guard,
+			// before createCard runs — asserted on the card count below.
+			name:    "cross-origin form post to a mutation route",
+			method:  http.MethodPost,
+			path:    "/b/life/cards",
+			form:    newCard,
+			headers: []string{"Origin", "http://evil.example"},
+			want:    http.StatusForbidden,
 		},
 		{
 			name:    "forged origin",
@@ -93,9 +124,24 @@ func TestSameOriginOverARealConnection(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req, err := http.NewRequest(http.MethodGet, "http://"+addr+"/b/life", nil)
+			method := tc.method
+			if method == "" {
+				method = http.MethodGet
+			}
+			path := tc.path
+			if path == "" {
+				path = "/b/life"
+			}
+			var body io.Reader
+			if tc.form != nil {
+				body = strings.NewReader(tc.form.Encode())
+			}
+			req, err := http.NewRequest(method, "http://"+addr+path, body)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if tc.form != nil {
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			}
 			// req.Host overrides the Host header on the wire while the
 			// connection still goes to the real listener.
@@ -114,6 +160,20 @@ func TestSameOriginOverARealConnection(t *testing.T) {
 				t.Errorf("status = %d, want %d", resp.StatusCode, tc.want)
 			}
 		})
+	}
+
+	// A status code alone would not prove the cross-origin POST was refused
+	// rather than merely redirected somewhere: check the board itself. Exactly
+	// one card must have been added — the allowed form post — so the refused
+	// one never reached createCard.
+	var got int
+	for _, c := range reload(t, root, "life").Lanes[board.Todo] {
+		if c.Title == "wire test card" {
+			got++
+		}
+	}
+	if got != 1 {
+		t.Errorf("cards created = %d, want 1 (the allowed form post only)", got)
 	}
 
 	cancel()
