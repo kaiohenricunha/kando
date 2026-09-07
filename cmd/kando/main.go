@@ -32,8 +32,12 @@ import (
 
 const version = "0.1.0"
 
-func usage() {
-	fmt.Fprintln(os.Stderr, `usage: kando [board]
+// usageText is kando's whole usage message. TestUsageListsEveryVerb checks
+// that every key of verbs appears in the synopsis block, so a new verb that
+// forgets to document itself here fails a test instead of silently going
+// undocumented, and TestUsageTextIsUnchanged pins the text as a whole.
+// Subcommands (a later unit adds them) are not covered by either.
+const usageText = `usage: kando [board]
        kando web [board] [--port N]
        kando move <card> <lane> [board]
 
@@ -43,7 +47,10 @@ name may come before or after the flags. kando move moves <card> — an id or
 an exact, case-insensitive title — to <lane> (Backlog, Todo, Doing or Done)
 on an existing board; it never creates one. A board literally named "web" or
 "move" opens in the terminal with: kando -- web or kando -- move
-Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR, KANDO_WEB_PORT`)
+Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR, KANDO_WEB_PORT`
+
+func usage() {
+	fmt.Fprintln(os.Stderr, usageText)
 }
 
 // kandoRoot is $KANDO_HOME, defaulting to ~/.kando.
@@ -134,14 +141,9 @@ func envPort(getenv func(string) string, errOut io.Writer, def int) int {
 
 func main() {
 	name := "life"
-	args := os.Args[1:]
-	if len(args) > 0 && args[0] == "--" { // `kando -- web` opens the TUI on a board named "web"
-		args = args[1:]
-	} else if len(args) > 0 && args[0] == "web" {
-		runWeb(args[1:])
-		return
-	} else if len(args) > 0 && args[0] == "move" {
-		runMove(args[1:])
+	verb, args := dispatch(os.Args[1:])
+	if verb != "" {
+		verbs[verb](args)
 		return
 	}
 	if len(args) > 1 {

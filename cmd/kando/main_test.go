@@ -1,10 +1,238 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+// TestMain lets this test binary re-exec itself as the real kando CLI: when
+// KANDO_TEST_MAIN=1 is set, it calls main() directly instead of running the
+// test suite. This is the only way to exercise the run* wrappers' exit
+// codes and stdout/stderr split, since they call os.Exit — a call that has
+// to happen in a real child process, not the test's own. testing.MainStart
+// only parses -test.* flags lazily inside m.Run(), which this path never
+// reaches, so passing plain kando arguments to the binary is safe.
+func TestMain(m *testing.M) {
+	if os.Getenv("KANDO_TEST_MAIN") == "1" {
+		main()
+		return
+	}
+	os.Exit(m.Run())
+}
+
+// runCLITimeout bounds a single child run. Every verb this harness exercises
+// returns promptly; web does not — it blocks in web.Serve until signalled, so
+// a runCLI(t, home, "web") would otherwise hang until go test's global
+// timeout killed the whole package with no useful message.
+const runCLITimeout = 30 * time.Second
+
+// runCLI runs the compiled kando binary (this test binary, re-exec'd via
+// TestMain above) against a fresh KANDO_HOME, and captures its exit code and
+// both output streams separately — exactly what a script invoking kando
+// would see.
+//
+// The child is addressed by os.Executable rather than os.Args[0]: exec.Command
+// runs LookPath on a name with no separator, and argv[0] is whatever the
+// caller chose, so a test binary built with `go test -c` and started by bare
+// name could re-exec a different binary of that name from $PATH — with
+// KANDO_TEST_MAIN set and the assertions grading the wrong process.
+func runCLI(t *testing.T, home string, args ...string) (stdout, stderr string, exitCode int) {
+	t.Helper()
+	// An empty home would make kandoRoot fall back to os.UserHomeDir, pointing
+	// a mutating verb at the developer's real ~/.kando — and store.Open
+	// creates directories and rewrites board.md, so it would write there.
+	if home == "" {
+		t.Fatal("runCLI needs a non-empty KANDO_HOME")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), runCLITimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, args...)
+	cmd.Env = append(os.Environ(), "KANDO_TEST_MAIN=1", "KANDO_HOME="+home)
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	err = cmd.Run()
+	if ctx.Err() != nil {
+		t.Fatalf("runCLI %v: did not exit within %s", args, runCLITimeout)
+	}
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return outBuf.String(), errBuf.String(), ee.ExitCode()
+		}
+		t.Fatalf("runCLI %v: %v", args, err)
+	}
+	return outBuf.String(), errBuf.String(), 0
+}
+
+// TestUsageTextIsUnchanged is the golden the "usage() is unchanged for
+// existing verbs" claim needs to be a gate rather than an assertion in a PR
+// description. Every other check on usage is a substring match that a rewrite
+// of the synopsis, the prose or the Environment line would survive.
+//
+// A deliberate change to the text is a one-line edit here — that is the point:
+// it should be deliberate.
+func TestUsageTextIsUnchanged(t *testing.T) {
+	const want = `usage: kando [board]
+       kando web [board] [--port N]
+       kando move <card> <lane> [board]
+
+Opens the board (default "life") from $KANDO_HOME (default ~/.kando) in the
+terminal, or serves it at http://127.0.0.1:<port>/ (default 4242). The board
+name may come before or after the flags. kando move moves <card> — an id or
+an exact, case-insensitive title — to <lane> (Backlog, Todo, Doing or Done)
+on an existing board; it never creates one. A board literally named "web" or
+"move" opens in the terminal with: kando -- web or kando -- move
+Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR, KANDO_WEB_PORT`
+	if usageText != want {
+		t.Errorf("usageText changed:\n--- got ---\n%s\n--- want ---\n%s", usageText, want)
+	}
+}
+
+func TestCLIHelpAndVersion(t *testing.T) {
+	home := t.TempDir()
+
+	out, errOut, code := runCLI(t, home, "-h")
+	if code != 0 {
+		t.Errorf("-h should exit 0, got %d", code)
+	}
+	if out != "" {
+		t.Errorf("-h should print nothing to stdout, got %q", out)
+	}
+	if !strings.Contains(errOut, "usage: kando") {
+		t.Errorf("-h should print usage to stderr, got %q", errOut)
+	}
+
+	out, _, code = runCLI(t, home, "-v")
+	if code != 0 || strings.TrimSpace(out) != "kando "+version {
+		t.Errorf("-v: code=%d out=%q", code, out)
+	}
+}
+
+func TestCLIMoveArgumentError(t *testing.T) {
+	home := t.TempDir()
+	out, errOut, code := runCLI(t, home, "move")
+	if code != 2 {
+		t.Errorf("bad args should exit 2, got %d", code)
+	}
+	if out != "" {
+		t.Errorf("stdout should be empty on an argument error, got %q", out)
+	}
+	if !strings.HasPrefix(errOut, "kando: ") || !strings.Contains(errOut, "usage: kando") {
+		t.Errorf("stderr should carry the error and usage: %q", errOut)
+	}
+}
+
+func TestCLIMoveNoSuchBoardIsFatal(t *testing.T) {
+	home := t.TempDir()
+	out, errOut, code := runCLI(t, home, "move", "card", "Doing", "ghost")
+	if code != 1 {
+		t.Errorf("a store-level error should exit 1, got %d", code)
+	}
+	if out != "" {
+		t.Errorf("stdout should be empty on a fatal error, got %q", out)
+	}
+	if !strings.HasPrefix(errOut, "kando: ") || strings.Contains(errOut, "usage: kando") {
+		t.Errorf("a fatal error must not print usage: %q", errOut)
+	}
+	if _, err := os.Stat(filepath.Join(home, "ghost")); !os.IsNotExist(err) {
+		t.Errorf("a failed move must not create the board directory")
+	}
+}
+
+// TestCLIMoveMessagesAreUnchanged pins the exact stderr text of the three
+// argument and store errors kando move could already produce before the verb
+// infrastructure was hoisted out of move.go. Nothing else asserts these: the
+// unit tests check only that an error occurred, and the process-level tests
+// above check only the "kando: " prefix — which is how two of these drifted in
+// the first place. This PR's contract is that kando move behaves identically,
+// so the messages are part of it.
+func TestCLIMoveMessagesAreUnchanged(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "life")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "board.md"), []byte("## Todo\n\n### Renew passport\nid: k7q2m9ab\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			// The remedy has to name a command this binary actually has.
+			name: "no such board names a command that works",
+			args: []string{"move", "card", "Doing", "ghost"},
+			want: `kando: no such board "ghost" (create it first with "kando ghost" or "kando web ghost")`,
+		},
+		{
+			// Not "needs a card and a lane": the user supplied two arguments,
+			// so the useful message names the one that was blank.
+			name: "blank card names the card",
+			args: []string{"move", "", "Doing"},
+			want: "kando: card id or title required",
+		},
+		{
+			// A blank lane falls through to board.ParseLane, which reports the
+			// value it could not parse.
+			name: "blank lane names the lane",
+			args: []string{"move", "k7q2m9ab", "  "},
+			want: `kando: invalid lane "  "`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errOut, _ := runCLI(t, home, tc.args...)
+			first, _, _ := strings.Cut(errOut, "\n")
+			if first != tc.want {
+				t.Errorf("stderr first line =\n  %q\nwant\n  %q", first, tc.want)
+			}
+		})
+	}
+}
+
+func TestCLIMoveSuccess(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "life")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "board.md"), []byte("## Todo\n\n### Renew passport\nid: k7q2m9ab\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, code := runCLI(t, home, "move", "k7q2m9ab", "Doing")
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%q", code, errOut)
+	}
+	if !strings.Contains(out, `moved "Renew passport"`) {
+		t.Errorf("stdout = %q", out)
+	}
+	if errOut != "" {
+		t.Errorf("stderr should be empty on success, got %q", errOut)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "board.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "## Doing") || !strings.Contains(string(data), "### Renew passport") {
+		t.Errorf("board.md after the move:\n%s", data)
+	}
+}
 
 func env(pairs map[string]string) func(string) string {
 	return func(k string) string { return pairs[k] }
