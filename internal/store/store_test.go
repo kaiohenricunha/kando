@@ -237,7 +237,10 @@ func TestValidBoardName(t *testing.T) {
 		// in a directory name would display a board as a name it does not
 		// have. An existing directory named this way stops being listed:
 		// ListBoards skips it, which is the intended outcome.
-		"life\u202egnp.exe", "a\u200fb", "\u2066spoof\u2069", "c1\u009bhere"}
+		"life\u202egnp.exe", "a\u200fb", "\u2066spoof\u2069", "c1\u009bhere",
+		// Zl/Zp: a directory name is a single-line value, and the TUI header
+		// renders it into a row of an exact cell count.
+		"life\u2028work", "a\u2029b"}
 	for _, n := range valid {
 		if !ValidBoardName(n) {
 			t.Errorf("ValidBoardName(%q) = false, want true", n)

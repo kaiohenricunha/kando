@@ -24,6 +24,18 @@ var bidiRunes = []rune{
 	0x2069, // POP DIRECTIONAL ISOLATE
 }
 
+// The Unicode line separators. Categories Zl and Zp — neither Cc nor
+// Bidi_Control, so unicode.IsControl and Bidi_Control are both blind to them
+// and they survived the #18 filter. They are unsafe for a different reason
+// than the bidi set: they do not misrepresent text, they end a line. The TUI
+// composes rows of an exact terminal-cell count and measures U+2028 as one
+// cell, so a terminal that honours the break puts every later row out of
+// position.
+var lineSeparators = []rune{
+	0x2028, // LINE SEPARATOR
+	0x2029, // PARAGRAPH SEPARATOR
+}
+
 // Runes that must survive. U+200C and U+200D are the two that carry the
 // argument: they are category Cf, so a blanket unicode.Cf filter would strip
 // them and break Persian and Indic shaping and every ZWJ emoji sequence —
@@ -55,6 +67,14 @@ func TestUnsafeRuneCoversControlAndBidi(t *testing.T) {
 	for _, r := range []rune{0x00, 0x07, 0x1B, 0x7F, 0x85, 0x9B} {
 		if !UnsafeRune(r) {
 			t.Errorf("U+%04X is a C0/C1 control and must be unsafe", r)
+		}
+	}
+	for _, r := range lineSeparators {
+		if !UnsafeRune(r) {
+			t.Errorf("U+%04X is a line separator and must be unsafe", r)
+		}
+		if unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) {
+			t.Errorf("U+%04X: test premise wrong, an existing category already covers it", r)
 		}
 	}
 	for _, tc := range mustSurvive {
@@ -157,6 +177,18 @@ func TestSafeForDisplayDefangsWhatTheWritePathNeverSaw(t *testing.T) {
 			want: "one\n\ttwo",
 		},
 		{
+			// Converted, not dropped: a separator is a line ending the author
+			// meant. Dropping it would silently join two lines into one.
+			name: "line separator becomes the newline the store uses",
+			in:   "one\u2028two",
+			want: "one\ntwo",
+		},
+		{
+			name: "paragraph separator likewise",
+			in:   "one\u2029two",
+			want: "one\ntwo",
+		},
+		{
 			name: "ordinary text is returned unchanged",
 			in:   "Renew passport #errand",
 			want: "Renew passport #errand",
@@ -168,5 +200,51 @@ func TestSafeForDisplayDefangsWhatTheWritePathNeverSaw(t *testing.T) {
 				t.Errorf("SafeForDisplay(%q)\n got %q\nwant %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestLineSeparatorsFollowTheNewlineRule pins the rule the two Zl/Zp runes
+// follow: each context treats them exactly as it already treats "\n".
+//
+// The split matters and is not cosmetic. Notes are the one multi-line field,
+// so a separator there becomes a real newline and the author's line break
+// survives. Every single-line field drops it, because embedding a newline in a
+// title would put a second line into board.md and the parser reads lines as
+// structure — that would be a store-format bug, not a display one.
+func TestLineSeparatorsFollowTheNewlineRule(t *testing.T) {
+	for _, r := range lineSeparators {
+		in := "one" + string(r) + "two"
+
+		c := &Card{}
+		c.SetNotes(in)
+		if c.Notes != "one\ntwo" {
+			t.Errorf("U+%04X: SetNotes = %q, want %q — notes keep the break", r, c.Notes, "one\ntwo")
+		}
+
+		c = &Card{}
+		if !c.SetTitle(in) {
+			t.Fatalf("U+%04X: SetTitle rejected the value", r)
+		}
+		if strings.ContainsRune(c.Title, '\n') || strings.ContainsRune(c.Title, r) {
+			t.Errorf("U+%04X: SetTitle = %q, must hold neither the separator nor a newline", r, c.Title)
+		}
+
+		c.SetTag(in)
+		if strings.ContainsRune(c.Tag, '\n') || strings.ContainsRune(c.Tag, r) {
+			t.Errorf("U+%04X: SetTag = %q", r, c.Tag)
+		}
+
+		c.SetBlocked(in)
+		if strings.ContainsRune(c.BlockedReason, '\n') || strings.ContainsRune(c.BlockedReason, r) {
+			t.Errorf("U+%04X: SetBlocked = %q", r, c.BlockedReason)
+		}
+
+		c.Checklist = nil
+		if i := c.InsertChecklistItem(-1, in); i < 0 {
+			t.Fatalf("U+%04X: InsertChecklistItem rejected the value", r)
+		}
+		if got := c.Checklist[0].Text; strings.ContainsRune(got, '\n') || strings.ContainsRune(got, r) {
+			t.Errorf("U+%04X: InsertChecklistItem = %q", r, got)
+		}
 	}
 }

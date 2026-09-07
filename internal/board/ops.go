@@ -55,6 +55,14 @@ func clip(s string, n int) string {
 // they reorder how text renders in a terminal and in a browser alike: a note
 // can display as text it does not contain.
 //
+// Zl and Zp — U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR — end a
+// line. They neither drive the terminal nor misrepresent order, so they are
+// here for a third reason: the TUI composes rows of an exact terminal-cell
+// count, and these measure one cell while a terminal that honours them emits a
+// break and none, which puts every later row out of position. SafeForDisplay
+// converts rather than drops them, since they are a line ending the author
+// meant; see there.
+//
 // Deliberately NOT the whole of Cf. That would take U+200C and U+200D, the
 // zero-width non-joiner and joiner, which are load-bearing in Persian and
 // Indic shaping and in ZWJ emoji sequences, and the tag block U+E0020-E007F,
@@ -63,7 +71,8 @@ func clip(s string, n int) string {
 // Cf.) Bidi_Control is the narrow set that misrepresents order; the rest of
 // Cf is invisible but honest.
 func UnsafeRune(r rune) bool {
-	return unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r)
+	return unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) ||
+		r == '\u2028' || r == '\u2029'
 }
 
 // SafeForDisplay drops every unsafe rune from s, keeping newlines and tabs so
@@ -76,10 +85,18 @@ func UnsafeRune(r rune) bool {
 // note a pre-fix build stored, or one typed in by hand, reaches a renderer
 // with its escape sequences intact. Rather than rewrite the user's file, each
 // surface puts values through this on the way out.
+// The two line separators are converted rather than dropped: U+2028 is a line
+// ending the author meant, so it becomes the one the store uses. Dropping it
+// would silently join two lines into one. The single-line sanitizers below do
+// drop it, because they drop "\n" too — a newline in a title would put a
+// second line into board.md, which the parser reads as structure.
 func SafeForDisplay(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\t' {
 			return r
+		}
+		if r == '\u2028' || r == '\u2029' {
+			return '\n'
 		}
 		if UnsafeRune(r) {
 			return -1

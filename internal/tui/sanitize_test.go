@@ -33,6 +33,11 @@ func TestSanitizeDropsC1AndBidi(t *testing.T) {
 		{"zwj emoji sequence", "\U0001F468\u200d\U0001F469", "\U0001F468\u200d\U0001F469"},
 		{"hebrew text is not a control", "אב", "אב"},
 		{"plain ascii is untouched", "Renew passport", "Renew passport"},
+		// Dropped rather than turned into a space: the row shortens and fit()
+		// pads it, so the exact-cell contract holds either way, and dropping
+		// leaves no stray gap where the separator was.
+		{"line separator", "one\u2028two", "onetwo"},
+		{"paragraph separator", "one\u2029two", "onetwo"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -62,6 +67,7 @@ func TestSanitizeAgreesWithTheSharedPredicate(t *testing.T) {
 		0x061C, 0x200E, 0x200F, // direction marks
 		0x202A, 0x202B, 0x202C, 0x202D, 0x202E, // embeddings and overrides
 		0x2066, 0x2067, 0x2068, 0x2069, // isolates
+		0x2028, 0x2029, // Zl/Zp line separators
 	} {
 		if strings.ContainsRune(sanitize(string(r)), r) {
 			t.Errorf("U+%04X survived sanitize", r)
