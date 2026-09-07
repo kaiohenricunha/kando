@@ -52,17 +52,26 @@ type newPage struct {
 }
 
 func (s *server) basePage(name, title string) Page {
-	return Page{Board: name, Title: title, Date: board.DayLabel(s.now())}
+	// title is a card title on the detail page, so it is user-controlled and
+	// reaches both the <title> element and the breadcrumb. Defanging it here
+	// covers every page that passes one. The board name is not defanged: it
+	// comes from a directory name that ValidBoardName already constrains.
+	return Page{Board: name, Title: board.SafeForDisplay(title), Date: board.DayLabel(s.now())}
 }
 
 // cardView projects a card the way the TUI's card_view.go does: the same
 // age, first notes line, progress and blocked labels, from the same helpers.
 func (s *server) cardView(c *board.Card, lane board.Lane) cardView {
+	// Every user-controlled field goes through SafeForDisplay. board.md is
+	// parsed verbatim, so these values may never have met a write-time
+	// sanitizer, and html/template escapes HTML metacharacters only — it does
+	// nothing about a bidi override, which would reorder what the page shows.
 	return cardView{
-		ID: c.ID, Title: c.Title, Notes: c.FirstNoteLine(), Tag: c.Tag,
+		ID: c.ID, Title: board.SafeForDisplay(c.Title),
+		Notes: board.SafeForDisplay(c.FirstNoteLine()), Tag: board.SafeForDisplay(c.Tag),
 		Age:      board.Age(s.now(), c.AgeSince()),
 		Progress: c.ProgressLabel(),
-		Blocked:  c.BlockedLabel(),
+		Blocked:  board.SafeForDisplay(c.BlockedLabel()),
 		Done:     lane == board.Done,
 	}
 }
@@ -118,7 +127,8 @@ func (s *server) card(w http.ResponseWriter, r *http.Request) {
 	p := cardPage{
 		Page: s.basePage(name, c.Title), Card: s.cardView(c, lane), URL: cardURL(name, c.ID),
 		Lane: lane.String(), LaneKey: lane.Key(), Lanes: board.Lanes,
-		Notes: c.Notes, Reason: c.BlockedReason, Checklist: c.Checklist,
+		Notes: board.SafeForDisplay(c.Notes), Reason: board.SafeForDisplay(c.BlockedReason),
+		Checklist: safeChecklist(c.Checklist),
 	}
 	if !c.CreatedAt.IsZero() {
 		p.Created = board.DayLabel(c.CreatedAt)
@@ -145,4 +155,19 @@ func (s *server) newCard(w http.ResponseWriter, r *http.Request) {
 		lane = board.Todo.Key()
 	}
 	s.render(w, "new.html", newPage{Page: s.basePage(name, "new card"), Lane: lane, Lanes: board.Lanes})
+}
+
+// safeChecklist copies items with their text put through SafeForDisplay. The
+// copy matters: these items are pointers into the loaded board, and mutating
+// them here would change what a later save writes back to the file.
+func safeChecklist(items []board.Item) []board.Item {
+	if items == nil {
+		return nil
+	}
+	out := make([]board.Item, len(items))
+	for i, it := range items {
+		it.Text = board.SafeForDisplay(it.Text)
+		out[i] = it
+	}
+	return out
 }

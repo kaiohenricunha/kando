@@ -91,7 +91,12 @@ func formatCard(lane board.Lane, c *board.Card, now time.Time) string {
 			fmt.Fprintf(&b, "  %d. [%s] %s\n", i+1, mark, it.Text)
 		}
 	}
-	return strings.TrimRight(b.String(), "\n")
+	// One call covers every user-controlled field above — title, tag, blocked
+	// reason, notes and checklist text — and keeps covering a field added
+	// later. These come off a board.md that is parsed verbatim, so none of
+	// them has necessarily been through a write-time sanitizer; formatCard
+	// writes straight to a terminal, where an escape sequence would run.
+	return board.SafeForDisplay(strings.TrimRight(b.String(), "\n"))
 }
 
 func runShow(args []string) {

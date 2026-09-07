@@ -55,7 +55,7 @@ func (s *server) archive(w http.ResponseWriter, r *http.Request) {
 	for _, g := range groups {
 		gv := archiveGroup{Label: g.Label}
 		for _, c := range g.Cards {
-			item := archiveItem{ID: c.ID, Title: c.Title, Tag: c.Tag}
+			item := archiveItem{ID: c.ID, Title: board.SafeForDisplay(c.Title), Tag: board.SafeForDisplay(c.Tag)}
 			if !c.DoneAt.IsZero() {
 				item.Date = board.DayLabel(c.DoneAt)
 			}
