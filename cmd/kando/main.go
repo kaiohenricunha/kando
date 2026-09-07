@@ -52,7 +52,9 @@ const usageText = `usage: kando [board]
        kando checklist add <card> <text> [board]
        kando checklist toggle <card> <n> [board] [--was TEXT]
        kando checklist edit <card> <n> <text> [board] [--was TEXT]
-       kando archive <card> [board] | archive list [board] [--filter "..."] [--json] | archive restore <card> [board]
+       kando archive <card> [board]
+       kando archive list [board] [--filter "..."] [--json]
+       kando archive restore <card> [board]
 
 Boards live under $KANDO_HOME (default ~/.kando). [board] defaults to "life"
 and may come before or after a verb's flags; only "board create",
@@ -64,8 +66,8 @@ retry. <lane> is Backlog, Todo, Doing or Done, case-insensitive. <n> counts
 checklist items from 1, as "kando show" lists them; --was TEXT refuses the
 change if the item no longer reads that way. --filter takes the same query
 syntax as the TUI's / (title text, #tag, !blocked, age>7d, age<3d). kando
-archive moves a Done card to the archive; "list" and "restore" are reserved
-subcommand words there, so a card literally titled one of them needs its id.
+archive moves a Done card to the archive; "list", "restore" and the help
+words are reserved there, so a card literally titled one of them needs its id.
 A board literally named like a verb opens in the terminal with:
 kando -- <board>
 Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR, KANDO_WEB_PORT

@@ -229,10 +229,11 @@ TUI's `A` and the web page's archive button. The card must be in Done
 (anywhere else is an error naming its actual lane) and must not already be
 archived. Its `done:` date is kept — that is the week `archive.md` files it
 under — except when it has none (a hand-edited board), which is stamped to
-now rather than filed under an undated heading. `list` and `restore` are
-reserved subcommand words below; a card literally titled one of them is
-still reachable by its id, the same trade-off `kando -- web` already makes
-for a board literally named like a verb.
+now rather than filed under an undated heading. `list`, `restore` and the
+help words (`help`, `-h`, `--help`) are reserved subcommand words below; a
+card literally titled one of them is still reachable by its id, the same
+trade-off `kando -- web` already makes for a board literally named like a
+verb.
 
 `kando archive list [board] [--filter "..."] [--json]` prints the archive
 exactly as the TUI's `D` screen and the web's archive page do: the newest 50
