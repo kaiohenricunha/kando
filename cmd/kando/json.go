@@ -15,9 +15,16 @@ type itemJSON struct {
 }
 
 // cardJSON is the stable shape every --json verb emits a card as. Times are
-// RFC 3339 (carrying whatever offset board.md's own date was written in —
-// see markdown.Parse — not normalised to UTC), omitted when zero. Lane is
-// omitted for an archived card, which has none.
+// RFC 3339, omitted when zero. Lane is omitted for an archived card, which
+// has none.
+//
+// The offset is the reading machine's, not the file's: store.formatTime
+// writes a bare 2006-01-02 for any midnight stamp, and parseTime reads that
+// back with time.ParseInLocation(..., time.Local), so one board.md yields
+// 2026-09-01T00:00:00-03:00 here and 2026-09-01T00:00:00+02:00 elsewhere.
+// Whether to normalise to UTC or to pass the stamp through date-only is a
+// decision for the unit that wires the first --json verb, since it is that
+// output's contract to keep.
 type cardJSON struct {
 	ID            string     `json:"id"`
 	Title         string     `json:"title"`
@@ -70,9 +77,18 @@ type laneJSON struct {
 	Cards []cardJSON `json:"cards"`
 }
 
-// listJSON is `kando list --json`'s whole output: all four lanes always
-// present (empty ones with an empty Cards slice, never omitted), so a
-// script does not need to special-case a lane with nothing in it.
+// listJSON is `kando list --json`'s whole output. The intent is that all four
+// lanes are always present, empty ones carrying an empty Cards slice rather
+// than being omitted, so a script never has to special-case a lane with
+// nothing in it.
+//
+// Nothing here enforces that yet: these are plain slices, and a nil one
+// encodes as null, not []. cardJSON keeps its equivalent promise because
+// cardToJSON builds the checklist with make (pinned by TestCardToJSON); the
+// container types have no constructor because they have no caller. The unit
+// that adds `kando list --json` owns making the guarantee real — a
+// newLaneJSON-style constructor, plus a test that encodes an empty board and
+// asserts no null appears.
 type listJSON struct {
 	Board   string     `json:"board"`
 	Filter  string     `json:"filter,omitempty"`

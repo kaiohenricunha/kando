@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kaiohenricunha/kando/internal/board"
@@ -9,13 +10,23 @@ import (
 
 // moveArgs parses kando move's purely positional arguments (no flags):
 // splitBoard's shared grammar with a card and a lane as the two required
-// values.
+// values, then move's own validation of them.
+//
+// The card is trimmed and must be non-empty, which is move's rule rather than
+// splitBoard's — a blank card gets a message naming the card. The lane is
+// passed through untouched so a blank one reaches board.ParseLane and is
+// reported as the unparseable value it is; ParseLane trims, so padding around
+// a real lane name still resolves.
 func moveArgs(args []string) (card, lane, name string, err error) {
 	vals, name, err := splitBoard("move", "a card and a lane", args, 2)
 	if err != nil {
 		return "", "", "", err
 	}
-	return vals[0], vals[1], name, nil
+	card = strings.TrimSpace(vals[0])
+	if card == "" {
+		return "", "", "", fmt.Errorf("card id or title required")
+	}
+	return card, vals[1], name, nil
 }
 
 // moveCard is kando move's testable core, built on withCard: findCard

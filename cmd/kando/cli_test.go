@@ -52,10 +52,19 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
+// TestUsageListsEveryVerb checks the synopsis block only — everything before
+// the first blank line. Matching the whole of usageText would also accept a
+// verb named solely in the prose paragraph below it, which already mentions
+// "kando -- web" and would satisfy a search for the web verb without the
+// synopsis documenting it at all.
 func TestUsageListsEveryVerb(t *testing.T) {
+	synopsis, _, found := strings.Cut(usageText, "\n\n")
+	if !found {
+		t.Fatal("usageText has no blank line, so the synopsis block cannot be isolated")
+	}
 	for name := range verbs {
-		if want := "kando " + name; !strings.Contains(usageText, want) {
-			t.Errorf("usageText is missing verb %q (want to see %q)", name, want)
+		if want := "kando " + name; !strings.Contains(synopsis, want) {
+			t.Errorf("usageText's synopsis is missing verb %q (want to see %q)", name, want)
 		}
 	}
 }
@@ -265,9 +274,13 @@ func TestSplitBoard(t *testing.T) {
 		{name: "exact n, no board", pos: []string{"a", "b"}, n: 2, wantVals: []string{"a", "b"}},
 		{name: "n plus board", pos: []string{"a", "b", "work"}, n: 2, wantVals: []string{"a", "b"}, wantName: "work"},
 		{name: "too many", pos: []string{"a", "b", "work", "extra"}, n: 2, wantErr: true},
-		{name: "blank required value", pos: []string{"", "b"}, n: 2, wantErr: true},
-		{name: "whitespace-only required value", pos: []string{"   ", "b"}, n: 2, wantErr: true},
-		{name: "required value trimmed", pos: []string{" a ", "b"}, n: 2, wantVals: []string{"a", "b"}},
+		// Required values pass through verbatim: judging them belongs to the
+		// verb, which can name the one that is wrong. moveArgs rejects a blank
+		// card with "card id or title required" and lets a blank lane reach
+		// board.ParseLane; TestCLIMoveMessagesAreUnchanged pins both.
+		{name: "blank required value is the verb's to reject", pos: []string{"", "b"}, n: 2, wantVals: []string{"", "b"}},
+		{name: "whitespace-only required value is the verb's to reject", pos: []string{"   ", "b"}, n: 2, wantVals: []string{"   ", "b"}},
+		{name: "required value is not trimmed", pos: []string{" a ", "b"}, n: 2, wantVals: []string{" a ", "b"}},
 		{name: "board starting with a dash", pos: []string{"a", "b", "--oops"}, n: 2, wantErr: true},
 		{name: "blank board", pos: []string{"a", "b", ""}, n: 2, wantErr: true},
 		{name: "whitespace-only board", pos: []string{"a", "b", "   "}, n: 2, wantErr: true},

@@ -33,9 +33,10 @@ import (
 const version = "0.1.0"
 
 // usageText is kando's whole usage message. TestUsageListsEveryVerb checks
-// every key of verbs (and any per-verb subcommand map) appears in it, so a
-// new verb that forgets to document itself here fails a test instead of
-// silently going undocumented.
+// that every key of verbs appears in the synopsis block, so a new verb that
+// forgets to document itself here fails a test instead of silently going
+// undocumented, and TestUsageTextIsUnchanged pins the text as a whole.
+// Subcommands (a later unit adds them) are not covered by either.
 const usageText = `usage: kando [board]
        kando web [board] [--port N]
        kando move <card> <lane> [board]

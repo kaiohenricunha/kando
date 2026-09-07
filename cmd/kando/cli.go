@@ -57,9 +57,13 @@ var errConflict = errors.New("the board changed on disk — try again")
 
 // resolveBoard applies every verb's shared board-name rule: "" defaults to
 // "life", the name must be valid, and the board must already exist — only
-// `board create`, `kando [board]` and `kando web [board]` are allowed to
-// create one, so a typo'd name fails clearly instead of silently starting
-// an empty board.
+// `kando [board]` and `kando web [board]` are allowed to create one, so a
+// typo'd name fails clearly instead of silently starting an empty board.
+//
+// The "create it first with" hint names only commands this binary actually
+// has. A later unit adds `board create`, and the hint should name it then —
+// naming it now would send the user to a command that exits 2 with the usage
+// text. TestCLIMoveMessagesAreUnchanged pins the wording.
 func resolveBoard(root, name string) (string, error) {
 	if name == "" {
 		name = "life"
@@ -68,7 +72,7 @@ func resolveBoard(root, name string) (string, error) {
 		return "", fmt.Errorf("invalid board name %q", name)
 	}
 	if !store.Exists(root, name) {
-		return "", fmt.Errorf("no such board %q (create it first with \"kando board create %s\")", name, name)
+		return "", fmt.Errorf("no such board %q (create it first with \"kando %s\" or \"kando web %s\")", name, name, name)
 	}
 	return name, nil
 }
@@ -172,9 +176,17 @@ func withCard(root, name, cardArg string, op cardOp) (board.Lane, *board.Card, e
 // parseMixed collects fs's positional arguments interleaved with its flags:
 // flag.FlagSet.Parse stops at the first non-flag, so this resumes parsing
 // after each one, generalising webArgs's own two-pass loop to any number of
-// positionals in any order. Everything after a literal "--" is positional
-// even if it looks like a flag, so a card titled "-1 point bug" stays
-// reachable through a verb that does take flags.
+// positionals in any order.
+//
+// "--" protects exactly one token, not the rest of the line: Parse consumes
+// the "--" and stops, this takes the next token as a positional, and then
+// resumes flag parsing on what follows. So `-- "-1 point bug"` keeps a
+// flag-like card title reachable, which is what it is for, but
+// `-- "-1 point bug" --tag x` still parses --tag as a flag. A full POSIX
+// terminator would end parsing entirely, at the cost of the interleaving that
+// lets a board name follow its flags; that trade belongs to whichever verb
+// first needs it, not to this refactor. For the same reason the rest[0] == "--"
+// branch below only fires on a doubled "-- --".
 func parseMixed(fs *flag.FlagSet, args []string) (pos []string, err error) {
 	for {
 		if err := fs.Parse(args); err != nil {
@@ -193,12 +205,20 @@ func parseMixed(fs *flag.FlagSet, args []string) (pos []string, err error) {
 }
 
 // splitBoard applies every verb's shared positional grammar: exactly n
-// required values, plus at most one trailing optional board name. need
-// names the required values for the "too few" error, e.g. "a card and a
-// lane". Every required value is trimmed and must be non-empty; a present
-// board name must not be blank and must not look like a flag — a required
-// value may, since a card's title is free text, so only the trailing board
-// slot gets that guard.
+// required values, plus at most one trailing optional board name. need names
+// the required values for the "too few" error, e.g. "a card and a lane". A
+// present board name must not be blank and must not look like a flag — a
+// required value may, since a card's title is free text, so only the trailing
+// board slot gets that guard.
+//
+// Required values are returned exactly as given: not trimmed, and not
+// rejected for being blank. Validating them belongs to the verb, which is the
+// only layer that knows what they mean and can say so — `kando move ""`
+// reports "card id or title required", and a blank lane reaches
+// board.ParseLane, which names the value it could not parse. Rejecting both
+// here collapsed those into one "needs a card and a lane", which is also the
+// too-few-arguments message and so reads as wrong when two arguments were
+// given.
 func splitBoard(verb, need string, pos []string, n int) (vals []string, name string, err error) {
 	switch {
 	case len(pos) < n:
@@ -216,13 +236,6 @@ func splitBoard(verb, need string, pos []string, n int) (vals []string, name str
 		}
 	default:
 		return nil, "", fmt.Errorf("unexpected argument %q", pos[n+1])
-	}
-	for i, v := range vals {
-		v = strings.TrimSpace(v)
-		if v == "" {
-			return nil, "", fmt.Errorf("kando %s needs %s", verb, need)
-		}
-		vals[i] = v
 	}
 	return vals, name, nil
 }
