@@ -161,4 +161,34 @@ func TestSetNotes(t *testing.T) {
 			t.Fatal("want an error")
 		}
 	})
+
+	// The claim this verb's sanitizing exists to make is about bytes on disk,
+	// not about what setNotes returns: a note piped in from an issue body must
+	// not leave an escape sequence in board.md for kando show, the TUI and
+	// kando web to replay on every later read. Assert that end to end, across
+	// readNotes -> SetNotes -> Marshal, because no single package's tests span
+	// it. OSC 52 is the payload that matters — it writes the reader's
+	// clipboard from a card they merely opened.
+	t.Run("an OSC 52 payload from --file leaves no escape bytes in board.md", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "note.txt")
+		if err := os.WriteFile(path, []byte("before\x1b]52;c;cGF5bG9hZA==\x07after"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		text, err := readNotes(notesSource{kind: "file", value: path}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := setNotes(root, "life", "aaaaaaaa", text); err != nil {
+			t.Fatal(err)
+		}
+		md := readBoardFile(t, root, "life")
+		if strings.ContainsAny(md, "\x1b\x07") {
+			t.Errorf("board.md still holds an ESC or BEL byte: %q", md)
+		}
+		// The payload text stays visible rather than being silently swallowed,
+		// so the note still shows what it carried.
+		if !strings.Contains(md, "]52;c;cGF5bG9hZA==") {
+			t.Errorf("payload text was dropped, not just de-fanged: %q", md)
+		}
+	})
 }

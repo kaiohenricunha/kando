@@ -80,10 +80,51 @@ func (c *Card) SetTag(value string) {
 }
 
 // SetNotes sets the card's notes, normalizing line endings to "\n" and
-// trimming trailing blank lines and spaces. Notes keep their newlines.
+// trimming trailing blank lines and spaces. Notes keep their newlines and
+// tabs; every other control rune is dropped, as sanitizeLine does for the
+// single-line fields.
+//
+// Notes were the one field that kept them, which mattered once a note could
+// arrive from somewhere other than a keyboard: `kando notes --file` and its
+// stdin form make piping in an issue body or a web page the normal way to
+// use the verb. An escape sequence in that text is stored verbatim and
+// replayed on every later read — by kando show, by the TUI's detail pane,
+// and by kando web — so a single paste keeps rewriting the terminal, moving
+// the cursor or driving OSC 52, long after the paste is forgotten.
+//
+// This is a guard on what the surfaces write, not on what the file holds,
+// and the distinction is narrower than it sounds. kando does rewrite the
+// file — every mutation re-marshals the whole board, and store.Open rewrites
+// it outright when a card has no id — but the read path assigns Notes
+// directly (store.parseSections) and Marshal re-emits whatever it parsed. So
+// a rewrite preserves unsanitized bytes rather than cleaning them.
+//
+// Two consequences worth stating rather than leaving to be discovered. A
+// hand-edited board.md keeps whatever the user put in it, which is the
+// intended boundary: their file, their content. But a note that a pre-fix
+// build stored also survives, and that is not the user's content — it is the
+// output of the bug this fixes. Those notes keep replaying until the card is
+// next edited through a surface. Sanitizing on read, or at render on the
+// terminal surfaces, is the follow-up that would close it.
+//
+// unicode.IsControl is category Cc only, so the Cf format runes — the bidi
+// overrides U+202A-U+202E and the isolates, zero-width spaces — are
+// deliberately out of scope here. sanitizeLine has the identical gap, so
+// widening belongs in one change that moves both, not in this one: a blanket
+// Cf strip would also drop ZWJ and the variation selectors and break emoji
+// sequences and Indic shaping.
 func (c *Card) SetNotes(value string) {
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\r", "\n")
+	value = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, value)
 	c.Notes = strings.TrimRight(clip(value, maxNotesBytes), "\n \t")
 }
 
