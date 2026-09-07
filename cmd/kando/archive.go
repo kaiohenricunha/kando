@@ -15,6 +15,15 @@ import (
 // runArchive dispatches kando archive's subcommands. Only "list" exists so
 // far; the bare <card> form and "restore" are a later PR's addition to this
 // same switch.
+//
+// Open question for that PR, not this one: this switch does not honour "--"
+// the way the top-level dispatch does. It does not need to yet, because
+// every argument here is a subcommand name. Once a bare <card> form exists,
+// a card titled "list" is only reachable if `kando archive -- list` means
+// "not a subcommand" — the same escape dispatch already gives verbs, and
+// the same one the usage text teaches. Deciding it here would be building a
+// table for one entry; deciding it there is the point at which it earns its
+// place, in both this switch and runBoard's.
 func runArchive(args []string) {
 	if helpWanted(args) {
 		usage()
@@ -68,8 +77,18 @@ func archiveList(root, name, query string, now time.Time) (resolvedName string, 
 
 func formatArchiveList(root, name string, groups []board.ArchiveGroup, query string, matched, scanned, total int) string {
 	var b strings.Builder
+	// ArchiveView drops empty buckets, so no groups has two very different
+	// causes and only one of them is "the archive is empty". Reporting
+	// "nothing archived" for a filter that simply matched nothing would
+	// assert something false about the user's data, and would also swallow
+	// the match-count line below — leaving no hint that a filter was applied
+	// at all. list has the same situation and keeps its summary line.
 	if len(groups) == 0 {
-		fmt.Fprintf(&b, "nothing archived on %q\n", name)
+		if query != "" {
+			fmt.Fprintf(&b, "0 of the newest %d match %q\n", scanned, query)
+		} else {
+			fmt.Fprintf(&b, "nothing archived on %q\n", name)
+		}
 		return strings.TrimRight(b.String(), "\n")
 	}
 	for _, g := range groups {
@@ -110,7 +129,15 @@ func runArchiveList(args []string) {
 		fatal(err)
 	}
 	if jsonOut {
-		out := archiveListJSON{Board: resolvedName, Filter: query, Matched: matched, Scanned: scanned, Total: total}
+		// Groups is built with make, not left nil: an empty archive is the
+		// default state of a fresh board, and a nil slice encodes as null,
+		// which breaks `jq '.groups[]'` on exactly the case a script hits
+		// first. json.go states this guarantee for every container.
+		out := archiveListJSON{
+			Board: resolvedName, Filter: query,
+			Matched: matched, Scanned: scanned, Total: total,
+			Groups: make([]archiveGroupJSON, 0, len(groups)),
+		}
 		for _, g := range groups {
 			cards := make([]cardJSON, len(g.Cards))
 			for i, c := range g.Cards {

@@ -33,7 +33,7 @@ func TestCardToJSON(t *testing.T) {
 		}
 	})
 
-	t.Run("times are RFC3339, age is set", func(t *testing.T) {
+	t.Run("a stamp carrying a time is RFC3339; age comes with a number", func(t *testing.T) {
 		created := now.AddDate(0, 0, -5)
 		c := &board.Card{ID: "aaaaaaaa", Title: "Aged", CreatedAt: created, MovedAt: created}
 		cj := cardToJSON(board.Todo, c, now)
@@ -42,6 +42,34 @@ func TestCardToJSON(t *testing.T) {
 		}
 		if cj.Age != "5d" {
 			t.Errorf("Age = %q, want %q", cj.Age, "5d")
+		}
+		// age_hours is what a script filters on: "5d" cannot be compared
+		// against "12h" without re-parsing two formats, and hours is the
+		// unit --filter itself understands.
+		if cj.AgeHours == nil || *cj.AgeHours != 120 {
+			t.Errorf("AgeHours = %v, want 120", cj.AgeHours)
+		}
+	})
+
+	t.Run("a midnight stamp stays date-only, as board.md holds it", func(t *testing.T) {
+		// The whole point of mirroring store.formatTime: a hand-written
+		// "created: 2026-09-01" is parsed in time.Local, so formatting it as
+		// RFC 3339 would stamp the reading machine's offset onto it and make
+		// one board.md produce different JSON in different time zones.
+		for _, loc := range []*time.Location{time.UTC, time.FixedZone("UTC-3", -3*3600), time.FixedZone("UTC+9", 9*3600)} {
+			midnight := time.Date(2026, 9, 1, 0, 0, 0, 0, loc)
+			c := &board.Card{ID: "aaaaaaaa", Title: "Dated", CreatedAt: midnight}
+			if got := cardToJSON(board.Todo, c, now).Created; got != "2026-09-01" {
+				t.Errorf("in %s: Created = %q, want %q", loc, got, "2026-09-01")
+			}
+		}
+	})
+
+	t.Run("a card with no timestamps has neither age field", func(t *testing.T) {
+		c := &board.Card{ID: "aaaaaaaa", Title: "Undated"}
+		cj := cardToJSON(board.Todo, c, now)
+		if cj.Age != "" || cj.AgeHours != nil {
+			t.Errorf("Age = %q, AgeHours = %v, want both absent", cj.Age, cj.AgeHours)
 		}
 	})
 

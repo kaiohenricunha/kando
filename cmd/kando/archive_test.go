@@ -137,6 +137,19 @@ func TestFormatArchiveList(t *testing.T) {
 		}
 	})
 
+	// ArchiveView drops empty buckets, so no groups does not imply an empty
+	// archive: a filter matching none of 12 archived cards lands here too,
+	// and saying "nothing archived" there is simply false.
+	t.Run("no groups because the filter matched nothing", func(t *testing.T) {
+		out := formatArchiveList("/root", "life", nil, "#nomatch", 0, 12, 12)
+		if strings.Contains(out, "nothing archived") {
+			t.Errorf("a zero-match filter must not claim the archive is empty: %q", out)
+		}
+		if out != `0 of the newest 12 match "#nomatch"` {
+			t.Errorf("got %q", out)
+		}
+	})
+
 	t.Run("groups render with title, tag, date", func(t *testing.T) {
 		groups := []board.ArchiveGroup{{
 			Label: "THIS WEEK",

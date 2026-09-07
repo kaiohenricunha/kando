@@ -73,4 +73,18 @@ func TestSummarizeBoards(t *testing.T) {
 			t.Fatal("want an error")
 		}
 	})
+
+	// The other three read verbs each pin this; summarizeBoards is the one
+	// that touches every board on disk, so a store.Open slipped in here
+	// would rewrite them all — including stamping ids onto hand-written
+	// cards — on a bare `kando board list --json`.
+	t.Run("never rewrites any board.md", func(t *testing.T) {
+		before := readBoardFile(t, root, "life")
+		if _, err := summarizeBoards(root, []string{"life", "work"}); err != nil {
+			t.Fatal(err)
+		}
+		if after := readBoardFile(t, root, "life"); before != after {
+			t.Errorf("board list must never rewrite board.md:\nbefore:\n%s\nafter:\n%s", before, after)
+		}
+	})
 }

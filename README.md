@@ -19,9 +19,9 @@ footnotes), not because it is missing; `—` means it is not built yet⁵.
 |---|---|---|---|
 | Open / switch to a board | V | V | V |
 | Create a new board | V | V | V |
-| List all boards | V | V | — |
+| List all boards | V | V | V |
 | Quick-add a card | V | V | — |
-| Show a card's full detail | V | V | — |
+| Show a card's full detail | V | V | V |
 | Move a card between lanes | V | V | V |
 | Reorder a card within a lane (drag position) | V | X¹ | X¹ |
 | Delete a card | V | V | — |
@@ -30,8 +30,8 @@ footnotes), not because it is missing; `—` means it is not built yet⁵.
 | Edit notes | V | V | — |
 | Block / clear block reason | V | V | — |
 | Checklist: add / toggle / edit item | V | V | — |
-| Filter / search (`title`, `#tag`, `!blocked`, `age>`/`<`) | V | V | — |
-| List the archive | V | V | — |
+| Filter / search (`title`, `#tag`, `!blocked`, `age>`/`<`) | V | V | V |
+| List the archive | V | V | V |
 | Restore a card from the archive | V | V | — |
 | Archive a card (Done → archived) | V | V | — |
 | Live auto-refresh on external changes | V | V | X³ |
@@ -43,7 +43,8 @@ BOUND-1b). ² Not in this effort's scope — `Card.SetTitle` already exists, so 
 `kando title` verb is a one-file follow-up on the same pattern as `kando tag`.
 ³ A CLI verb is a one-shot process — there is nothing running for it to
 refresh. ⁴ The web page labels its own controls instead of a help key.
-⁵ `kando` dispatches only `web` and `move` today (`kando -h` lists them).
+⁵ `kando` dispatches `web`, `move`, `board list`, `show`, `list` and
+`archive list` today (`kando -h` lists them).
 Each `—` becomes a `V` in the pull request that adds its verb, so this column
 is what the CLI can do at that merge point rather than what it is meant to do
 eventually — an audit pre-filled with the answer cannot catch a unit that is
@@ -129,9 +130,17 @@ without opening each board itself.
 tag, id, dates, age, blocked reason, notes and checklist — the read-only
 equivalent of opening a card in the TUI or on the web page, without the
 editing session. `<card>` follows the same id-or-title rule as `move`.
-`--json` emits every field kando tracks, RFC 3339 timestamps, `checklist`
-always an array. A section with nothing in it (no tag, no notes, an empty
-checklist) is simply omitted from the plain-text output.
+`--json` emits every field kando tracks, with `checklist` always an array and
+never `null` — as is every list in every `--json` output, so a script can
+iterate without a guard. Timestamps come out exactly as `board.md` holds
+them: date-only for a stamp written date-only, RFC 3339 for one carrying a
+time. That means the same board gives the same JSON on any machine, which
+normalising to UTC would not — a date-only `2026-09-01` read west of
+Greenwich would shift to the previous day. `age` is the display label the
+TUI shows (`3h`, `12d`); `age_hours` is the same quantity as a number, so
+`.age_hours > 168` reproduces `--filter "age>7d"`. A section with nothing in
+it (no tag, no notes, an empty checklist) is simply omitted from the
+plain-text output.
 
 ### `kando list`
 
@@ -195,9 +204,10 @@ date-only at midnight, otherwise as RFC 3339. A card without an `id` gets one on
 load, derived from its contents so every read agrees. `archive.md` groups
 cards under `## 2026-W36` ISO-week headings by each card's `done` date. `A`
 on a Done card in the TUI and the **archive** button on a Done card's page
-move a card there; `u` and **restore** bring it back to Doing. The matching
-CLI verbs (`kando archive`, `kando archive restore`) are not built yet — see
-the `—` rows above.
+move a card there; `u` and **restore** bring it back to Doing. `kando archive
+list` reads the archive, but the CLI verbs that *write* it (`kando archive
+<card>` and `kando archive restore <card>`) are not built yet — see the `—`
+rows for archiving and restoring above.
 
 Limits of the hand-editable format: note text after a checklist item is moved
 above the checklist on the next save. A note line that would otherwise read as

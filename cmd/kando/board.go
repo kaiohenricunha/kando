@@ -44,6 +44,15 @@ func boardListArgs(args []string, errOut io.Writer) (jsonOut bool, err error) {
 // summarizeBoards loads each of names read-only and reports its card
 // counts. store.ListBoards' own doc warns that Open would create or
 // rewrite board.md for every listed board; store.Load never does either.
+//
+// A board that fails to load aborts the whole listing rather than being
+// skipped or zero-filled. That is deliberate: board.md is hand-editable and
+// store.Parse rejects a whole file on one bad line, so the realistic cause
+// is a typo the user wants to hear about. A silent 0 would be indexed by a
+// script as a real count, and a skipped board would vanish from a listing
+// whose entire job is to be complete — both are worse than exiting non-zero
+// with the parse error naming the file. It does mean plain `board list`
+// succeeds where `--json` fails, since the plain path never opens a board.
 func summarizeBoards(root string, names []string) ([]boardJSON, error) {
 	out := make([]boardJSON, 0, len(names))
 	for _, name := range names {
@@ -79,6 +88,13 @@ func runBoardList(args []string) {
 		if err != nil {
 			fatal(err)
 		}
+		// A bare array, deliberately, where the other --json verbs emit an
+		// object: this output is a list and nothing else, and the shell
+		// one-liner it exists for reads `jq '.[].name'` rather than
+		// `jq '.boards[].name'`. The cost is that a sibling field cannot be
+		// added later without breaking consumers — acceptable here because
+		// per-board detail belongs on the board's own row, and anything
+		// global belongs to a verb that does not yet exist.
 		if err := writeJSON(os.Stdout, boards); err != nil {
 			fatal(err)
 		}
