@@ -80,10 +80,35 @@ func (c *Card) SetTag(value string) {
 }
 
 // SetNotes sets the card's notes, normalizing line endings to "\n" and
-// trimming trailing blank lines and spaces. Notes keep their newlines.
+// trimming trailing blank lines and spaces. Notes keep their newlines and
+// tabs; every other control rune is dropped, as sanitizeLine does for the
+// single-line fields.
+//
+// Notes were the one field that kept them, which mattered once a note could
+// arrive from somewhere other than a keyboard: `kando notes --file` and its
+// stdin form make piping in an issue body or a web page the normal way to
+// use the verb. An escape sequence in that text is stored verbatim and
+// replayed on every later read — by kando show, by the TUI's detail pane,
+// and by kando web — so a single paste keeps rewriting the terminal, moving
+// the cursor or driving OSC 52, long after the paste is forgotten.
+//
+// This is a guard on what the surfaces write, not on what the file holds: a
+// hand-edited board.md is the user's own content and is still parsed
+// verbatim. That is the intended boundary — kando does not rewrite a file
+// the user edited, and content the user typed into their own file is not
+// the threat this addresses.
 func (c *Card) SetNotes(value string) {
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\r", "\n")
+	value = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, value)
 	c.Notes = strings.TrimRight(clip(value, maxNotesBytes), "\n \t")
 }
 
