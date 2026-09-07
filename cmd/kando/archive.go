@@ -160,20 +160,25 @@ func runArchiveList(args []string) {
 	fmt.Println(formatArchiveList(root, resolvedName, groups, query, matched, scanned, total))
 }
 
-// archiveArgs parses kando archive <card>'s arguments: a card and an
-// optional board — "list" and "restore" are reserved subcommand words,
-// checked by runArchive before this ever runs.
-func archiveArgs(args []string) (card, name string, err error) {
-	vals, name, err := splitBoard("archive", "a card", args, 1)
+// cardOnlyArgs parses the single-card, no-flags grammar archive <card> and
+// archive restore share: a card and an optional board. splitBoard returns
+// the card verbatim; required() is what makes a blank one an argument error
+// instead of a lookup that reaches the board.
+func cardOnlyArgs(verb string, args []string) (card, name string, err error) {
+	vals, name, err := splitBoard(verb, "a card", args, 1)
 	if err != nil {
 		return "", "", err
 	}
-	// splitBoard returns required values verbatim; required() is what makes a
-	// blank card an argument error instead of a lookup that reaches the board.
 	if card, err = required(vals[0], "card id or title"); err != nil {
 		return "", "", err
 	}
 	return card, name, nil
+}
+
+// archiveArgs parses kando archive <card>'s arguments — "list" and "restore"
+// are reserved subcommand words, checked by runArchive before this ever runs.
+func archiveArgs(args []string) (card, name string, err error) {
+	return cardOnlyArgs("archive", args)
 }
 
 // findArchived resolves arg against a: an id first (Archive.Find), then —
@@ -259,16 +264,9 @@ func runArchiveCard(args []string) {
 }
 
 // archiveRestoreArgs parses kando archive restore's arguments: the same
-// shape as archiveArgs.
+// cardOnlyArgs grammar archiveArgs uses.
 func archiveRestoreArgs(args []string) (card, name string, err error) {
-	vals, name, err := splitBoard("archive restore", "a card", args, 1)
-	if err != nil {
-		return "", "", err
-	}
-	if card, err = required(vals[0], "card id or title"); err != nil {
-		return "", "", err
-	}
-	return card, name, nil
+	return cardOnlyArgs("archive restore", args)
 }
 
 // archiveRestore is kando archive restore's testable core: the same
