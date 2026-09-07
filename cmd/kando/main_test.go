@@ -87,14 +87,22 @@ func runCLI(t *testing.T, home string, args ...string) (stdout, stderr string, e
 func TestUsageTextIsUnchanged(t *testing.T) {
 	const want = `usage: kando [board]
        kando web [board] [--port N]
+       kando board list [--json]
+       kando show <card> [board] [--json]
+       kando list [board] [--filter "..."] [--json]
        kando move <card> <lane> [board]
+       kando archive list [board] [--filter "..."] [--json]
 
 Opens the board (default "life") from $KANDO_HOME (default ~/.kando) in the
 terminal, or serves it at http://127.0.0.1:<port>/ (default 4242). The board
-name may come before or after the flags. kando move moves <card> — an id or
-an exact, case-insensitive title — to <lane> (Backlog, Todo, Doing or Done)
-on an existing board; it never creates one. A board literally named "web" or
-"move" opens in the terminal with: kando -- web or kando -- move
+name may come before or after a verb's flags. <card> is a card's id or its
+exact, case-insensitive title; a title matching more than one card is
+refused. <lane> is Backlog, Todo, Doing or Done, case-insensitive.
+kando move moves <card> to <lane> on an existing board; it never creates
+one — none of these verbs do. --filter takes the same query syntax as the
+TUI's / (title text, #tag, !blocked, age>7d, age<3d). A board literally
+named "web", "move", "board", "show", "list" or "archive" opens in the
+terminal with: kando -- <board>
 Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR, KANDO_WEB_PORT`
 	if usageText != want {
 		t.Errorf("usageText changed:\n--- got ---\n%s\n--- want ---\n%s", usageText, want)

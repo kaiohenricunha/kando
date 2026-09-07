@@ -26,7 +26,14 @@ func showArgs(args []string, errOut io.Writer) (card, name string, jsonOut bool,
 	if err != nil {
 		return "", "", false, err
 	}
-	return vals[0], name, *j, nil
+	// splitBoard hands required values back verbatim; judging them is the
+	// verb's job, so that the message names what is wrong rather than
+	// repeating the too-few-arguments text. Same rule as moveArgs.
+	card = strings.TrimSpace(vals[0])
+	if card == "" {
+		return "", "", false, fmt.Errorf("card id or title required")
+	}
+	return card, name, *j, nil
 }
 
 // showCard resolves cardArg against a read-only load of the board: show
