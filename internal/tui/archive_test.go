@@ -294,6 +294,54 @@ func TestArchiveKeyLoadsArchiveLazily(t *testing.T) {
 	}
 }
 
+func TestArchiveKeyRefusesToWriteAnUnreadableArchive(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Lanes = sampleBoard(t).Lanes
+	// A card heading before any "## " week section: parseSections rejects it,
+	// so LoadArchive fails instead of returning an empty archive. archive.md is
+	// documented as hand-editable, so this is a reachable state, and A is the
+	// first key that writes the archive without the archive screen being opened
+	// first — where a failed load shows nothing to press u on.
+	bad := "### Orphan card\n\nnotes\n"
+	if err := os.WriteFile(st.ArchivePath(), []byte(bad), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	boardBefore, err := os.ReadFile(st.BoardPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := New(Options{Store: st, Board: b, Styles: testStyles, Now: func() time.Time { return fixedNow }, Width: 120, Height: 40})
+	m = press(m, "l", "l")
+	done := len(m.b.Lanes[board.Done])
+	m = press(m, "A")
+
+	if got := len(m.b.Lanes[board.Done]); got != done {
+		t.Errorf("Done went from %d to %d cards: A must not touch the board when the archive cannot be read", done, got)
+	}
+	if m.err == nil {
+		t.Error("the load failure should reach m.err")
+	}
+	archiveAfter, err := os.ReadFile(st.ArchivePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(archiveAfter) != bad {
+		t.Errorf("archive.md was rewritten to:\n%s\nit must be byte-identical to:\n%s", archiveAfter, bad)
+	}
+	boardAfter, err := os.ReadFile(st.BoardPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(boardAfter) != string(boardBefore) {
+		t.Error("board.md was rewritten")
+	}
+}
+
 func TestArchiveKeyRefusesADuplicate(t *testing.T) {
 	m := newTestModel(t, 120, 40)
 	dup := m.archive.Cards[0].ID

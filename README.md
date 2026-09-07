@@ -13,27 +13,27 @@ Bubbles.
 The terminal, the web page and the CLI (`kando <verb>`, e.g. `kando move`)
 share one rule: no capability exists on only one of them. `V` means the
 surface has it; `X` means it does not, by deliberate design (see the
-footnotes), not because it is missing.
+footnotes), not because it is missing; `—` means it is not built yet⁵.
 
 | Capability | Web | TUI | CLI |
 |---|---|---|---|
 | Open / switch to a board | V | V | V |
 | Create a new board | V | V | V |
-| List all boards | V | V | V |
-| Quick-add a card | V | V | V |
-| Show a card's full detail | V | V | V |
+| List all boards | V | V | — |
+| Quick-add a card | V | V | — |
+| Show a card's full detail | V | V | — |
 | Move a card between lanes | V | V | V |
 | Reorder a card within a lane (drag position) | V | X¹ | X¹ |
-| Delete a card | V | V | V |
+| Delete a card | V | V | — |
 | Edit title | V | V | X² |
-| Edit tag | V | V | V |
-| Edit notes | V | V | V |
-| Block / clear block reason | V | V | V |
-| Checklist: add / toggle / edit item | V | V | V |
-| Filter / search (`title`, `#tag`, `!blocked`, `age>`/`<`) | V | V | V |
-| List the archive | V | V | V |
-| Restore a card from the archive | V | V | V |
-| Archive a card (Done → archived) | V | V | V |
+| Edit tag | V | V | — |
+| Edit notes | V | V | — |
+| Block / clear block reason | V | V | — |
+| Checklist: add / toggle / edit item | V | V | — |
+| Filter / search (`title`, `#tag`, `!blocked`, `age>`/`<`) | V | V | — |
+| List the archive | V | V | — |
+| Restore a card from the archive | V | V | — |
+| Archive a card (Done → archived) | V | V | — |
 | Live auto-refresh on external changes | V | V | X³ |
 | Help | X⁴ | V | V |
 
@@ -43,6 +43,11 @@ BOUND-1b). ² Not in this effort's scope — `Card.SetTitle` already exists, so 
 `kando title` verb is a one-file follow-up on the same pattern as `kando tag`.
 ³ A CLI verb is a one-shot process — there is nothing running for it to
 refresh. ⁴ The web page labels its own controls instead of a help key.
+⁵ `kando` dispatches only `web` and `move` today (`kando -h` lists them).
+Each `—` becomes a `V` in the pull request that adds its verb, so this column
+is what the CLI can do at that merge point rather than what it is meant to do
+eventually — an audit pre-filled with the answer cannot catch a unit that is
+dropped or descoped.
 `docs/specs/kando-web/parity.md` is the same audit at TUI-key/route
 granularity.
 
@@ -148,9 +153,10 @@ then free-text notes; then `- [ ]` / `- [x]` checklist items. Dates are written
 date-only at midnight, otherwise as RFC 3339. A card without an `id` gets one on
 load, derived from its contents so every read agrees. `archive.md` groups
 cards under `## 2026-W36` ISO-week headings by each card's `done` date. `A`
-on a Done card in the TUI, the **archive** button on a Done card's page, and
-`kando archive <card>` all move a card there; `u`, **restore**, and
-`kando archive restore <card>` bring it back to Doing.
+on a Done card in the TUI and the **archive** button on a Done card's page
+move a card there; `u` and **restore** bring it back to Doing. The matching
+CLI verbs (`kando archive`, `kando archive restore`) are not built yet — see
+the `—` rows above.
 
 Limits of the hand-editable format: note text after a checklist item is moved
 above the checklist on the next save. A note line that would otherwise read as

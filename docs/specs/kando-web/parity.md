@@ -40,6 +40,7 @@ surface can do" table is that audit at capability granularity.
 | `x` toggle item | `POST …/checklist/{i}/toggle` | The web form carries the item text it was rendered with, so a stale index is a 409 rather than an edit of the wrong item. |
 | `enter` edit item | `POST …/checklist/{i}` | |
 | `m` move (lane picker) | `POST …/move` | |
+| `A` archive (Done only) | `POST /b/{board}/cards/{id}/archive` | The same route and the same two guards as the board screen's `A` (`detail.go`'s `archiveDetailCard`); it returns to the board afterwards because the card's own page no longer exists, which is what the button does too. |
 | `j/k`, `J/K`, `esc` | — | Navigation between items and cards. |
 
 ## Archive

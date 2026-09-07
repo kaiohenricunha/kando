@@ -21,21 +21,32 @@ type archiveState struct {
 // ensureArchive loads archive.md on first use, so a screen or a key that
 // touches the archive works whether or not the archive screen was opened
 // first — most notably A, which archives a card without ever showing it.
-func (m *Model) ensureArchive() {
+// It reports whether the archive is usable: on a load failure it records the
+// error and leaves m.archive nil rather than an empty archive, because a
+// caller that writes would otherwise persist that empty archive over the very
+// file it could not read. nil also makes the next call retry the load instead
+// of inheriting a fabricated state; every reader already treats nil as an
+// empty archive (visibleArchive).
+func (m *Model) ensureArchive() bool {
 	if m.archive != nil {
-		return
+		return true
 	}
-	m.archive = &board.Archive{}
-	if m.st != nil {
-		if a, err := m.st.LoadArchive(); err != nil {
-			m.err = err
-		} else {
-			m.archive = a
-		}
+	if m.st == nil {
+		m.archive = &board.Archive{}
+		return true
 	}
+	a, err := m.st.LoadArchive()
+	if err != nil {
+		m.err = err
+		return false
+	}
+	m.archive = a
+	return true
 }
 
 // openArchive loads archive.md on first use and shows the archive screen.
+// A failed load still opens the screen — it renders empty with the error in
+// the footer, as it did before A existed — because nothing on this path writes.
 func (m *Model) openArchive() {
 	m.ensureArchive()
 	m.scr = screenArchive
@@ -248,13 +259,18 @@ func (m *Model) restoreArchived(c *board.Card) {
 // archiveDone moves c — which must be in Done — into the archive and saves
 // both files. A no-op if c is not in Done or is already archived (a stale
 // selection racing an external edit), the same class of guard the web's
-// archive route enforces with a 409.
+// archive route enforces with a 409, and a no-op if archive.md cannot be
+// read: writing then would replace an archive we never saw with a one-card
+// file, which is the one way this feature could lose a card rather than
+// duplicate it. The web route refuses the same case with a 500.
 func (m *Model) archiveDone(c *board.Card) {
 	i := m.laneIndex(board.Done, c)
 	if i < 0 {
 		return
 	}
-	m.ensureArchive()
+	if !m.ensureArchive() {
+		return
+	}
 	if _, dup := m.archive.Find(c.ID); dup != nil {
 		return
 	}

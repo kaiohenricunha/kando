@@ -286,11 +286,17 @@ func (s *Store) SaveArchival(b *board.Board, a *board.Archive) error {
 }
 
 // SaveArchivalIfUnchanged is SaveArchival for a caller that loaded, edited
-// and is writing back both files — kando web and kando archive: it refuses
-// with ErrConflict, touching neither file, when board.md or archive.md no
-// longer holds the bytes this Store last read or wrote. Load the archive
-// through (*Store).LoadArchive first so its state is on record; a missing
-// archive.md is simply not a conflict.
+// and is writing back both files — the web's archive route: it refuses with
+// ErrConflict, touching neither file, when board.md or archive.md no longer
+// holds the bytes this Store last read or wrote. Load the archive through
+// (*Store).LoadArchive first so its state is on record.
+//
+// A missing archive.md is not a conflict, and that covers deleted as well as
+// never created: changedContent reports fs.ErrNotExist as unchanged, so an
+// archive.md removed between the load and this call is re-created from the
+// copy held in memory rather than refused. The asymmetry is deliberate and
+// matches the write order — an archived card can come back, but it is never
+// silently dropped.
 func (s *Store) SaveArchivalIfUnchanged(b *board.Board, a *board.Archive) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
