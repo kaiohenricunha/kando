@@ -80,7 +80,10 @@ func notesArgs(args []string, errOut io.Writer) (card, name string, src notesSou
 	default:
 		src = notesSource{kind: "stdin"}
 	}
-	return vals[0], name, src, nil
+	if card, err = required(vals[0], "card id or title"); err != nil {
+		return "", "", notesSource{}, err
+	}
+	return card, name, src, nil
 }
 
 // readNotes resolves src to the text kando notes will set — the one place
@@ -91,7 +94,17 @@ func readNotes(src notesSource, stdin io.Reader) (string, error) {
 	case "set":
 		return src.value, nil
 	case "file":
-		data, err := os.ReadFile(src.value)
+		// Open and LimitReader rather than os.ReadFile: ReadFile sizes its
+		// buffer from Stat, and a character device or FIFO reports 0, so it
+		// grows until EOF — which /dev/zero never reaches. The cap has to
+		// bound the read, not just reject the result, or the constant's own
+		// promise about `cat /dev/urandom` is only true of the stdin branch.
+		f, err := os.Open(src.value)
+		if err != nil {
+			return "", err
+		}
+		defer f.Close()
+		data, err := io.ReadAll(io.LimitReader(f, maxNotesInputBytes+1))
 		if err != nil {
 			return "", err
 		}

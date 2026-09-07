@@ -20,16 +20,16 @@ footnotes), not because it is missing; `—` means it is not built yet⁵.
 | Open / switch to a board | V | V | V |
 | Create a new board | V | V | V |
 | List all boards | V | V | V |
-| Quick-add a card | V | V | — |
+| Quick-add a card | V | V | V |
 | Show a card's full detail | V | V | V |
 | Move a card between lanes | V | V | V |
 | Reorder a card within a lane (drag position) | V | X¹ | X¹ |
-| Delete a card | V | V | — |
+| Delete a card | V | V | V |
 | Edit title | V | V | X² |
-| Edit tag | V | V | — |
-| Edit notes | V | V | — |
-| Block / clear block reason | V | V | — |
-| Checklist: add / toggle / edit item | V | V | — |
+| Edit tag | V | V | V |
+| Edit notes | V | V | V |
+| Block / clear block reason | V | V | V |
+| Checklist: add / toggle / edit item | V | V | V |
 | Filter / search (`title`, `#tag`, `!blocked`, `age>`/`<`) | V | V | V |
 | List the archive | V | V | V |
 | Restore a card from the archive | V | V | — |
@@ -43,8 +43,9 @@ BOUND-1b). ² Not in this effort's scope — `Card.SetTitle` already exists, so 
 `kando title` verb is a one-file follow-up on the same pattern as `kando tag`.
 ³ A CLI verb is a one-shot process — there is nothing running for it to
 refresh. ⁴ The web page labels its own controls instead of a help key.
-⁵ `kando` dispatches `web`, `move`, `board list`, `show`, `list` and
-`archive list` today (`kando -h` lists them).
+⁵ `kando -h` lists every verb that exists; today that is `web`, `move`,
+`board create`/`board list`, `add`, `show`, `list`, `tag`, `notes`, `block`,
+`unblock`, `delete`, `checklist add`/`toggle`/`edit` and `archive list`.
 Each `—` becomes a `V` in the pull request that adds its verb, so this column
 is what the CLI can do at that merge point rather than what it is meant to do
 eventually — an audit pre-filled with the answer cannot catch a unit that is

@@ -33,8 +33,9 @@ func runChecklist(args []string) {
 }
 
 // checklistAddArgs parses kando checklist add's arguments: a card and text,
-// both required — unlike tag, a blank item is a real rejection here, not a
-// clear-it signal, so splitBoard's blanket non-empty rule fits.
+// both required. splitBoard returns them verbatim, so the two required()
+// calls below are what reject a blank one — unlike tag, where an empty
+// second positional is a clear-it signal rather than a mistake.
 func checklistAddArgs(args []string) (card, text, name string, err error) {
 	vals, name, err := splitBoard("checklist add", "a card and text", args, 2)
 	if err != nil {
@@ -217,11 +218,15 @@ func editChecklistItem(root, name, cardArg string, n int, text string, was *stri
 		if err != nil {
 			return false, err
 		}
+		// The comparison has to happen after the set, not before:
+		// SetChecklistItemText sanitizes, so the only honest way to know
+		// whether anything moved is to look at what actually landed.
+		before := c.Checklist[idx].Text
 		if !c.SetChecklistItemText(idx, text) {
 			return false, fmt.Errorf("text required")
 		}
 		item = c.Checklist[idx]
-		return true, nil
+		return item.Text != before, nil
 	})
 	if err != nil {
 		return "", board.Item{}, err

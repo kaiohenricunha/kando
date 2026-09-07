@@ -68,13 +68,15 @@ var errConflict = errors.New("the board changed on disk — try again")
 
 // resolveBoard applies every verb's shared board-name rule: "" defaults to
 // "life", the name must be valid, and the board must already exist — only
-// `kando [board]` and `kando web [board]` are allowed to create one, so a
-// typo'd name fails clearly instead of silently starting an empty board.
+// `board create`, `kando [board]` and `kando web [board]` are allowed to
+// create one, so a typo'd name fails clearly instead of silently starting an
+// empty board.
 //
 // The "create it first with" hint names only commands this binary actually
-// has. A later unit adds `board create`, and the hint should name it then —
-// naming it now would send the user to a command that exits 2 with the usage
-// text. TestCLIMoveMessagesAreUnchanged pins the wording.
+// has, and it names `board create` first now that it exists. That ordering is
+// the point: every verb that reaches this error is a headless one, and the
+// other two entry points open a TUI or start a server, neither of which a
+// script can use. TestCLIMoveMessagesAreUnchanged pins the wording.
 func resolveBoard(root, name string) (string, error) {
 	if name == "" {
 		name = "life"
@@ -83,7 +85,7 @@ func resolveBoard(root, name string) (string, error) {
 		return "", fmt.Errorf("invalid board name %q", name)
 	}
 	if !store.Exists(root, name) {
-		return "", fmt.Errorf("no such board %q (create it first with \"kando %s\" or \"kando web %s\")", name, name, name)
+		return "", fmt.Errorf("no such board %q (create it first with \"kando board create %s\", or open it with \"kando %s\")", name, name, name)
 	}
 	return name, nil
 }

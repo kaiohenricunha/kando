@@ -11,8 +11,18 @@ import (
 	"github.com/kaiohenricunha/kando/internal/board"
 )
 
+// cardKeys is the alternation of every key line cardBlock writes under a
+// card heading. keyRe and structuralNote are both built from it because they
+// have to agree: keyRe decides what the parser eats as a key, structuralNote
+// decides what the writer escapes so it is not eaten. They drifted once —
+// structuralNote knew about headings and checklist items but not keys, so a
+// note whose first line read "done: soon" was written unescaped, parsed back
+// as the done: key, and failed parseTime, which made the whole board
+// unopenable on every surface.
+const cardKeys = `tag|created|moved|done|blocked|id`
+
 var (
-	keyRe  = regexp.MustCompile(`^(tag|created|moved|done|blocked|id):[ \t]?(.*)$`)
+	keyRe  = regexp.MustCompile(`^(` + cardKeys + `):[ \t]?(.*)$`)
 	itemRe = regexp.MustCompile(`^- \[( |x|X)\] ?(.*)$`)
 )
 
@@ -179,12 +189,20 @@ func ParseArchive(data []byte) (a *board.Archive, needsRewrite bool, err error) 
 }
 
 // structuralNote matches a note line that would otherwise be read back as
-// structure: a heading, a checklist item, or an already-escaped line.
-var structuralNote = regexp.MustCompile(`^\\*(#{1,6} |- \[[ xX]\] )`)
+// structure: a heading, a checklist item, a card key, or an already-escaped
+// line.
+//
+// The key alternation matters only for a note's *first* line, since that is
+// where the parser is still in its inKeys state — but escaping every one of
+// them is both simpler and harmless, because unescapeNote strips the
+// backslash back off wherever it appears.
+var structuralNote = regexp.MustCompile(`^\\*(#{1,6} |- \[[ xX]\] |(` + cardKeys + `):)`)
 
 // escapeNote prefixes a structural note line with a backslash so the parser
 // reads it back as prose. Without it a notes line of "## Nope" makes the
-// whole board unparsable, and "### Ghost" silently splits the card in two.
+// whole board unparsable, "### Ghost" silently splits the card in two, and
+// "done: soon" is swallowed as the done: key — which fails parseTime and
+// makes the board unopenable from the CLI, the TUI and kando web alike.
 func escapeNote(line string) string {
 	if structuralNote.MatchString(line) {
 		return "\\" + line

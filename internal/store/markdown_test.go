@@ -251,3 +251,51 @@ func TestSanitizedFieldsRoundTripAsOneCard(t *testing.T) {
 		t.Errorf("sanitized fields should round-trip as exactly one card: %+v", got.Lanes[board.Todo][0])
 	}
 }
+
+// TestNotesFirstLineLookingLikeAKeyRoundTrips pins the case that made a board
+// unopenable: parseSections is still in its inKeys state when it reaches the
+// first notes line, so an unescaped "done: soon" was read back as the done:
+// key rather than as prose. parseTime then rejected it and Parse failed, which
+// took the CLI, the TUI and kando web down together — a note the user typed
+// could brick their own board.
+func TestNotesFirstLineLookingLikeAKeyRoundTrips(t *testing.T) {
+	for _, notes := range []string{
+		"done: soon",
+		"tag: hijacked",
+		"id: 00000000",
+		"blocked: nope",
+		"created: yesterday\nmoved: never",
+		"done: soon\n\nand a second paragraph",
+	} {
+		t.Run(notes, func(t *testing.T) {
+			b := &board.Board{}
+			c := &board.Card{
+				ID:        "abcdefgh",
+				Title:     "Keyish notes",
+				Tag:       "real",
+				Notes:     notes,
+				CreatedAt: ts(2026, 9, 1),
+				MovedAt:   ts(2026, 9, 1),
+			}
+			b.Lanes[board.Todo] = []*board.Card{c}
+
+			out := Marshal(b)
+			got, _, err := Parse(out)
+			if err != nil {
+				t.Fatalf("board became unparsable: %v\n%s", err, out)
+			}
+			if len(got.Lanes[board.Todo]) != 1 {
+				t.Fatalf("want one card, got %d\n%s", len(got.Lanes[board.Todo]), out)
+			}
+			r := got.Lanes[board.Todo][0]
+			if r.Notes != notes {
+				t.Errorf("notes = %q, want %q\n%s", r.Notes, notes, out)
+			}
+			// The real keys must survive untouched: a note that looks like a
+			// key must not be able to overwrite the card's own tag or id.
+			if r.Tag != "real" || r.ID != "abcdefgh" {
+				t.Errorf("a note overwrote a real key: tag=%q id=%q\n%s", r.Tag, r.ID, out)
+			}
+		})
+	}
+}

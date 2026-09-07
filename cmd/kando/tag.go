@@ -8,10 +8,15 @@ import (
 )
 
 // tagArgs parses kando tag's arguments by hand rather than through
-// splitBoard: the tag positional is allowed to be empty (that's how a
-// script clears it), which splitBoard's blanket non-empty rule on every
-// required value does not support — only the card is ever required to be
-// non-blank here.
+// splitBoard. Only the card is ever required to be non-blank: an empty tag is
+// how a script clears one, so it must reach SetTag untouched.
+//
+// That is no longer a reason splitBoard could not serve — it hands required
+// values back verbatim and leaves the judging to the verb, so
+// splitBoard + required(card) would reproduce this function branch for
+// branch. What keeps the hand-rolled version is only that it is already
+// written and pinned by TestTagArgs; if a third verb ever wants this shape,
+// fold it into the shared grammar rather than copying this one.
 func tagArgs(args []string) (card, tag, name string, err error) {
 	switch len(args) {
 	case 0, 1:
