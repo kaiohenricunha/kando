@@ -85,6 +85,7 @@ func UnsafeRune(r rune) bool {
 // note a pre-fix build stored, or one typed in by hand, reaches a renderer
 // with its escape sequences intact. Rather than rewrite the user's file, each
 // surface puts values through this on the way out.
+//
 // The two line separators are converted rather than dropped: U+2028 is a line
 // ending the author meant, so it becomes the one the store uses. Dropping it
 // would silently join two lines into one. The single-line sanitizers below do
