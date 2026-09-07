@@ -93,3 +93,6 @@ ends in a form `POST` to `/move` rather than a write of its own. Both are in
   cells, and a C0 rune measures zero while some terminals still draw it, so
   the space is what keeps the lane grid from shifting. The bidi controls need
   no substitute — they genuinely occupy no cells — so all three delete those.
+  The Zl/Zp line separators diverge the other way: the CLI and the web convert
+  them to a newline, while the TUI drops them, because a newline mid-row would
+  break the same exact-cell contract the substitution above protects.

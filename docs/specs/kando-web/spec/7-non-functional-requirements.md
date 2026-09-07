@@ -80,7 +80,8 @@ markup or script into the page.
 
 **SEC-4 (invariant).** Every user-provided string reaching a rendered
 surface passes `board.SafeForDisplay`, which drops category Cc (C0, DEL and
-the C1 block) and `unicode.Bidi_Control`. The write-time helpers in
+the C1 block) and `unicode.Bidi_Control`, and converts the Zl/Zp line
+separators U+2028 and U+2029 to `\n`. The write-time helpers in
 `internal/board/ops.go` apply the same predicate, `board.UnsafeRune`, before
 a value is stored, and `store.ValidBoardName` applies it to board names.
 
@@ -92,6 +93,15 @@ where an escape sequence in stored text drives the terminal itself. The guard
 is needed on the read path specifically because `board.md` is hand-editable
 and is parsed verbatim: the store assigns fields directly and re-emits them
 unchanged, so text already on disk has never met a write-time sanitizer.
+
+The line separators are a third case, and are converted rather than dropped
+because they are a line ending the author meant. They matter because the TUI
+composes rows of an exact terminal-cell count and measures U+2028 as one cell,
+while a terminal that honours the break emits none — every later row then sits
+one line out of position. Single-line values (titles, tags, board names) drop
+them instead, exactly as those values already drop `\n`, since a newline in a
+title would put a second line into `board.md`, which the parser reads as
+structure.
 
 Deliberately out of scope: the rest of category Cf. Stripping it would take
 U+200C and U+200D, which are load-bearing in Persian and Indic shaping and in
