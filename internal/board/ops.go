@@ -37,11 +37,60 @@ func clip(s string, n int) string {
 // through sanitizeLine: a stray "\n" would otherwise turn a value into a
 // second line the parser reads as structure.
 
-// sanitizeLine trims s and drops control runes (including CR/LF) so a value
+// UnsafeRune reports whether r must never reach a stored field or a rendered
+// surface. It is the single definition of "unsafe" for this program: the
+// write-time sanitizers below use it, and so do the renderers, which is what
+// keeps the two from drifting apart as they did before.
+//
+// Two categories, for two different reasons:
+//
+// Cc (unicode.IsControl, so C0 plus DEL plus the C1 block U+0080-U+009F)
+// drives the terminal. ESC opens OSC 52 and writes the reader's clipboard;
+// U+009B is CSI, the single-byte form of "ESC [", so the C1 half is not
+// theoretical padding.
+//
+// Bidi_Control is the Trojan Source set (CVE-2021-42574) — the embeddings and
+// overrides U+202A-U+202E, the isolates U+2066-U+2069, and the direction
+// marks. These are category Cf, so unicode.IsControl is blind to them, and
+// they reorder how text renders in a terminal and in a browser alike: a note
+// can display as text it does not contain.
+//
+// Deliberately NOT the whole of Cf. That would also take U+200C/U+200D, the
+// zero-width non-joiner and joiner, which are load-bearing in Persian and
+// Indic scripts and in every composed emoji, and the variation selectors.
+// Bidi_Control is the narrow set that misrepresents order; the rest of Cf is
+// invisible but honest.
+func UnsafeRune(r rune) bool {
+	return unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r)
+}
+
+// SafeForDisplay drops every unsafe rune from s, keeping newlines and tabs so
+// multi-line text still lays out. It is the read-side counterpart to the
+// write-time sanitizers.
+//
+// It exists because board.md is the user's own file and is parsed verbatim:
+// store.parseSections assigns fields directly and Marshal re-emits them, so
+// nothing on the read path has ever been through sanitizeLine or SetNotes. A
+// note a pre-fix build stored, or one typed in by hand, reaches a renderer
+// with its escape sequences intact. Rather than rewrite the user's file, each
+// surface puts values through this on the way out.
+func SafeForDisplay(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if UnsafeRune(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// sanitizeLine trims s and drops unsafe runes (including CR/LF) so a value
 // can never become a second line in the Markdown store.
 func sanitizeLine(s string) string {
 	return clip(strings.TrimSpace(strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if UnsafeRune(r) {
 			return -1
 		}
 		return r
@@ -92,39 +141,22 @@ func (c *Card) SetTag(value string) {
 // and by kando web — so a single paste keeps rewriting the terminal, moving
 // the cursor or driving OSC 52, long after the paste is forgotten.
 //
-// This is a guard on what the surfaces write, not on what the file holds,
-// and the distinction is narrower than it sounds. kando does rewrite the
-// file — every mutation re-marshals the whole board, and store.Open rewrites
-// it outright when a card has no id — but the read path assigns Notes
-// directly (store.parseSections) and Marshal re-emits whatever it parsed. So
-// a rewrite preserves unsanitized bytes rather than cleaning them.
+// This is a guard on what the surfaces write, not on what the file holds.
+// kando does rewrite the file — every mutation re-marshals the whole board,
+// and store.Open rewrites it outright when a card has no id — but the read
+// path assigns Notes directly (store.parseSections) and Marshal re-emits
+// whatever it parsed, so a rewrite preserves unsanitized bytes rather than
+// cleaning them. A hand-edited board.md therefore keeps whatever the user put
+// in it, which is the intended boundary: their file, their content.
 //
-// Two consequences worth stating rather than leaving to be discovered. A
-// hand-edited board.md keeps whatever the user put in it, which is the
-// intended boundary: their file, their content. But a note that a pre-fix
-// build stored also survives, and that is not the user's content — it is the
-// output of the bug this fixes. Those notes keep replaying until the card is
-// next edited through a surface. Sanitizing on read, or at render on the
-// terminal surfaces, is the follow-up that would close it.
-//
-// unicode.IsControl is category Cc only, so the Cf format runes — the bidi
-// overrides U+202A-U+202E and the isolates, zero-width spaces — are
-// deliberately out of scope here. sanitizeLine has the identical gap, so
-// widening belongs in one change that moves both, not in this one: a blanket
-// Cf strip would also drop ZWJ and the variation selectors and break emoji
-// sequences and Indic shaping.
+// The bytes that boundary leaves in place — a note a pre-fix build stored, or
+// one typed in by hand — are handled on the way out instead, by
+// SafeForDisplay at each renderer, so nothing is rewritten behind the user's
+// back. See UnsafeRune for which runes both halves drop and why.
 func (c *Card) SetNotes(value string) {
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\r", "\n")
-	value = strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\t' {
-			return r
-		}
-		if unicode.IsControl(r) {
-			return -1
-		}
-		return r
-	}, value)
+	value = SafeForDisplay(value)
 	c.Notes = strings.TrimRight(clip(value, maxNotesBytes), "\n \t")
 }
 
