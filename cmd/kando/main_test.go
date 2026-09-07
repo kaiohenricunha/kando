@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -87,14 +88,22 @@ func runCLI(t *testing.T, home string, args ...string) (stdout, stderr string, e
 func TestUsageTextIsUnchanged(t *testing.T) {
 	const want = `usage: kando [board]
        kando web [board] [--port N]
+       kando board list [--json]
+       kando show <card> [board] [--json]
+       kando list [board] [--filter "..."] [--json]
        kando move <card> <lane> [board]
+       kando archive list [board] [--filter "..."] [--json]
 
 Opens the board (default "life") from $KANDO_HOME (default ~/.kando) in the
 terminal, or serves it at http://127.0.0.1:<port>/ (default 4242). The board
-name may come before or after the flags. kando move moves <card> — an id or
-an exact, case-insensitive title — to <lane> (Backlog, Todo, Doing or Done)
-on an existing board; it never creates one. A board literally named "web" or
-"move" opens in the terminal with: kando -- web or kando -- move
+name may come before or after a verb's flags. <card> is a card's id or its
+exact, case-insensitive title; a title matching more than one card is
+refused. <lane> is Backlog, Todo, Doing or Done, case-insensitive.
+kando move moves <card> to <lane> on an existing board; it never creates
+one — none of these verbs do. --filter takes the same query syntax as the
+TUI's / (title text, #tag, !blocked, age>7d, age<3d). A board literally
+named "web", "move", "board", "show", "list" or "archive" opens in the
+terminal with: kando -- <board>
 Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR, KANDO_WEB_PORT`
 	if usageText != want {
 		t.Errorf("usageText changed:\n--- got ---\n%s\n--- want ---\n%s", usageText, want)
@@ -300,5 +309,142 @@ func TestKandoRootHonoursTheEnvironment(t *testing.T) {
 	t.Setenv("KANDO_HOME", "/tmp/kando-test-home")
 	if got := kandoRoot(); got != "/tmp/kando-test-home" {
 		t.Errorf("kandoRoot = %q", got)
+	}
+}
+
+// TestCLIJSONContainersAreNeverNull is the test json.go's schema comment asked
+// the first --json verb to write, and it is what would have caught
+// `archive list --json` emitting "groups": null on an empty archive.
+//
+// It drives the real binary rather than constructing the structs, because the
+// nil slice is introduced in the run* bodies, not in the types — a test that
+// built listJSON itself would have passed while the shipped verb was broken.
+// An empty board and an untouched archive are the state a fresh board is in,
+// so this is the first thing a script hits, not a corner case.
+func TestCLIJSONContainersAreNeverNull(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "life")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "board.md"), []byte("## Todo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"list on an empty board", []string{"list", "--json"}},
+		{"archive list on an empty archive", []string{"archive", "list", "--json"}},
+		{"archive list with a filter matching nothing", []string{"archive", "list", "--json", "--filter", "#nomatch"}},
+		{"board list", []string{"board", "list", "--json"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, errOut, code := runCLI(t, home, tc.args...)
+			if code != 0 {
+				t.Fatalf("exit %d, stderr: %s", code, errOut)
+			}
+			if strings.Contains(out, "null") {
+				t.Errorf("no container may encode as null:\n%s", out)
+			}
+			var v any
+			if err := json.Unmarshal([]byte(out), &v); err != nil {
+				t.Errorf("output is not valid JSON: %v\n%s", err, out)
+			}
+		})
+	}
+}
+
+// TestCLIReadVerbsSucceed drives each read verb through the real binary: the
+// four run* wrappers had no process-level coverage at all, which is the layer
+// where exit codes, the stdout/stderr split and the --json encoding actually
+// live. move has had these since it was written.
+func TestCLIReadVerbsSucceed(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "life")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	board := "## Todo\n\n### Renew passport\ntag: errand\nid: k7q2m9ab\n"
+	if err := os.WriteFile(filepath.Join(dir, "board.md"), []byte(board), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"board list", []string{"board", "list"}, "life"},
+		{"show by id", []string{"show", "k7q2m9ab"}, "Renew passport"},
+		{"show by title", []string{"show", "renew passport"}, "k7q2m9ab"},
+		{"list", []string{"list"}, "Renew passport"},
+		{"list with a filter", []string{"list", "--filter", "#errand"}, `1 of 1 cards match "#errand"`},
+		{"archive list on an empty archive", []string{"archive", "list"}, `nothing archived on "life"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, errOut, code := runCLI(t, home, tc.args...)
+			if code != 0 {
+				t.Fatalf("exit %d, stderr: %s", code, errOut)
+			}
+			if errOut != "" {
+				t.Errorf("stderr should be empty on success, got %q", errOut)
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("stdout missing %q:\n%s", tc.want, out)
+			}
+		})
+	}
+
+	t.Run("board.md is untouched by every read verb", func(t *testing.T) {
+		after, err := os.ReadFile(filepath.Join(dir, "board.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(after) != board {
+			t.Errorf("a read verb rewrote board.md:\ngot:\n%s\nwant:\n%s", after, board)
+		}
+	})
+}
+
+// TestCLIReadVerbArgumentErrors pins the exit-code contract for the read
+// verbs: an argument-shape error is exit 2 with usage, and stdout stays clean
+// so a --json consumer never parses half a message.
+func TestCLIReadVerbArgumentErrors(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "life"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"show with no card", []string{"show"}},
+		{"show with a blank card", []string{"show", "  "}},
+		{"board with no subcommand", []string{"board"}},
+		{"archive with no subcommand", []string{"archive"}},
+		{"list with too many positionals", []string{"list", "life", "extra"}},
+		{"unknown flag", []string{"list", "--nope"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, errOut, code := runCLI(t, home, tc.args...)
+			if code != 2 {
+				t.Errorf("want exit 2, got %d (stderr: %s)", code, errOut)
+			}
+			if out != "" {
+				t.Errorf("stdout must stay empty on an argument error, got %q", out)
+			}
+			// Contains, not HasPrefix: a flag-parsing error is printed twice,
+			// once by flag.FlagSet (which these verbs point at stderr, as
+			// webArgs has always done) and once by usageErr's "kando: " line.
+			// Pre-existing and consistent across every flag-taking verb, so it
+			// is not this unit's to change — but worth a follow-up, since
+			// io.Discard on the FlagSet would leave kando as the only voice.
+			if !strings.Contains(errOut, "kando: ") {
+				t.Errorf("stderr should carry the kando: error line, got %q", errOut)
+			}
+		})
 	}
 }

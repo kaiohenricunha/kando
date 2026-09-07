@@ -7,6 +7,24 @@ import (
 	"time"
 )
 
+// Matching returns b's cards lane by lane, keeping only those f matches (all
+// of them when f is empty), alongside how many matched and how many cards
+// the board holds in total. No existing caller needed this — the TUI and
+// the web page each filter their own already-selected lane or archive list
+// — but a headless listing verb has no lane of its own to start from.
+func (b *Board) Matching(f Filter, now time.Time) (lanes [4][]*Card, matched, total int) {
+	for _, l := range Lanes {
+		total += len(b.Lanes[l])
+		for _, c := range b.Lanes[l] {
+			if f.Empty() || f.Match(c, now) {
+				lanes[l] = append(lanes[l], c)
+				matched++
+			}
+		}
+	}
+	return lanes, matched, total
+}
+
 type tokKind int
 
 const (

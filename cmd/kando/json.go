@@ -14,17 +14,26 @@ type itemJSON struct {
 	Done bool   `json:"done"`
 }
 
-// cardJSON is the stable shape every --json verb emits a card as. Times are
-// RFC 3339, omitted when zero. Lane is omitted for an archived card, which
-// has none.
+// cardJSON is the stable shape every --json verb emits a card as. Lane is
+// omitted for an archived card, which has none.
 //
-// The offset is the reading machine's, not the file's: store.formatTime
-// writes a bare 2006-01-02 for any midnight stamp, and parseTime reads that
-// back with time.ParseInLocation(..., time.Local), so one board.md yields
-// 2026-09-01T00:00:00-03:00 here and 2026-09-01T00:00:00+02:00 elsewhere.
-// Whether to normalise to UTC or to pass the stamp through date-only is a
-// decision for the unit that wires the first --json verb, since it is that
-// output's contract to keep.
+// Timestamps are emitted exactly as board.md holds them — date-only for a
+// midnight stamp, RFC 3339 otherwise — which is what stampJSON mirrors from
+// store.formatTime. This is the decision the schema deferred until a verb
+// actually emitted one. The alternative, normalising to UTC, was rejected
+// because it is not machine-independent where it matters: store.parseTime
+// reads a bare 2026-09-01 with time.ParseInLocation(..., time.Local), so
+// UTC-normalising it moves the *date* to 2026-08-31 for any reader west of
+// Greenwich. Passing the stamp through keeps one board.md yielding one
+// answer everywhere, and a consumer that wants an instant still gets a real
+// RFC 3339 value wherever the file carries one.
+//
+// Age is a display label ("3h", "12d") and stays one, because kando show's
+// human output wants it; AgeHours is the same quantity as a number, since a
+// script cannot sort or threshold on a mixed-unit string. Hours is the unit
+// because it is the finest --filter understands (age>7d, age<3d, and the
+// hour forms), so `.age_hours > 168` reproduces `--filter "age>7d"`. Both
+// are absent for a card with no created:/done: at all, never zero-valued.
 type cardJSON struct {
 	ID            string     `json:"id"`
 	Title         string     `json:"title"`
@@ -38,6 +47,18 @@ type cardJSON struct {
 	Moved         string     `json:"moved,omitempty"`
 	Done          string     `json:"done,omitempty"`
 	Age           string     `json:"age,omitempty"`
+	AgeHours      *int       `json:"age_hours,omitempty"`
+}
+
+// stampJSON renders t the way board.md itself would, mirroring
+// store.formatTime: a midnight stamp is date-only, anything else is
+// RFC 3339. Keeping the two in step is what makes the JSON a faithful
+// projection of the file rather than a re-interpretation of it.
+func stampJSON(t time.Time) string {
+	if t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 && t.Nanosecond() == 0 {
+		return t.Format("2006-01-02")
+	}
+	return t.Format(time.RFC3339)
 }
 
 // cardToJSON projects c as of now. lane < 0 (board.Lane's zero value,
@@ -57,16 +78,18 @@ func cardToJSON(lane board.Lane, c *board.Card, now time.Time) cardJSON {
 		cj.Lane = lane.String()
 	}
 	if !c.CreatedAt.IsZero() {
-		cj.Created = c.CreatedAt.Format(time.RFC3339)
+		cj.Created = stampJSON(c.CreatedAt)
 	}
 	if !c.MovedAt.IsZero() {
-		cj.Moved = c.MovedAt.Format(time.RFC3339)
+		cj.Moved = stampJSON(c.MovedAt)
 	}
 	if !c.DoneAt.IsZero() {
-		cj.Done = c.DoneAt.Format(time.RFC3339)
+		cj.Done = stampJSON(c.DoneAt)
 	}
 	if age := c.AgeSince(); !age.IsZero() {
 		cj.Age = board.Age(now, age)
+		hours := board.Hours(now, age)
+		cj.AgeHours = &hours
 	}
 	return cj
 }
