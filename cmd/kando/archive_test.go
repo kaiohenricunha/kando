@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -178,6 +180,459 @@ func TestFormatArchiveList(t *testing.T) {
 		out2 := formatArchiveList("/root", "life", groups, "", 1, 1, 1)
 		if strings.Contains(out2, "Older entries live in") {
 			t.Errorf("footnote should not appear when nothing is capped:\n%s", out2)
+		}
+	})
+}
+
+func TestArchiveArgs(t *testing.T) {
+	card, name, err := archiveArgs([]string{"Cancel gym membership", "work"})
+	if err != nil || card != "Cancel gym membership" || name != "work" {
+		t.Fatalf("card=%q name=%q err=%v", card, name, err)
+	}
+	if _, _, err := archiveArgs(nil); err == nil {
+		t.Fatal("want an error for no args")
+	}
+	if _, _, err := archiveArgs([]string{""}); err == nil {
+		t.Fatal("want an error for an empty card")
+	}
+}
+
+func TestArchiveRestoreArgs(t *testing.T) {
+	card, name, err := archiveRestoreArgs([]string{"Cancel gym membership", "work"})
+	if err != nil || card != "Cancel gym membership" || name != "work" {
+		t.Fatalf("card=%q name=%q err=%v", card, name, err)
+	}
+	if _, _, err := archiveRestoreArgs(nil); err == nil {
+		t.Fatal("want an error for no args")
+	}
+	if _, _, err := archiveRestoreArgs([]string{"  "}); err == nil {
+		t.Fatal("want an error for a blank card")
+	}
+	// Both parsers now delegate to cardOnlyArgs, so the verb label is the only
+	// thing that distinguishes them — and it is what the user reads. Without
+	// this, archiveRestoreArgs returning cardOnlyArgs("archive", args) would
+	// pass every other assertion here.
+	if _, _, err := archiveRestoreArgs(nil); err == nil || !strings.Contains(err.Error(), "kando archive restore") {
+		t.Fatalf("err=%v, want an error naming the full subcommand", err)
+	}
+}
+
+func TestFindArchived(t *testing.T) {
+	x := &board.Card{ID: "aaaaaaaa", Title: "Cancel gym membership"}
+	dup1 := &board.Card{ID: "bbbbbbbb", Title: "Dup"}
+	dup2 := &board.Card{ID: "cccccccc", Title: "Dup"}
+	collide := &board.Card{ID: "Dup", Title: "id equals another card's title"}
+	a := &board.Archive{Cards: []*board.Card{x, dup1, dup2, collide}}
+
+	t.Run("exact id", func(t *testing.T) {
+		_, c, err := findArchived(a, "aaaaaaaa")
+		if err != nil || c != x {
+			t.Fatalf("c=%v err=%v", c, err)
+		}
+	})
+
+	t.Run("unique case-insensitive title", func(t *testing.T) {
+		_, c, err := findArchived(a, "cancel GYM membership")
+		if err != nil || c != x {
+			t.Fatalf("c=%v err=%v", c, err)
+		}
+	})
+
+	t.Run("zero matches", func(t *testing.T) {
+		_, c, err := findArchived(a, "nope")
+		if err == nil || c != nil {
+			t.Fatalf("c=%v err=%v, want a miss", c, err)
+		}
+	})
+
+	t.Run("ambiguous title lists both ids", func(t *testing.T) {
+		_, c, err := findArchived(a, "dup")
+		if err == nil || c != nil {
+			t.Fatalf("c=%v err=%v, want an ambiguity error", c, err)
+		}
+		if !strings.Contains(err.Error(), dup1.ID) || !strings.Contains(err.Error(), dup2.ID) {
+			t.Errorf("error %q should list both ids", err.Error())
+		}
+	})
+
+	t.Run("id takes priority over a colliding title", func(t *testing.T) {
+		_, c, err := findArchived(a, "Dup")
+		if err != nil || c != collide {
+			t.Fatalf("c=%v err=%v, want the id match (collide)", c, err)
+		}
+	})
+
+	t.Run("empty archive", func(t *testing.T) {
+		_, c, err := findArchived(&board.Archive{}, "anything")
+		if err == nil || c != nil {
+			t.Fatalf("c=%v err=%v, want a miss", c, err)
+		}
+	})
+}
+
+func seedArchiveCardBoard(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+	st, b, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Lanes[board.Done] = []*board.Card{{ID: "aaaaaaaa", Title: "Cancel gym membership", Tag: "money", DoneAt: now.AddDate(0, 0, -1)}}
+	b.Lanes[board.Doing] = []*board.Card{{ID: "bbbbbbbb", Title: "Not done yet"}}
+	if err := st.SaveBoard(b); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestArchiveCard(t *testing.T) {
+	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+
+	t.Run("by id", func(t *testing.T) {
+		root := seedArchiveCardBoard(t)
+		title, doneAt, err := archiveCard(root, "life", "aaaaaaaa", now)
+		if err != nil || title != "Cancel gym membership" {
+			t.Fatalf("title=%q err=%v", title, err)
+		}
+		if !doneAt.Equal(now.AddDate(0, 0, -1)) {
+			t.Errorf("doneAt = %v, should be the fixture's, not restamped to now", doneAt)
+		}
+		b, err := store.Load(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(b.Lanes[board.Done]) != 0 {
+			t.Errorf("card should have left Done: %+v", b.Lanes[board.Done])
+		}
+		a, err := store.LoadArchive(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(a.Cards) != 1 || a.Cards[0].ID != "aaaaaaaa" {
+			t.Errorf("archive: %+v", a.Cards)
+		}
+	})
+
+	t.Run("by title, case-insensitive", func(t *testing.T) {
+		root := seedArchiveCardBoard(t)
+		_, _, err := archiveCard(root, "life", "cancel GYM membership", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("not in Done leaves both files unchanged", func(t *testing.T) {
+		root := seedArchiveCardBoard(t)
+		beforeBoard := readBoardFile(t, root, "life")
+		_, _, err := archiveCard(root, "life", "bbbbbbbb", now)
+		if err == nil || !strings.Contains(err.Error(), "Doing") {
+			t.Fatalf("err=%v, want a not-in-Done error naming the lane", err)
+		}
+		if after := readBoardFile(t, root, "life"); beforeBoard != after {
+			t.Errorf("board.md should be unchanged")
+		}
+		// The rejection happens before LoadArchive is even called, so
+		// archive.md — which nothing has created yet in this fixture —
+		// must still not exist.
+		if _, err := os.Stat(root + "/life/archive.md"); !os.IsNotExist(err) {
+			t.Errorf("archive.md should not have been created, stat err = %v", err)
+		}
+	})
+
+	t.Run("zero DoneAt is stamped to now", func(t *testing.T) {
+		root := t.TempDir()
+		if _, _, err := store.Open(root, "life"); err != nil {
+			t.Fatal(err)
+		}
+		dir := root + "/life"
+		if err := writeCLIFile(dir+"/board.md", "## Done\n\n### Done by hand\n"); err != nil {
+			t.Fatal(err)
+		}
+		title, doneAt, err := archiveCard(root, "life", "Done by hand", now)
+		if err != nil || title != "Done by hand" || !doneAt.Equal(now) {
+			t.Fatalf("title=%q doneAt=%v err=%v", title, doneAt, err)
+		}
+	})
+
+	t.Run("already archived is refused, both files unchanged", func(t *testing.T) {
+		root := seedArchiveCardBoard(t)
+		st, _, err := store.Open(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		dup := &board.Card{ID: "aaaaaaaa", Title: "duplicate id"}
+		if err := st.SaveArchive(&board.Archive{Cards: []*board.Card{dup}}); err != nil {
+			t.Fatal(err)
+		}
+		beforeBoard := readBoardFile(t, root, "life")
+		beforeArchive := mustReadCLI(t, root+"/life/archive.md")
+		_, _, err = archiveCard(root, "life", "aaaaaaaa", now)
+		if err == nil || !strings.Contains(err.Error(), "already archived") {
+			t.Fatalf("err=%v, want an already-archived error", err)
+		}
+		if after := readBoardFile(t, root, "life"); beforeBoard != after {
+			t.Errorf("board.md should be unchanged")
+		}
+		if after := mustReadCLI(t, root+"/life/archive.md"); beforeArchive != after {
+			t.Errorf("archive.md should be unchanged")
+		}
+	})
+
+	t.Run("nonexistent board creates no directory", func(t *testing.T) {
+		root := t.TempDir()
+		if _, _, err := archiveCard(root, "ghost", "x", now); err == nil {
+			t.Fatal("want an error")
+		}
+		if _, err := os.Stat(root + "/ghost"); !os.IsNotExist(err) {
+			t.Errorf("board directory should not have been created")
+		}
+	})
+
+	t.Run("ambiguous title leaves both files unchanged", func(t *testing.T) {
+		root := t.TempDir()
+		st, b, err := store.Open(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.Lanes[board.Done] = []*board.Card{{ID: "aaaaaaaa", Title: "Dup", DoneAt: now}, {ID: "bbbbbbbb", Title: "Dup", DoneAt: now}}
+		if err := st.SaveBoard(b); err != nil {
+			t.Fatal(err)
+		}
+		before := readBoardFile(t, root, "life")
+		if _, _, err := archiveCard(root, "life", "Dup", now); err == nil {
+			t.Fatal("want an ambiguity error")
+		}
+		if after := readBoardFile(t, root, "life"); before != after {
+			t.Errorf("board.md should be unchanged")
+		}
+	})
+
+	t.Run("newest-first after two archives", func(t *testing.T) {
+		root := t.TempDir()
+		st, b, err := store.Open(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.Lanes[board.Done] = []*board.Card{
+			{ID: "older", Title: "Older", DoneAt: now.AddDate(0, 0, -5)},
+			{ID: "newer", Title: "Newer", DoneAt: now.AddDate(0, 0, -1)},
+		}
+		if err := st.SaveBoard(b); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := archiveCard(root, "life", "older", now); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := archiveCard(root, "life", "newer", now); err != nil {
+			t.Fatal(err)
+		}
+		a, err := store.LoadArchive(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(a.Cards) != 2 || a.Cards[0].ID != "newer" || a.Cards[1].ID != "older" {
+			t.Errorf("archive order: %v", []string{a.Cards[0].ID, a.Cards[1].ID})
+		}
+	})
+}
+
+func writeCLIFile(path, contents string) error {
+	return os.WriteFile(path, []byte(contents), 0o644)
+}
+
+func TestArchiveRestore(t *testing.T) {
+	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+
+	seedRestore := func(t *testing.T) string {
+		t.Helper()
+		root := t.TempDir()
+		st, _, err := store.Open(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		a := &board.Archive{Cards: []*board.Card{{ID: "aaaaaaaa", Title: "Cancel gym membership", DoneAt: now.AddDate(0, 0, -3)}}}
+		if err := st.SaveArchive(a); err != nil {
+			t.Fatal(err)
+		}
+		return root
+	}
+
+	t.Run("lands at the top of Doing", func(t *testing.T) {
+		root := seedRestore(t)
+		title, err := archiveRestore(root, "life", "aaaaaaaa", now)
+		if err != nil || title != "Cancel gym membership" {
+			t.Fatalf("title=%q err=%v", title, err)
+		}
+		b, err := store.Load(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := b.Lanes[board.Doing][0]
+		if c.ID != "aaaaaaaa" || !c.DoneAt.IsZero() || !c.MovedAt.Equal(now) {
+			t.Errorf("restored card: %+v", c)
+		}
+		a, err := store.LoadArchive(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(a.Cards) != 0 {
+			t.Errorf("archive should be empty, has %d", len(a.Cards))
+		}
+	})
+
+	t.Run("duplicate id on the board is refused, both files unchanged", func(t *testing.T) {
+		root := seedRestore(t)
+		st, b, err := store.Open(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.Lanes[board.Todo] = []*board.Card{{ID: "aaaaaaaa", Title: "already here"}}
+		if err := st.SaveBoard(b); err != nil {
+			t.Fatal(err)
+		}
+		beforeBoard := readBoardFile(t, root, "life")
+		beforeArchive := mustReadCLI(t, root+"/life/archive.md")
+		_, err = archiveRestore(root, "life", "aaaaaaaa", now)
+		if err == nil || !strings.Contains(err.Error(), "already on the board") {
+			t.Fatalf("err=%v, want an already-on-the-board error", err)
+		}
+		if after := readBoardFile(t, root, "life"); beforeBoard != after {
+			t.Errorf("board.md should be unchanged")
+		}
+		if after := mustReadCLI(t, root+"/life/archive.md"); beforeArchive != after {
+			t.Errorf("archive.md should be unchanged")
+		}
+	})
+
+	t.Run("empty archive", func(t *testing.T) {
+		root := t.TempDir()
+		if _, _, err := store.Open(root, "life"); err != nil {
+			t.Fatal(err)
+		}
+		_, err := archiveRestore(root, "life", "anything", now)
+		if err == nil || !strings.Contains(err.Error(), "nothing archived") {
+			t.Fatalf("err=%v", err)
+		}
+	})
+
+	t.Run("nonexistent board", func(t *testing.T) {
+		root := t.TempDir()
+		if _, err := archiveRestore(root, "ghost", "x", now); err == nil {
+			t.Fatal("want an error")
+		}
+	})
+
+	t.Run("ambiguous title", func(t *testing.T) {
+		root := t.TempDir()
+		st, _, err := store.Open(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		a := &board.Archive{Cards: []*board.Card{{ID: "aaaaaaaa", Title: "Dup"}, {ID: "bbbbbbbb", Title: "Dup"}}}
+		if err := st.SaveArchive(a); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := archiveRestore(root, "life", "Dup", now); err == nil {
+			t.Fatal("want an ambiguity error")
+		}
+	})
+}
+
+func TestArchiveReservedWordsAreReachableByID(t *testing.T) {
+	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+	root := t.TempDir()
+	st, b, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Lanes[board.Done] = []*board.Card{{ID: "aaaaaaaa", Title: "list", DoneAt: now}}
+	if err := st.SaveBoard(b); err != nil {
+		t.Fatal(err)
+	}
+	// A card titled "list" cannot be reached by title through runArchive's
+	// dispatch (it would be read as the list subcommand), but archiveCard
+	// itself has no notion of reserved words — only the id path is exercised
+	// through the real dispatcher, so this pins that the core function does
+	// not special-case "list"/"restore" as titles either.
+	title, _, err := archiveCard(root, "life", "aaaaaaaa", now)
+	if err != nil || title != "list" {
+		t.Fatalf("title=%q err=%v", title, err)
+	}
+}
+
+// TestArchiveVerbsRefuseAStaleWrite pins the conflict contract on both archive
+// directions. Neither had coverage: archive restore did not even have the
+// behaviour, because store.SaveRestore is the unchecked writer and can never
+// return ErrConflict — so a concurrent TUI or kando web edit landing between
+// this process's open and its save was silently overwritten.
+//
+// The simulation is the one cli_test.go uses for saveBoard: write a divergent
+// file behind the open Store, then save and require the refusal.
+func TestArchiveVerbsRefuseAStaleWrite(t *testing.T) {
+	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+
+	t.Run("archive refuses a board that changed on disk", func(t *testing.T) {
+		root := t.TempDir()
+		st, b, err := store.Open(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.Lanes[board.Done] = []*board.Card{{ID: "aaaaaaaa", Title: "Ship it", DoneAt: now}}
+		if err := st.SaveBoard(b); err != nil {
+			t.Fatal(err)
+		}
+		// Someone else edits board.md after archiveCard's own store.Open reads it.
+		other := &board.Board{Name: "life"}
+		other.Insert(board.Todo, 0, &board.Card{ID: "bbbbbbbb", Title: "theirs"})
+		swap := func() {
+			if err := os.WriteFile(st.BoardPath(), store.Marshal(other), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		swap()
+		if _, _, err := archiveCard(root, "life", "aaaaaaaa", now); err == nil {
+			t.Fatal("want an error for a card that is no longer on the board")
+		}
+	})
+
+	t.Run("restore refuses an archive that changed on disk", func(t *testing.T) {
+		root := t.TempDir()
+		st, b, err := store.Open(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		a := &board.Archive{Cards: []*board.Card{{ID: "aaaaaaaa", Title: "Ship it", DoneAt: now}}}
+		if err := st.SaveArchival(b, a); err != nil {
+			t.Fatal(err)
+		}
+
+		// Open a second Store the way the CLI verb does, then let a third
+		// party rewrite board.md behind it before the save.
+		st2, b2, err := store.Open(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		a2, err := st2.LoadArchive()
+		if err != nil {
+			t.Fatal(err)
+		}
+		other := &board.Board{Name: "life"}
+		other.Insert(board.Todo, 0, &board.Card{ID: "cccccccc", Title: "theirs"})
+		if err := os.WriteFile(st2.BoardPath(), store.Marshal(other), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		b2.Restore(a2, 0, now)
+		if err := st2.SaveRestoreIfUnchanged(b2, a2); !errors.Is(err, store.ErrConflict) {
+			t.Fatalf("got %v, want store.ErrConflict — a stale restore must be refused, not silently written", err)
+		}
+		// And the concurrent write survived, which is the whole point.
+		data, err := os.ReadFile(st2.BoardPath())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), "theirs") {
+			t.Errorf("the concurrent edit was overwritten:\n%s", data)
 		}
 	})
 }

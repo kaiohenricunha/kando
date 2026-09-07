@@ -32,8 +32,8 @@ footnotes), not because it is missing; `—` means it is not built yet⁵.
 | Checklist: add / toggle / edit item | V | V | V |
 | Filter / search (`title`, `#tag`, `!blocked`, `age>`/`<`) | V | V | V |
 | List the archive | V | V | V |
-| Restore a card from the archive | V | V | — |
-| Archive a card (Done → archived) | V | V | — |
+| Restore a card from the archive | V | V | V |
+| Archive a card (Done → archived) | V | V | V |
 | Live auto-refresh on external changes | V | V | X³ |
 | Help | X⁴ | V | V |
 
@@ -45,7 +45,8 @@ BOUND-1b). ² Not in this effort's scope — `Card.SetTitle` already exists, so 
 refresh. ⁴ The web page labels its own controls instead of a help key.
 ⁵ `kando -h` lists every verb that exists; today that is `web`, `move`,
 `board create`/`board list`, `add`, `show`, `list`, `tag`, `notes`, `block`,
-`unblock`, `delete`, `checklist add`/`toggle`/`edit` and `archive list`.
+`unblock`, `delete`, `checklist add`/`toggle`/`edit`, `archive <card>`,
+`archive list` and `archive restore`.
 Each `—` becomes a `V` in the pull request that adds its verb, so this column
 is what the CLI can do at that merge point rather than what it is meant to do
 eventually — an audit pre-filled with the answer cannot catch a unit that is
@@ -73,8 +74,15 @@ kando unblock "Renew passport"
 kando checklist add "Renew passport" "Fill in the form"
 kando checklist toggle "Renew passport" 1     # 1-based, as "kando show" lists them
 kando delete "Renew passport"
+kando archive "Cancel gym membership"     # Done → archive.md
 kando archive list --filter "#money"      # the archive, grouped by week
+kando archive restore "Cancel gym membership"   # back to Doing
 ```
+
+A board, or a card, named the same as a verb (`add`, `list`, `board`, …) is
+still reachable — a card by its id, a board with `kando -- <board>` — see
+"A board literally named like a verb" below and `kando archive`'s own note
+on `list`/`restore`.
 
 ### `kando web`
 
@@ -214,7 +222,18 @@ read the card can pass `--was "current text"`, and the command refuses if
 item `<n>` no longer reads that way in the meantime: the CLI's equivalent of
 the web page's stale-checklist-form guard.
 
-### `kando archive list`
+### `kando archive`
+
+`kando archive <card> [board]` moves a Done card into the archive — the
+TUI's `A` and the web page's archive button. The card must be in Done
+(anywhere else is an error naming its actual lane) and must not already be
+archived. Its `done:` date is kept — that is the week `archive.md` files it
+under — except when it has none (a hand-edited board), which is stamped to
+now rather than filed under an undated heading. `list`, `restore` and the
+help words (`help`, `-h`, `--help`) are reserved subcommand words below; a
+card literally titled one of them is still reachable by its id, the same
+trade-off `kando -- web` already makes for a board literally named like a
+verb.
 
 `kando archive list [board] [--filter "..."] [--json]` prints the archive
 exactly as the TUI's `D` screen and the web's archive page do: the newest 50
@@ -223,6 +242,21 @@ yet prints `nothing archived on "life"` rather than an empty table. `--json`
 mirrors the plain output's groups, plus `matched`/`scanned`/`total` so a
 script can tell "12 of the newest 50 match" from "12 of 200, the rest
 untouched by this filter."
+
+`kando archive restore <card> [board]` brings an archived card back to the
+top of Doing — the TUI's `u` and the web's restore button, going through the
+exact same `board.Restore` call. Refused if a card with that id is already
+on the board (a previous restore or archive half failed; one copy has to be
+deleted by hand first) or if the board has nothing archived at all.
+
+## Exit codes
+
+Every verb uses the same three, so a script can rely on them without
+checking which one ran: `0` the command did what it says; `1` it could not
+— a store, filesystem, or on-disk-conflict error, nothing was necessarily
+touched but nothing further was attempted either; `2` the arguments
+themselves were wrong (a missing value, a bad lane name) —
+caught before any file was opened, so a `2` always means nothing changed.
 
 ## Keys
 
@@ -267,10 +301,9 @@ date-only at midnight, otherwise as RFC 3339. A card without an `id` gets one on
 load, derived from its contents so every read agrees. `archive.md` groups
 cards under `## 2026-W36` ISO-week headings by each card's `done` date. `A`
 on a Done card in the TUI and the **archive** button on a Done card's page
-move a card there; `u` and **restore** bring it back to Doing. `kando archive
-list` reads the archive, but the CLI verbs that *write* it (`kando archive
-<card>` and `kando archive restore <card>`) are not built yet — see the `—`
-rows for archiving and restoring above.
+move a card there; `u` and **restore** bring it back to Doing. All three CLI archive verbs
+exist too: `kando archive <card>` files it, `kando archive list` reads the
+archive, and `kando archive restore <card>` brings it back.
 
 Limits of the hand-editable format: note text after a checklist item is moved
 above the checklist on the next save. A note line that would otherwise read as
