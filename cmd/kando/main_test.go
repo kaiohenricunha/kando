@@ -622,3 +622,124 @@ func TestCLINotesFileIsBounded(t *testing.T) {
 		t.Fatal("kando notes --file /dev/zero did not terminate: the read is unbounded")
 	}
 }
+
+// TestCLIArchiveDispatch pins runArchive's three-way dispatch through the real
+// binary. Nothing else does: the unit tests call archiveCard/archiveRestore
+// directly, and the argument-error cases assert exit 2 with a "kando: " prefix,
+// which is exactly what the pre-PR dispatcher produced for the same inputs.
+// Reverting the "restore" arm and the bare-<card> fallthrough left the whole
+// suite green before this test existed.
+func TestCLIArchiveDispatch(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "life")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "board.md"),
+		[]byte("## Done\n\n### Ship it\nid: k7q2m9ab\ndone: 2026-09-02\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("bare <card> reaches runArchiveCard", func(t *testing.T) {
+		out, errOut, code := runCLI(t, home, "archive", "k7q2m9ab")
+		if code != 0 {
+			t.Fatalf("exit %d: %s", code, errOut)
+		}
+		if !strings.Contains(out, `archived "Ship it"`) {
+			t.Errorf("stdout = %q, want the archived line", out)
+		}
+	})
+
+	t.Run("list still reaches runArchiveList", func(t *testing.T) {
+		out, errOut, code := runCLI(t, home, "archive", "list")
+		if code != 0 {
+			t.Fatalf("exit %d: %s", code, errOut)
+		}
+		if !strings.Contains(out, "Ship it") {
+			t.Errorf("stdout = %q, want the archived card listed", out)
+		}
+	})
+
+	t.Run("restore reaches runArchiveRestore", func(t *testing.T) {
+		out, errOut, code := runCLI(t, home, "archive", "restore", "k7q2m9ab")
+		if code != 0 {
+			t.Fatalf("exit %d: %s", code, errOut)
+		}
+		if !strings.Contains(out, `restored "Ship it" to Doing`) {
+			t.Errorf("stdout = %q, want the restored line", out)
+		}
+	})
+}
+
+// TestCLIArchiveReservedWordsNeedAnID is the end-to-end half of the collision
+// this dispatch deliberately accepts: "list" and "restore" are matched as
+// subcommands before the bare <card> form, so a card literally titled one of
+// them is unreachable by title — and reachable by id. That trade is only
+// defensible if the id actually works, which is what this asserts through the
+// real dispatcher rather than by calling archiveCard directly.
+func TestCLIArchiveReservedWordsNeedAnID(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "life")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "board.md"),
+		[]byte("## Done\n\n### list\nid: aaaaaaaa\ndone: 2026-09-02\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// By title, "list" is the subcommand: it lists an empty archive and
+	// leaves the card alone. This is the accepted collision, not a bug.
+	out, errOut, code := runCLI(t, home, "archive", "list")
+	if code != 0 {
+		t.Fatalf("archive list: exit %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, "nothing archived") {
+		t.Errorf("archive list should have listed an empty archive, got %q", out)
+	}
+
+	// By id, the same card archives normally — the escape the collision relies on.
+	out, errOut, code = runCLI(t, home, "archive", "aaaaaaaa")
+	if code != 0 {
+		t.Fatalf("archive by id: exit %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, `archived "list"`) {
+		t.Errorf("stdout = %q, want the card titled \"list\" archived by id", out)
+	}
+}
+
+// TestCapabilityMatrixHasNoUnbuiltCLICells guards README's "What each surface
+// can do" table, which footnote 5 makes a per-PR obligation: every `—` in the
+// CLI column becomes a `V` in the pull request that adds its verb, so the
+// column says what the CLI can do at that merge point.
+//
+// That obligation was missed in five consecutive pull requests, because
+// nothing enforced it — TestUsageTextIsUnchanged pins the usage text, but the
+// table had no equivalent. The CLI column is now complete apart from the three
+// deliberate X rows, so the invariant is simply that no `—` remains: a future
+// row added as `—` has to be flipped by the unit that ships its verb, or this
+// fails.
+func TestCapabilityMatrixHasNoUnbuiltCLICells(t *testing.T) {
+	data, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows int
+	for _, line := range strings.Split(string(data), "\n") {
+		// Capability rows only: four columns, and the header/separator skipped.
+		if !strings.HasPrefix(line, "| ") || strings.HasPrefix(line, "|---") || strings.Contains(line, "| Web | TUI | CLI |") {
+			continue
+		}
+		cells := strings.Split(strings.Trim(line, "| "), " | ")
+		if len(cells) != 4 {
+			continue
+		}
+		rows++
+		if cli := strings.TrimSpace(cells[3]); strings.HasPrefix(cli, "—") {
+			t.Errorf("capability %q still reads %q in the CLI column; the PR that ships its verb must flip it (README footnote 5)", cells[0], cli)
+		}
+	}
+	if rows < 15 {
+		t.Fatalf("only found %d capability rows — the table moved or the parse broke, so this test is not guarding anything", rows)
+	}
+}

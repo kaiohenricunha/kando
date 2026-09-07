@@ -24,7 +24,9 @@ import (
 // collision is accepted and the id is the way out. Addressing by id is
 // something a script can always do, whereas `kando archive -- list` would be
 // a second escape convention to learn for one card in a thousand.
-// TestArchiveReservedWordsAreReachableByID pins it.
+// TestCLIArchiveDispatch and TestCLIArchiveReservedWordsNeedAnID pin this
+// through the real binary — the unit tests below call the cores directly and
+// would not notice this switch being reverted.
 func runArchive(args []string) {
 	if helpWanted(args) {
 		usage()
@@ -160,21 +162,6 @@ func runArchiveList(args []string) {
 	fmt.Println(formatArchiveList(root, resolvedName, groups, query, matched, scanned, total))
 }
 
-// cardOnlyArgs parses the single-card, no-flags grammar archive <card> and
-// archive restore share: a card and an optional board. splitBoard returns
-// the card verbatim; required() is what makes a blank one an argument error
-// instead of a lookup that reaches the board.
-func cardOnlyArgs(verb string, args []string) (card, name string, err error) {
-	vals, name, err := splitBoard(verb, "a card", args, 1)
-	if err != nil {
-		return "", "", err
-	}
-	if card, err = required(vals[0], "card id or title"); err != nil {
-		return "", "", err
-	}
-	return card, name, nil
-}
-
 // archiveArgs parses kando archive <card>'s arguments — "list" and "restore"
 // are reserved subcommand words, checked by runArchive before this ever runs.
 func archiveArgs(args []string) (card, name string, err error) {
@@ -248,10 +235,9 @@ func archiveCard(root, name, cardArg string, now time.Time) (title string, doneA
 }
 
 func runArchiveCard(args []string) {
-	if helpWanted(args) {
-		usage()
-		return
-	}
+	// No helpWanted check: runArchive is the only caller and already ran it on
+	// this same slice. The two subcommand entry points do re-check, because
+	// they receive args[1:] and so can still be handed -h.
 	cardArg, name, err := archiveArgs(args)
 	if err != nil {
 		usageErr(err)
@@ -270,11 +256,18 @@ func archiveRestoreArgs(args []string) (card, name string, err error) {
 }
 
 // archiveRestore is kando archive restore's testable core: the same
-// Board.Restore + Store.SaveRestore call the TUI's u and the web's restore
+// Board.Restore the TUI's u and the web's restore
 // button use, with the same duplicate-id guard the web route enforces
 // (internal/web/archive.go): if the card's id is already on the board, a
 // previous restore or archive half failed, and one copy has to be deleted
 // by hand before this can proceed.
+//
+// Unlike archiveList this needs the Store method, not the package-level
+// LoadArchive: it holds the Store that will do the writing. That method
+// persists ids for a hand-written archive.md, and the card has to be resolved
+// before any guard can run, so a refused restore may still have canonicalized
+// archive.md. Idempotent, but worth knowing — archiveCard avoids it only
+// because its lane guard can run before the archive is loaded at all.
 func archiveRestore(root, name, cardArg string, now time.Time) (title string, err error) {
 	st, b, err := openBoard(root, name)
 	if err != nil {
@@ -296,7 +289,15 @@ func archiveRestore(root, name, cardArg string, now time.Time) (title string, er
 	}
 	title = c.Title
 	b.Restore(a, i, now)
-	if err := st.SaveRestore(b, a); err != nil {
+	// The checked writer, not SaveRestore: this is a short-lived process that
+	// opened its own Store, so a TUI or kando web edit landing since then must
+	// be refused rather than silently overwritten — the same rule saveBoard
+	// applies to every other mutating verb, and the same one archiveCard
+	// applies on the way in.
+	if err := st.SaveRestoreIfUnchanged(b, a); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return "", errConflict
+		}
 		return "", err
 	}
 	return title, nil

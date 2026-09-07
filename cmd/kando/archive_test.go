@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -203,6 +204,16 @@ func TestArchiveRestoreArgs(t *testing.T) {
 	}
 	if _, _, err := archiveRestoreArgs(nil); err == nil {
 		t.Fatal("want an error for no args")
+	}
+	if _, _, err := archiveRestoreArgs([]string{"  "}); err == nil {
+		t.Fatal("want an error for a blank card")
+	}
+	// Both parsers now delegate to cardOnlyArgs, so the verb label is the only
+	// thing that distinguishes them — and it is what the user reads. Without
+	// this, archiveRestoreArgs returning cardOnlyArgs("archive", args) would
+	// pass every other assertion here.
+	if _, _, err := archiveRestoreArgs(nil); err == nil || !strings.Contains(err.Error(), "kando archive restore") {
+		t.Fatalf("err=%v, want an error naming the full subcommand", err)
 	}
 }
 
@@ -548,4 +559,80 @@ func TestArchiveReservedWordsAreReachableByID(t *testing.T) {
 	if err != nil || title != "list" {
 		t.Fatalf("title=%q err=%v", title, err)
 	}
+}
+
+// TestArchiveVerbsRefuseAStaleWrite pins the conflict contract on both archive
+// directions. Neither had coverage: archive restore did not even have the
+// behaviour, because store.SaveRestore is the unchecked writer and can never
+// return ErrConflict — so a concurrent TUI or kando web edit landing between
+// this process's open and its save was silently overwritten.
+//
+// The simulation is the one cli_test.go uses for saveBoard: write a divergent
+// file behind the open Store, then save and require the refusal.
+func TestArchiveVerbsRefuseAStaleWrite(t *testing.T) {
+	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+
+	t.Run("archive refuses a board that changed on disk", func(t *testing.T) {
+		root := t.TempDir()
+		st, b, err := store.Open(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.Lanes[board.Done] = []*board.Card{{ID: "aaaaaaaa", Title: "Ship it", DoneAt: now}}
+		if err := st.SaveBoard(b); err != nil {
+			t.Fatal(err)
+		}
+		// Someone else edits board.md after archiveCard's own store.Open reads it.
+		other := &board.Board{Name: "life"}
+		other.Insert(board.Todo, 0, &board.Card{ID: "bbbbbbbb", Title: "theirs"})
+		swap := func() {
+			if err := os.WriteFile(st.BoardPath(), store.Marshal(other), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		swap()
+		if _, _, err := archiveCard(root, "life", "aaaaaaaa", now); err == nil {
+			t.Fatal("want an error for a card that is no longer on the board")
+		}
+	})
+
+	t.Run("restore refuses an archive that changed on disk", func(t *testing.T) {
+		root := t.TempDir()
+		st, b, err := store.Open(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		a := &board.Archive{Cards: []*board.Card{{ID: "aaaaaaaa", Title: "Ship it", DoneAt: now}}}
+		if err := st.SaveArchival(b, a); err != nil {
+			t.Fatal(err)
+		}
+
+		// Open a second Store the way the CLI verb does, then let a third
+		// party rewrite board.md behind it before the save.
+		st2, b2, err := store.Open(root, "life")
+		if err != nil {
+			t.Fatal(err)
+		}
+		a2, err := st2.LoadArchive()
+		if err != nil {
+			t.Fatal(err)
+		}
+		other := &board.Board{Name: "life"}
+		other.Insert(board.Todo, 0, &board.Card{ID: "cccccccc", Title: "theirs"})
+		if err := os.WriteFile(st2.BoardPath(), store.Marshal(other), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		b2.Restore(a2, 0, now)
+		if err := st2.SaveRestoreIfUnchanged(b2, a2); !errors.Is(err, store.ErrConflict) {
+			t.Fatalf("got %v, want store.ErrConflict — a stale restore must be refused, not silently written", err)
+		}
+		// And the concurrent write survived, which is the whole point.
+		data, err := os.ReadFile(st2.BoardPath())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), "theirs") {
+			t.Errorf("the concurrent edit was overwritten:\n%s", data)
+		}
+	})
 }

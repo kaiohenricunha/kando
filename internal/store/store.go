@@ -274,6 +274,36 @@ func (s *Store) SaveRestore(b *board.Board, a *board.Archive) error {
 	return s.SaveArchive(a)
 }
 
+// SaveRestoreIfUnchanged is SaveRestore for a caller that loaded, edited and
+// is writing back both files — kando archive restore: it refuses with
+// ErrConflict, touching neither file, when board.md or archive.md no longer
+// holds the bytes this Store last read or wrote.
+//
+// SaveRestore itself stays unchecked because the TUI wants it that way (it is
+// the surface that wins on purpose) and the web serialises its own restores
+// behind a write lock. A one-shot CLI process has neither, so it needs this:
+// without it a concurrent edit landing between the open and the save is
+// silently overwritten, which is the one thing every other CLI write path
+// refuses to do.
+func (s *Store) SaveRestoreIfUnchanged(b *board.Board, a *board.Archive) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, changed, err := changedContent(s.BoardPath(), &s.board); err != nil {
+		return err
+	} else if changed {
+		return ErrConflict
+	}
+	if _, changed, err := changedContent(s.ArchivePath(), &s.archive); err != nil {
+		return err
+	} else if changed {
+		return ErrConflict
+	}
+	if err := s.saveBoard(b); err != nil {
+		return err
+	}
+	return s.saveArchive(a)
+}
+
 // SaveArchival writes both files of an archive move in the order that fails
 // safely — the inverse of SaveRestore: archive.md first, so a failure leaves
 // the card in both files (a duplicate the restore and archive guards both

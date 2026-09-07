@@ -234,6 +234,21 @@ func required(v, what string) (string, error) {
 	return v, nil
 }
 
+// cardOnlyArgs parses the single-card, no-flags grammar archive <card> and
+// archive restore share: a card and an optional board. splitBoard returns
+// the card verbatim; required() is what makes a blank one an argument error
+// instead of a lookup that reaches the board.
+func cardOnlyArgs(verb string, args []string) (card, name string, err error) {
+	vals, name, err := splitBoard(verb, "a card", args, 1)
+	if err != nil {
+		return "", "", err
+	}
+	if card, err = required(vals[0], "card id or title"); err != nil {
+		return "", "", err
+	}
+	return card, name, nil
+}
+
 // splitBoard applies every verb's shared positional grammar: exactly n
 // required values, plus at most one trailing optional board name. need names
 // the required values for the "too few" error, e.g. "a card and a lane". A
