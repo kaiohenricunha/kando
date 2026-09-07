@@ -88,22 +88,32 @@ func runCLI(t *testing.T, home string, args ...string) (stdout, stderr string, e
 func TestUsageTextIsUnchanged(t *testing.T) {
 	const want = `usage: kando [board]
        kando web [board] [--port N]
-       kando board list [--json]
+       kando board create <name> | board list [--json]
+       kando add <title> [board] [--lane L] [--tag T]
        kando show <card> [board] [--json]
        kando list [board] [--filter "..."] [--json]
        kando move <card> <lane> [board]
+       kando tag <card> <tag> [board]
+       kando notes <card> [board] (--set TEXT | --file PATH | -)
+       kando block <card> --reason "..." [board]
+       kando unblock <card> [board]
+       kando delete <card> [board]
+       kando checklist add <card> <text> [board]
+       kando checklist toggle <card> <n> [board] [--was TEXT]
+       kando checklist edit <card> <n> <text> [board] [--was TEXT]
        kando archive list [board] [--filter "..."] [--json]
 
-Opens the board (default "life") from $KANDO_HOME (default ~/.kando) in the
-terminal, or serves it at http://127.0.0.1:<port>/ (default 4242). The board
-name may come before or after a verb's flags. <card> is a card's id or its
-exact, case-insensitive title; a title matching more than one card is
-refused. <lane> is Backlog, Todo, Doing or Done, case-insensitive.
-kando move moves <card> to <lane> on an existing board; it never creates
-one — none of these verbs do. --filter takes the same query syntax as the
-TUI's / (title text, #tag, !blocked, age>7d, age<3d). A board literally
-named "web", "move", "board", "show", "list" or "archive" opens in the
-terminal with: kando -- <board>
+Boards live under $KANDO_HOME (default ~/.kando). [board] defaults to "life"
+and may come before or after a verb's flags; only "board create",
+"kando [board]" and "kando web [board]" create a board — every other verb
+needs one that already exists. <card> is a card's id or its exact,
+case-insensitive title; a title matching more than one card is refused, and
+the error lists the matching ids so a script has an unambiguous way to
+retry. <lane> is Backlog, Todo, Doing or Done, case-insensitive. <n> counts
+checklist items from 1, as "kando show" lists them; --was TEXT refuses the
+change if the item no longer reads that way. --filter takes the same query
+syntax as the TUI's / (title text, #tag, !blocked, age>7d, age<3d). A board
+literally named like a verb opens in the terminal with: kando -- <board>
 Environment: KANDO_HOME, KANDO_THEME=paper|ember, NO_COLOR, KANDO_WEB_PORT`
 	if usageText != want {
 		t.Errorf("usageText changed:\n--- got ---\n%s\n--- want ---\n%s", usageText, want)
@@ -187,7 +197,7 @@ func TestCLIMoveMessagesAreUnchanged(t *testing.T) {
 			// The remedy has to name a command this binary actually has.
 			name: "no such board names a command that works",
 			args: []string{"move", "card", "Doing", "ghost"},
-			want: `kando: no such board "ghost" (create it first with "kando ghost" or "kando web ghost")`,
+			want: `kando: no such board "ghost" (create it first with "kando board create ghost", or open it with "kando ghost")`,
 		},
 		{
 			// Not "needs a card and a lane": the user supplied two arguments,
@@ -446,5 +456,160 @@ func TestCLIReadVerbArgumentErrors(t *testing.T) {
 				t.Errorf("stderr should carry the kando: error line, got %q", errOut)
 			}
 		})
+	}
+}
+
+// TestCLIWriteVerbArgumentErrors is the write-verb twin of
+// TestCLIReadVerbArgumentErrors, and it is what would have caught the blank
+// card reaching notes, block and unblock: splitBoard stopped rejecting blank
+// required values, required() became the compensating check, and three of the
+// eight parsers never called it. A per-verb unit test cannot see that class of
+// gap, because each one tests the parser that was remembered.
+//
+// The stakes are not just the exit code. A hand-edited board.md may hold an
+// untitled card — markdown.go parses a bare "### " into Title: "" — and
+// findCard matches a title case-insensitively, so a blank argument that
+// reaches the board silently mutates that card and exits 0.
+func TestCLIWriteVerbArgumentErrors(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "life")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The untitled card is the trap: without it a blank argument merely fails
+	// to match anything, which hides the difference between exit 1 and exit 2.
+	seeded := "## Todo\n\n### \nid: bbbbbbbb\n\n### Renew passport\nid: k7q2m9ab\n"
+	if err := os.WriteFile(filepath.Join(dir, "board.md"), []byte(seeded), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"add with a blank title", []string{"add", "  "}},
+		{"delete with a blank card", []string{"delete", ""}},
+		{"tag with a blank card", []string{"tag", "", "errand"}},
+		{"notes with a blank card", []string{"notes", "", "--set", "x"}},
+		{"block with a blank card", []string{"block", "", "--reason", "x"}},
+		{"unblock with a blank card", []string{"unblock", ""}},
+		{"checklist add with a blank card", []string{"checklist", "add", "", "text"}},
+		{"checklist add with blank text", []string{"checklist", "add", "k7q2m9ab", "  "}},
+		{"checklist toggle with a blank card", []string{"checklist", "toggle", "", "1"}},
+		{"checklist edit with blank text", []string{"checklist", "edit", "k7q2m9ab", "1", ""}},
+		{"board create with a blank name", []string{"board", "create", "  "}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, errOut, code := runCLI(t, home, tc.args...)
+			if code != 2 {
+				t.Errorf("want exit 2, got %d (stderr: %s)", code, errOut)
+			}
+			if out != "" {
+				t.Errorf("stdout must stay empty on an argument error, got %q", out)
+			}
+			if !strings.Contains(errOut, "kando: ") {
+				t.Errorf("stderr should carry the kando: error line, got %q", errOut)
+			}
+		})
+	}
+
+	t.Run("board.md is untouched by every rejected write", func(t *testing.T) {
+		after, err := os.ReadFile(filepath.Join(dir, "board.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(after) != seeded {
+			t.Errorf("a rejected write still touched board.md:\ngot:\n%s\nwant:\n%s", after, seeded)
+		}
+	})
+}
+
+// TestCLIWriteVerbsSkipNoOpSaves pins the cardOp contract at the process
+// level: a mutation that changes nothing must not rewrite board.md, because
+// writeAtomic renames a fresh file into place and store.Version hashes mtime
+// and size — so a byte-identical rewrite still bumps the SSE event id and
+// wakes every connected kando web client.
+func TestCLIWriteVerbsSkipNoOpSaves(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "life")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "board.md"),
+		[]byte("## Todo\n\n### Renew passport\nid: k7q2m9ab\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	board := filepath.Join(dir, "board.md")
+
+	// Establish each verb's state once, letting the first call canonicalize
+	// the hand-written file, then assert the *second*, identical call is inert.
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"tag with the same tag", []string{"tag", "k7q2m9ab", "errand"}},
+		{"block with the same reason", []string{"block", "k7q2m9ab", "--reason", "waiting"}},
+		{"notes with the same text", []string{"notes", "k7q2m9ab", "--set", "same"}},
+		{"checklist edit to the same text", []string{"checklist", "edit", "k7q2m9ab", "1", "step"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.name == "checklist edit to the same text" {
+				if _, errOut, code := runCLI(t, home, "checklist", "add", "k7q2m9ab", "step"); code != 0 {
+					t.Fatalf("seeding a checklist item: %s", errOut)
+				}
+			}
+			if _, errOut, code := runCLI(t, home, tc.args...); code != 0 {
+				t.Fatalf("first call: exit %d: %s", code, errOut)
+			}
+			before, err := os.Stat(board)
+			if err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(10 * time.Millisecond)
+			if _, errOut, code := runCLI(t, home, tc.args...); code != 0 {
+				t.Fatalf("second call: exit %d: %s", code, errOut)
+			}
+			after, err := os.Stat(board)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !before.ModTime().Equal(after.ModTime()) {
+				t.Errorf("a no-op %s rewrote board.md (mtime %v -> %v); withCard's changed gate should have skipped the save",
+					tc.name, before.ModTime(), after.ModTime())
+			}
+		})
+	}
+}
+
+// TestCLINotesFileIsBounded pins that --file bounds the read rather than
+// reading everything and rejecting afterwards. /dev/zero reports size 0 to
+// Stat and never reaches EOF, so os.ReadFile would grow until the process
+// died; io.LimitReader stops at the cap and the command exits 1 promptly.
+func TestCLINotesFileIsBounded(t *testing.T) {
+	if _, err := os.Stat("/dev/zero"); err != nil {
+		t.Skip("no /dev/zero on this platform")
+	}
+	home := t.TempDir()
+	dir := filepath.Join(home, "life")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "board.md"),
+		[]byte("## Todo\n\n### Renew passport\nid: k7q2m9ab\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan int, 1)
+	go func() {
+		_, _, code := runCLI(t, home, "notes", "k7q2m9ab", "--file", "/dev/zero")
+		done <- code
+	}()
+	select {
+	case code := <-done:
+		if code != 1 {
+			t.Errorf("want exit 1 for an oversized --file, got %d", code)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("kando notes --file /dev/zero did not terminate: the read is unbounded")
 	}
 }

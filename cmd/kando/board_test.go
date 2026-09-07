@@ -88,3 +88,68 @@ func TestSummarizeBoards(t *testing.T) {
 		}
 	})
 }
+
+func TestBoardCreateArgs(t *testing.T) {
+	cases := []struct {
+		name     string
+		args     []string
+		wantName string
+		wantErr  bool
+	}{
+		{name: "no args", wantErr: true},
+		{name: "one name", args: []string{"work"}, wantName: "work"},
+		{name: "trimmed", args: []string{" work "}, wantName: "work"},
+		{name: "too many", args: []string{"work", "extra"}, wantErr: true},
+		{name: "empty", args: []string{""}, wantErr: true},
+		{name: "whitespace-only", args: []string{"   "}, wantErr: true},
+		{name: "starts with a dash", args: []string{"--oops"}, wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			name, err := boardCreateArgs(tc.args)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("want an error, got %q", name)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("boardCreateArgs: %v", err)
+			}
+			if name != tc.wantName {
+				t.Errorf("name=%q, want %q", name, tc.wantName)
+			}
+		})
+	}
+}
+
+func TestCreateBoard(t *testing.T) {
+	root := t.TempDir()
+
+	t.Run("creates a new board", func(t *testing.T) {
+		created, err := createBoard(root, "work")
+		if err != nil || !created {
+			t.Fatalf("created=%v err=%v", created, err)
+		}
+		if !store.Exists(root, "work") {
+			t.Error("board should now exist")
+		}
+	})
+
+	t.Run("idempotent: an existing board is reported, not recreated", func(t *testing.T) {
+		before := mustReadCLI(t, root+"/work/board.md")
+		created, err := createBoard(root, "work")
+		if err != nil || created {
+			t.Fatalf("created=%v err=%v, want created=false", created, err)
+		}
+		if after := mustReadCLI(t, root+"/work/board.md"); before != after {
+			t.Errorf("an existing board's file should be untouched")
+		}
+	})
+
+	t.Run("invalid name", func(t *testing.T) {
+		if _, err := createBoard(root, "has/slash"); err == nil {
+			t.Fatal("want an error")
+		}
+	})
+}

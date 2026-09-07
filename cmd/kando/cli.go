@@ -15,12 +15,19 @@ import (
 // "help", "-h", "--help", "-v", "--version" and "version" are deliberately
 // not table keys — main's own switch handles those, unchanged.
 var verbs = map[string]func([]string){
-	"web":     runWeb,
-	"move":    runMove,
-	"board":   runBoard,
-	"show":    runShow,
-	"list":    runList,
-	"archive": runArchive,
+	"web":       runWeb,
+	"move":      runMove,
+	"board":     runBoard,
+	"show":      runShow,
+	"list":      runList,
+	"archive":   runArchive,
+	"add":       runAdd,
+	"delete":    runDelete,
+	"tag":       runTag,
+	"notes":     runNotes,
+	"block":     runBlock,
+	"unblock":   runUnblock,
+	"checklist": runChecklist,
 }
 
 // dispatch names the verb args select ("" when none matched) and the args
@@ -61,13 +68,15 @@ var errConflict = errors.New("the board changed on disk — try again")
 
 // resolveBoard applies every verb's shared board-name rule: "" defaults to
 // "life", the name must be valid, and the board must already exist — only
-// `kando [board]` and `kando web [board]` are allowed to create one, so a
-// typo'd name fails clearly instead of silently starting an empty board.
+// `board create`, `kando [board]` and `kando web [board]` are allowed to
+// create one, so a typo'd name fails clearly instead of silently starting an
+// empty board.
 //
 // The "create it first with" hint names only commands this binary actually
-// has. A later unit adds `board create`, and the hint should name it then —
-// naming it now would send the user to a command that exits 2 with the usage
-// text. TestCLIMoveMessagesAreUnchanged pins the wording.
+// has, and it names `board create` first now that it exists. That ordering is
+// the point: every verb that reaches this error is a headless one, and the
+// other two entry points open a TUI or start a server, neither of which a
+// script can use. TestCLIMoveMessagesAreUnchanged pins the wording.
 func resolveBoard(root, name string) (string, error) {
 	if name == "" {
 		name = "life"
@@ -76,7 +85,7 @@ func resolveBoard(root, name string) (string, error) {
 		return "", fmt.Errorf("invalid board name %q", name)
 	}
 	if !store.Exists(root, name) {
-		return "", fmt.Errorf("no such board %q (create it first with \"kando %s\" or \"kando web %s\")", name, name, name)
+		return "", fmt.Errorf("no such board %q (create it first with \"kando board create %s\", or open it with \"kando %s\")", name, name, name)
 	}
 	return name, nil
 }
@@ -206,6 +215,23 @@ func parseMixed(fs *flag.FlagSet, args []string) (pos []string, err error) {
 		pos = append(pos, rest[0])
 		args = rest[1:]
 	}
+}
+
+// required trims v and rejects it when nothing is left, naming what was
+// missing: "card id or title required", "title required", "text required".
+//
+// splitBoard deliberately hands required values back verbatim, because only
+// the verb knows what each positional means and can say which one is wrong.
+// This is that check, in one place rather than once per verb — every verb
+// with a required positional calls it, so a blank value is an argument error
+// (exit 2, with usage) rather than something a mutation path discovers after
+// it has already opened the board.
+func required(v, what string) (string, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", fmt.Errorf("%s required", what)
+	}
+	return v, nil
 }
 
 // splitBoard applies every verb's shared positional grammar: exactly n
