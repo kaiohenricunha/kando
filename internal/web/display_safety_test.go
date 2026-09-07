@@ -117,6 +117,11 @@ func TestPagesNeverServeUnsafeRunes(t *testing.T) {
 		{"/b/life/cards/poison01", true},
 		{"/b/life/archive", true},
 		{"/boards", false},
+		// The query is reflected into the search box on both filtered pages.
+		// No path in this table carried a ?q= before, which is how it stayed
+		// the one user-controlled string the web rendered unguarded.
+		{"/b/life?q=" + url.QueryEscape(poison), false},
+		{"/b/life/archive?q=" + url.QueryEscape(poison), false},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			rec, body := get(t, h, tc.path)

@@ -100,7 +100,7 @@ func runList(args []string) {
 		fatal(err)
 	}
 	if jsonOut {
-		out := listJSON{Board: b.Name, Filter: query, Matched: matched, Total: total}
+		out := listJSON{Board: b.Name, Filter: board.SafeForDisplay(query), Matched: matched, Total: total}
 		for _, l := range board.Lanes {
 			cj := make([]cardJSON, len(lanes[l]))
 			for i, c := range lanes[l] {

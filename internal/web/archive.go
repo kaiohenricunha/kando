@@ -45,7 +45,11 @@ func (s *server) archive(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, &httpError{http.StatusInternalServerError, "cannot read archive"})
 		return
 	}
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	// De-fanged at entry, not in the view model: the same string is both
+	// parsed into the filter and rendered back into the search box, so
+	// guarding only the displayed copy would show results computed from one
+	// query beside an input holding another.
+	q := board.SafeForDisplay(strings.TrimSpace(r.URL.Query().Get("q")))
 	groups, matched, scanned, total := board.ArchiveView(a, board.Parse(q), s.now())
 	p := archivePage{
 		Page: s.basePage(name, "archive"), Query: q,

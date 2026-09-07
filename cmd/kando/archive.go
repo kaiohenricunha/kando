@@ -147,7 +147,7 @@ func runArchiveList(args []string) {
 		// which breaks `jq '.groups[]'` on exactly the case a script hits
 		// first. json.go states this guarantee for every container.
 		out := archiveListJSON{
-			Board: resolvedName, Filter: query,
+			Board: resolvedName, Filter: board.SafeForDisplay(query),
 			Matched: matched, Scanned: scanned, Total: total,
 			Groups: make([]archiveGroupJSON, 0, len(groups)),
 		}

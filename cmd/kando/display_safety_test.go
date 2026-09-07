@@ -188,6 +188,12 @@ func TestVerbSuccessLinesAreSafe(t *testing.T) {
 		{"list", []string{"list", "life"}},
 		{"show --json", []string{"show", id, "life", "--json"}},
 		{"list --json", []string{"list", "life", "--json"}},
+		// The filter is echoed back in the summary line and in the JSON
+		// Filter field; a query is user-controlled like any card text.
+		{"list --filter", []string{"list", "life", "--filter", poisoned}},
+		{"list --filter --json", []string{"list", "life", "--filter", poisoned, "--json"}},
+		{"archive list --filter", []string{"archive", "list", "life", "--filter", poisoned}},
+		{"archive list --filter --json", []string{"archive", "list", "life", "--filter", poisoned, "--json"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out, errOut, code := runCLI(t, home, tc.args...)
