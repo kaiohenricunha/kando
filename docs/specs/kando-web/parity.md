@@ -87,3 +87,9 @@ ends in a form `POST` to `/move` rather than a write of its own. Both are in
 - **Concurrency.** Two browser tabs can post at once, so the web serialises
   writers per board and refuses a save whose file changed underneath (409).
   The TUI is one process with one goroutine and needs neither.
+- **How unsafe runes are removed on screen (SEC-4).** All three surfaces drop
+  the same set, `board.UnsafeRune`, but the TUI substitutes a space for a C0
+  rune where the other two delete it. The TUI lays out in exact terminal
+  cells, and a C0 rune measures zero while some terminals still draw it, so
+  the space is what keeps the lane grid from shifting. The bidi controls need
+  no substitute — they genuinely occupy no cells — so all three delete those.

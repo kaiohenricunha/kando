@@ -5,6 +5,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/kaiohenricunha/kando/internal/board"
 )
 
 // Every row of every screen is composed here as a string of an exact number of
@@ -21,12 +23,29 @@ var dashedBorder = lipgloss.Border{
 // width measures a string in terminal cells, ignoring ANSI escape sequences.
 func width(s string) int { return ansi.StringWidth(s) }
 
-// sanitize makes user text safe to measure: tabs and control characters become
-// spaces (they would measure 0 cells but render wider), carriage returns vanish.
+// sanitize makes user text safe to measure and safe to print. Tabs and C0
+// control characters become spaces (they would measure 0 cells but render
+// wider), carriage returns vanish, and every other unsafe rune is dropped.
+//
+// This is the TUI's render-time guard for text read off the board: every
+// read-only pane puts its strings through it, which is why board.md content
+// that never passed a write-time sanitizer — a hand-edited file, or a note
+// stored by a build from before those sanitizers existed — is safe on screen.
+// The inline editors render their own buffer and do not call this; they are
+// covered instead at their seed sites in detail.go, because bubbles' own
+// sanitizer drops only unicode.IsControl and lets the bidi controls through.
+//
+// The fast path must test for non-ASCII too. It is a byte-wise scan, and the
+// unsafe runes that are not C0 (the C1 block, the bidi overrides) are all
+// multi-byte UTF-8, so a byte-wise search for "< 0x20" cannot see them: a
+// string carrying U+009B (CSI — "ESC [" as one rune, with no ESC byte to
+// find) would otherwise take the early return and reach the terminal intact.
+// Any byte >= 0x80 therefore falls through to the rune loop, which decides
+// with board.UnsafeRune.
 func sanitize(s string) string {
 	clean := true
 	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 || s[i] == 0x7f {
+		if s[i] < 0x20 || s[i] == 0x7f || s[i] >= 0x80 {
 			clean = false
 			break
 		}
@@ -40,7 +59,11 @@ func sanitize(s string) string {
 		switch {
 		case r == '\r':
 		case r < 0x20 || r == 0x7f:
+			// C0 keeps its column so table layout does not shift.
 			b.WriteByte(' ')
+		case board.UnsafeRune(r):
+			// C1 and the bidi controls measure zero cells; dropping them
+			// changes no layout and leaves no visible artefact.
 		default:
 			b.WriteRune(r)
 		}

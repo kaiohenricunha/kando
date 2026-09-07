@@ -554,12 +554,22 @@ func TestChecklistFormRejectsAStaleIndex(t *testing.T) {
 	if c.Checklist[2].Text != "Book appointment" || c.Checklist[2].Done {
 		t.Errorf("a 409 must not have written: %+v", c.Checklist[2])
 	}
-	// The form the page actually renders carries the current text and works.
+	// The form the page actually renders carries a current witness and works.
+	// The witness is a digest of the stored text rather than the text itself,
+	// so read it back out of the page instead of spelling it out here: that
+	// keeps this test on the behaviour (stale is refused, current is accepted)
+	// rather than on the witness format.
 	_, body := get(t, h, card)
-	if !strings.Contains(body, `<input type="hidden" name="was" value="Book appointment">`) {
-		t.Errorf("checklist forms should carry the rendered text: %s", grepLine(body, "was"))
+	m := regexp.MustCompile(`name="was" value="([^"]*)"`).FindAllStringSubmatch(body, -1)
+	if len(m) < 3 {
+		t.Fatalf("expected a witness per checklist form: %s", grepLine(body, "was"))
 	}
-	wantRedirect(t, post(t, h, card+"/checklist/2", url.Values{"text": {"Book it"}, "was": {"Book appointment"}}), card)
+	// Two forms per item (toggle, edit), so item 2's witness is at index 4.
+	current := m[4][1]
+	if current == "Book appointment" {
+		t.Error("witness should be a digest, not the raw text")
+	}
+	wantRedirect(t, post(t, h, card+"/checklist/2", url.Values{"text": {"Book it"}, "was": {current}}), card)
 }
 
 func TestRestoringACardAlreadyOnTheBoardIsRefused(t *testing.T) {

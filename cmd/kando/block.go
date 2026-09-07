@@ -68,7 +68,7 @@ func runBlock(args []string) {
 	if err != nil {
 		fatal(err)
 	}
-	fmt.Printf("blocked %q: %s\n", title, reason)
+	fmt.Printf("blocked %q: %s\n", title, board.SafeForDisplay(reason))
 }
 
 // unblockArgs parses kando unblock's arguments: a card and an optional

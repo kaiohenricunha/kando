@@ -98,7 +98,11 @@ func formatArchiveList(root, name string, groups []board.ArchiveGroup, query str
 		} else {
 			fmt.Fprintf(&b, "nothing archived on %q\n", name)
 		}
-		return strings.TrimRight(b.String(), "\n")
+		// Card fields come off a board.md that is parsed verbatim, so they may
+		// never have met a write-time sanitizer, and this string goes straight
+		// to a terminal. Guarding the whole assembled block covers every field
+		// at once, including one added later.
+		return board.SafeForDisplay(strings.TrimRight(b.String(), "\n"))
 	}
 	for _, g := range groups {
 		fmt.Fprintf(&b, "%s %d\n", g.Label, len(g.Cards))
@@ -119,7 +123,7 @@ func formatArchiveList(root, name string, groups []board.ArchiveGroup, query str
 	if total > scanned {
 		fmt.Fprintf(&b, "Older entries live in %s\n", store.ArchiveDisplayPath(root, name))
 	}
-	return strings.TrimRight(b.String(), "\n")
+	return board.SafeForDisplay(strings.TrimRight(b.String(), "\n"))
 }
 
 func runArchiveList(args []string) {

@@ -331,18 +331,25 @@ func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.startEdit(editNewItem, "")
 	case "enter":
 		if n > 0 {
-			m.startEdit(editItem, c.Checklist[m.detail.cursor].Text)
+			m.startEdit(editItem, board.SafeForDisplay(c.Checklist[m.detail.cursor].Text))
 		}
 	case "e":
-		m.detail.ta = m.newTextarea(c.Notes)
+		// Editors are seeded de-fanged. sanitize() guards the read-only
+		// panes, but bubbles renders its own buffer, and its runeutil
+		// sanitizer drops only unicode.IsControl — the bidi controls are Cf
+		// and survive it. Without this, pressing a key to edit a hand-edited
+		// field would show an override that the pane one keystroke earlier
+		// had stripped. Nothing is lost: the Set* helpers strip the same
+		// runes when the edit is committed.
+		m.detail.ta = m.newTextarea(board.SafeForDisplay(c.Notes))
 		m.detail.edit = editNotes
 		m.mode = modeEdit
 	case "T":
-		m.startEdit(editTitle, c.Title)
+		m.startEdit(editTitle, board.SafeForDisplay(c.Title))
 	case "t":
-		m.startEdit(editTag, c.Tag)
+		m.startEdit(editTag, board.SafeForDisplay(c.Tag))
 	case "b":
-		m.startEdit(editBlock, c.BlockedReason)
+		m.startEdit(editBlock, board.SafeForDisplay(c.BlockedReason))
 	case "m":
 		m.mode = modeLanePick
 	case "A":

@@ -78,7 +78,11 @@ func formatList(lanes [4][]*board.Card, query string, matched, total int, now ti
 	if query != "" {
 		fmt.Fprintf(&b, "%d of %d cards match %q\n", matched, total, query)
 	}
-	return strings.TrimRight(b.String(), "\n")
+	// Card fields come off a board.md that is parsed verbatim, so they may
+	// never have met a write-time sanitizer, and this string goes straight
+	// to a terminal. Guarding the whole assembled block covers every field
+	// at once, including one added later.
+	return board.SafeForDisplay(strings.TrimRight(b.String(), "\n"))
 }
 
 func runList(args []string) {
