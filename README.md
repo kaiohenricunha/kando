@@ -312,6 +312,13 @@ backslash and read back without it, so notes can hold Markdown of their own.
 A card written without an `id` is given one derived from its contents, so it
 keeps the same id until the file is saved with the id in it.
 
+Text you type into a card through any surface has its control characters and
+bidirectional overrides removed before it is stored, so a note pasted from an
+issue or a web page cannot carry an escape sequence into the file. Your own
+file is left alone: kando never rewrites text you edited by hand. It de-fangs
+those characters when it displays them instead — an escape sequence in a
+hand-edited note shows as ordinary text rather than driving the terminal.
+
 ## Development
 
 ```sh

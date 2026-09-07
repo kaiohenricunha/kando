@@ -94,7 +94,7 @@ phase 3's server to exist, not phases 4/5's specific routes.
 - Read first: `cmd/kando/main.go`, `internal/tui/model.go` (the
   "load store, resolve options" pattern), `internal/board/board.go`
 - Command: `/plan` — stdlib `net/http.ServeMux` pattern routing (Go 1.22+;
-  `go.mod` already pins 1.25.3), no router dependency needed
+  `go.mod` pins a newer toolchain than that), no router dependency needed
 - Tests first (`httptest`): `TestBoardViewRendersAllLanes`,
   `TestBoardViewFilterQueryParam` (reuses `board.Parse`,
   `internal/board/filter.go:37`), `TestBoardsListShowsExistingBoards`,
