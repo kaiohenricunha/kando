@@ -61,6 +61,13 @@ func (m Model) updateBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.clampSel()
 			}
 		}
+	case "A":
+		if m.lane == board.Done {
+			if c := m.selectedCard(); c != nil {
+				m.archiveDone(c)
+				m.clampSel()
+			}
+		}
 	case "x":
 		if c := m.selectedCard(); c != nil {
 			m.b.DeleteCard(m.lane, m.laneIndex(m.lane, c))

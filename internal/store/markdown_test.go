@@ -23,6 +23,34 @@ func readSample(t *testing.T, name string) []byte {
 	return data
 }
 
+// A card archived without a done: date files under "## undated", after every
+// real week, and reads back with a zero DoneAt — the shape a hand-edited
+// archive.md takes, and the one ArchiveDone avoids by stamping DoneAt.
+func TestArchiveWithoutDoneAtRoundTripsAsUndated(t *testing.T) {
+	a := &board.Archive{Cards: []*board.Card{
+		{ID: "aaaaaaaa", Title: "dated", DoneAt: ts(2026, 9, 2)},
+		{ID: "bbbbbbbb", Title: "no date at all"},
+	}}
+	data := MarshalArchive(a)
+	week := []byte("## " + board.ISOWeekKey(ts(2026, 9, 2)))
+	if !bytes.Contains(data, []byte("## undated")) || !bytes.Contains(data, week) {
+		t.Fatalf("headings:\n%s", data)
+	}
+	if bytes.Index(data, []byte("## undated")) < bytes.Index(data, []byte("### dated")) {
+		t.Errorf("undated must come after the dated weeks:\n%s", data)
+	}
+	got, _, err := ParseArchive(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Cards) != 2 || got.Cards[0].ID != "aaaaaaaa" || !got.Cards[1].DoneAt.IsZero() {
+		t.Errorf("round trip: %+v", got.Cards)
+	}
+	if !bytes.Equal(MarshalArchive(got), data) {
+		t.Errorf("second marshal differs:\n%s\n%s", data, MarshalArchive(got))
+	}
+}
+
 func TestParseSampleBoard(t *testing.T) {
 	b, rewrite, err := Parse(readSample(t, "sample_board.md"))
 	if err != nil {

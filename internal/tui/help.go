@@ -12,7 +12,8 @@ var helpLeft = []keyGroup{
 
 var helpRight = []keyGroup{
 	{"a", "quick add"}, {"enter", "open card"}, {"H/L", "move card ±lane"},
-	{"d", "move to Done"}, {"D", "archive view"}, {"B", "boards"}, {"?", "close help"},
+	{"d", "move to Done"}, {"D", "archive view"}, {"A", "archive (Done)"},
+	{"B", "boards"}, {"?", "close help"},
 }
 
 // helpRows draws the help box: KEYS, a blank row, then two key columns.

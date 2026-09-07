@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -87,13 +88,7 @@ func (s *server) restoreCard(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, &httpError{http.StatusInternalServerError, "cannot read archive"})
 		return
 	}
-	at := -1
-	for i, c := range a.Cards {
-		if c.ID == id {
-			at = i
-			break
-		}
-	}
+	at, _ := a.Find(id)
 	if at < 0 {
 		s.fail(w, &httpError{http.StatusNotFound, "no such archived card"})
 		return
@@ -113,4 +108,59 @@ func (s *server) restoreCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, withQuery(boardURL(name)+"/archive", f), http.StatusSeeOther)
+}
+
+// archiveCard mirrors `A` on a Done card via board.ArchiveDone, the reverse
+// of restoreCard: the card leaves board.md for archive.md and the page
+// returns to the board, as delete does — the card's own page no longer
+// exists. store.SaveArchivalIfUnchanged owns the write order (archive.md
+// first) and refuses a stale board or archive.
+func (s *server) archiveCard(w http.ResponseWriter, r *http.Request) {
+	name, id := r.PathValue("board"), r.PathValue("id")
+	f, err := form(w, r)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	defer s.writeLock(name)()
+	st, b, err := s.openForWrite(name)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	lane, i, _, err := findCard(b, id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	// The button only renders on a Done card, so this is a stale page — the
+	// same class as a stale drag anchor or checklist witness.
+	if lane != board.Done {
+		s.fail(w, &httpError{http.StatusConflict, "only a Done card can be archived — reload and try again"})
+		return
+	}
+	a, err := st.LoadArchive()
+	if err != nil {
+		s.logf("archive %s: %v", name, err)
+		s.fail(w, &httpError{http.StatusInternalServerError, "cannot read archive"})
+		return
+	}
+	// The archive already holding this id means a previous archive half
+	// failed after archive.md was written: archiving again would file the
+	// card twice. One copy has to be deleted first.
+	if _, dup := a.Find(id); dup != nil {
+		s.fail(w, &httpError{http.StatusConflict, "that card is already archived"})
+		return
+	}
+	b.ArchiveDone(a, i, s.now())
+	if err := st.SaveArchivalIfUnchanged(b, a); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			s.fail(w, &httpError{http.StatusConflict, "the board changed on disk — reload and try again"})
+			return
+		}
+		s.logf("archive %s: %v", name, err)
+		http.Error(w, "cannot save the archived card", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, withQuery(boardURL(name), f), http.StatusSeeOther)
 }

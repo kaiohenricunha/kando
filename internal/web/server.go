@@ -137,6 +137,7 @@ func newServer(o Options) *server {
 	mux.HandleFunc("POST /b/{board}/cards/{id}/checklist/{index}/toggle", s.toggleChecklistItem)
 	mux.HandleFunc("POST /b/{board}/cards/{id}/checklist/{index}", s.editChecklistItem)
 	mux.HandleFunc("POST /b/{board}/cards/{id}/delete", s.deleteCard())
+	mux.HandleFunc("POST /b/{board}/cards/{id}/archive", s.archiveCard)
 	mux.HandleFunc("POST /b/{board}/archive/{id}/restore", s.restoreCard)
 	s.mux = mux
 	return s

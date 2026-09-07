@@ -158,6 +158,27 @@ func (b *Board) Restore(a *Archive, i int, now time.Time) *Card {
 	return b.Unarchive(a, i, Doing, now)
 }
 
+// ArchiveDone takes the card at Done[i] off b and into a: the inverse of
+// Restore, and the one board→archive path the TUI's A, the web's archive
+// button and `kando archive` all share. Done-only is in the signature — there
+// is no Lane parameter, so nothing can archive from Backlog, Todo or Doing.
+// DoneAt is the week archive.md files the card under, so it is kept; a zero
+// DoneAt (a hand-edited board) is set to now so the card lands in a real
+// week rather than under "## undated". MovedAt is left alone and stamp() is
+// deliberately not called: archiving is not a lane change. Returns the card,
+// or nil if i was out of range.
+func (b *Board) ArchiveDone(a *Archive, i int, now time.Time) *Card {
+	c := b.remove(Done, i)
+	if c == nil {
+		return nil
+	}
+	if c.DoneAt.IsZero() {
+		c.DoneAt = now
+	}
+	a.Insert(c)
+	return c
+}
+
 // ArchiveMax is how many of the most recent archived cards a surface shows;
 // the rest stay in archive.md.
 const ArchiveMax = 50

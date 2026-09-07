@@ -175,6 +175,43 @@ phase 3's server to exist, not phases 4/5's specific routes.
   `httptest` for the vocabulary, the 409 and the no-position guard; a manual
   browser pass for the gesture
 
+**U12 — Archive a card (Done → archive.md), all three surfaces**
+- `Board.ArchiveDone`, the inverse of `Restore`: Done-only by signature (no
+  `Lane` parameter, so nothing can archive from Backlog, Todo or Doing),
+  keeps `DoneAt` (the week bucket `MarshalArchive` files the card under)
+  rather than restamping it, stamps a missing `DoneAt` to now for a
+  hand-edited board, and leaves `MovedAt` alone since archiving is not a lane
+  change. `Archive.Insert` keeps the in-memory list newest-`DoneAt`-first,
+  matching `ParseArchive`/`MarshalArchive`'s own sort — `ArchiveView` slices
+  without sorting, so an unsorted append would drop out of view at the cap
+- `store.SaveArchival`/`SaveArchivalIfUnchanged` write archive.md then
+  board.md — the inverse order to `SaveRestore` (`store.go:270`), so a half
+  failure duplicates the card rather than losing it. The web and a later
+  CLI unit use the checked form; the TUI uses the unchecked one, the same
+  split as `SaveBoard`/`SaveBoardIfUnchanged`
+- `POST /b/{board}/cards/{id}/archive` mirrors `restoreCard` in reverse: 409
+  when the card is not in Done or is already archived, redirect to the board
+  on success. The button on `card.html` renders only when `.LaneKey ==
+  "done"`
+- TUI: `A` on the board screen (Done lane only) and the card detail screen
+  (Done cards only); `"archive (Done)"` joins `helpRight` — `help_120x40.txt`
+  regenerates, the three spec-provided board goldens do not, since `A` is
+  help-overlay-only, the same choice already made for `x` and `B`
+- `kando archive <card>`, `kando archive list` and `kando archive restore
+  <card>` land in a later, CLI-focused unit; this unit covers the
+  domain/store/web/TUI vertical only, so no surface gets ahead of another
+- Read first: §2 (BOUND-1a), `internal/board/ops.go` (`Unarchive`/`Restore`),
+  `internal/store/store.go` (`SaveRestore`), `internal/web/archive.go`,
+  `internal/tui/archive.go`
+- Tests: `internal/board` (archive ordering, `DoneAt` handling, out-of-range,
+  the round trip back through `Restore`); `internal/store` (write order, a
+  real half-failure via a directory swapped in for `board.md`'s rename, both
+  stale-board and stale-archive conflict checks); `httptest` (the 409s,
+  template gating, the `mutationRoutes` entry, a fixture-read test that the
+  route appears in §5's own table); TUI (`A` from the board and detail
+  screens, a lazy-load case with `Archive: nil`, the help-overlay regression
+  guard)
+
 ## 6.4 Testing Strategy
 
 | Unit | Kinds applied | N/A + reason |
@@ -184,6 +221,7 @@ phase 3's server to exist, not phases 4/5's specific routes.
 | `internal/web` route handlers (U5–U8) | unit (`httptest`), contract (§5's route table is the contract: request shape in, redirect/status out), `-race` (holds KD-3, §4: no shared model across requests) | — |
 | SSE fan-out (U9) | integration (real `Store.Watch()`, real file writes, two live connections) | — |
 | Drag placement (U11) | unit (`board.MoveAt`'s index arithmetic, including the drop into the gap just below the dragged card — the off-by-one no cross-lane test reaches), unit (`httptest` over the `pos`/`anchor` vocabulary, the stale-anchor 409 and the no-position guard) | The gesture itself: `dragstart`/`dragover`/`drop` never fire without a browser, so `dnd.js` is covered only by "the asset is served and the attributes render", plus the manual pass below |
+| Archive move (U12) | unit (`Board.ArchiveDone`/`Archive.Insert` ordering, `DoneAt` stamping, out-of-range), unit (store write order, a real half-failure via a directory swapped in for the second write, both stale-board and stale-archive conflict checks), `httptest` (409s, template gating, `mutationRoutes`, a fixture-read check that the route is in §5's own table), TUI (key from both screens, a lazy-archive-load case, the help-overlay regression guard) | — |
 | TUI board/goldens (U3, U4) | golden/fixture (three spec-provided goldens must stay byte-identical; `help_120x40.txt` and a new `boards_120x40.txt` regenerate normally) | — |
 | Web board view rendering | golden/fixture (recommended: HTML snapshot tests for the board template, same idea as the TUI's golden frames) | — |
 | End-to-end (`kando web` + real HTTP requests against a temp `KANDO_HOME`) | integration | mirrors the pty smoke test already done for the TUI |
@@ -215,3 +253,4 @@ phase 3's server to exist, not phases 4/5's specific routes.
 | SSE fan-out leaks goroutines/fds under many tabs | Revert the U9 commit: the route, the `static/` embed, the `<script>` in `layout.html`'s `foot` and the `script-src`/`connect-src` CSP widening travel together (the CSP string is pinned by a test, so a partial revert fails the suite). The pages keep working unchanged | Degrades gracefully — SSE is additive, not required for basic function; there is also a per-board stream cap |
 | Drag-and-drop places cards wrongly | Revert the U11 commit: `board.MoveAt`, `/move`'s `pos`/`anchor` handling and redirect rule, the `withCard`/`withQuery` refactor `archive.go`'s restore redirect now shares (a partial revert of only `cards.go` leaves `archive.go` calling an undefined `withQuery` — does not compile), the `dnd.js` embed and route, `board.html`'s card and lane attributes, the `<script>` and CSS in `layout.html`, and `live.js`'s `busy()` travel together | Degrades to the lane picker, which is untouched: a move with no position is the same code path it always was. Drops out for touch and keyboard users already |
 | A board created via the picker or the web page is malformed | `store.Open` already creates a canonical empty `board.md` on first open (`internal/store/store.go`) | This class of bug is unlikely at the storage layer |
+| Archiving loses or duplicates a card | Revert U12: `Board.ArchiveDone`/`Archive.Insert`/`Archive.Find`, `Store.SaveArchival`/`SaveArchivalIfUnchanged`, the `/archive` route and `card.html` button, and the TUI `A` key (`board_update.go`, `detail.go`, `help.go`) travel together | Failure mode is a duplicate — the card sits in both files, and both the restore and archive guards refuse until one copy is deleted — never a lost card |
