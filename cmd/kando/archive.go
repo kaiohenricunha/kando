@@ -168,7 +168,12 @@ func archiveArgs(args []string) (card, name string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	return vals[0], name, nil
+	// splitBoard returns required values verbatim; required() is what makes a
+	// blank card an argument error instead of a lookup that reaches the board.
+	if card, err = required(vals[0], "card id or title"); err != nil {
+		return "", "", err
+	}
+	return card, name, nil
 }
 
 // findArchived resolves arg against a: an id first (Archive.Find), then —
@@ -260,7 +265,10 @@ func archiveRestoreArgs(args []string) (card, name string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	return vals[0], name, nil
+	if card, err = required(vals[0], "card id or title"); err != nil {
+		return "", "", err
+	}
+	return card, name, nil
 }
 
 // archiveRestore is kando archive restore's testable core: the same
