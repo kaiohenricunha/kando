@@ -88,13 +88,7 @@ func (s *server) restoreCard(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, &httpError{http.StatusInternalServerError, "cannot read archive"})
 		return
 	}
-	at := -1
-	for i, c := range a.Cards {
-		if c.ID == id {
-			at = i
-			break
-		}
-	}
+	at, _ := a.Find(id)
 	if at < 0 {
 		s.fail(w, &httpError{http.StatusNotFound, "no such archived card"})
 		return
