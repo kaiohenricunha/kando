@@ -80,7 +80,7 @@ func runChecklistAdd(args []string) {
 	if err != nil {
 		fatal(err)
 	}
-	fmt.Printf("added item %d to %q: %s\n", n, title, text)
+	fmt.Printf("added item %d to %q: %s\n", n, title, board.SafeForDisplay(text))
 }
 
 // parseItemNumber validates the CLI's 1-based checklist position.
@@ -180,7 +180,9 @@ func runChecklistToggle(args []string) {
 	if !item.Done {
 		state = "unticked"
 	}
-	fmt.Printf("%s item %d on %q: %s\n", state, n, title, item.Text)
+	// item.Text is read straight back off the board after the toggle, so it
+	// is whatever the file held — never through a write-time sanitizer.
+	fmt.Printf("%s item %d on %q: %s\n", state, n, title, board.SafeForDisplay(item.Text))
 }
 
 func checklistEditArgs(args []string, errOut io.Writer) (card string, n int, text string, was *string, name string, err error) {

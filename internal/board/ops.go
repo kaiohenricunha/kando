@@ -55,11 +55,13 @@ func clip(s string, n int) string {
 // they reorder how text renders in a terminal and in a browser alike: a note
 // can display as text it does not contain.
 //
-// Deliberately NOT the whole of Cf. That would also take U+200C/U+200D, the
+// Deliberately NOT the whole of Cf. That would take U+200C and U+200D, the
 // zero-width non-joiner and joiner, which are load-bearing in Persian and
-// Indic scripts and in every composed emoji, and the variation selectors.
-// Bidi_Control is the narrow set that misrepresents order; the rest of Cf is
-// invisible but honest.
+// Indic shaping and in ZWJ emoji sequences, and the tag block U+E0020-E007F,
+// which spells out the England, Scotland and Wales flags. (Variation
+// selectors are safe from a Cf filter either way — they are category Mn, not
+// Cf.) Bidi_Control is the narrow set that misrepresents order; the rest of
+// Cf is invisible but honest.
 func UnsafeRune(r rune) bool {
 	return unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r)
 }

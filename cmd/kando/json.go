@@ -64,14 +64,25 @@ func stampJSON(t time.Time) string {
 // cardToJSON projects c as of now. lane < 0 (board.Lane's zero value,
 // Backlog, is a real lane, so callers pass -1 explicitly for "no lane" —
 // an archived card) omits Lane.
+// Text fields are de-fanged here rather than in writeJSON, so the guard sits
+// on the projection and the emitted document stays valid, faithful JSON.
+// encoding/json is not sufficient on its own: it escapes bytes below 0x20
+// (so a raw ESC cannot get through) and U+2028/U+2029, but copies everything
+// at or above 0x80 verbatim. The C1 block and the bidi controls are all
+// multi-byte UTF-8, so they pass. That matters because a complete OSC 52
+// needs no ESC at all — U+009D opens it and U+009C ends it — and this output
+// goes to a terminal, which is also why writeJSON turns HTML escaping off.
 func cardToJSON(lane board.Lane, c *board.Card, now time.Time) cardJSON {
 	items := make([]itemJSON, len(c.Checklist))
 	for i, it := range c.Checklist {
-		items[i] = itemJSON{Text: it.Text, Done: it.Done}
+		items[i] = itemJSON{Text: board.SafeForDisplay(it.Text), Done: it.Done}
 	}
 	cj := cardJSON{
-		ID: c.ID, Title: c.Title, Tag: c.Tag, Notes: c.Notes,
-		Blocked: c.Blocked, BlockedReason: c.BlockedReason,
+		ID:      board.SafeForDisplay(c.ID),
+		Title:   board.SafeForDisplay(c.Title),
+		Tag:     board.SafeForDisplay(c.Tag),
+		Notes:   board.SafeForDisplay(c.Notes),
+		Blocked: c.Blocked, BlockedReason: board.SafeForDisplay(c.BlockedReason),
 		Checklist: items,
 	}
 	if lane >= 0 {

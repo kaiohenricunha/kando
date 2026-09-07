@@ -78,6 +78,26 @@ package, which contextually auto-escapes output — never `text/template`,
 never raw string concatenation into HTML. No card's content can inject
 markup or script into the page.
 
+**SEC-4 (invariant).** Every user-provided string reaching a rendered
+surface passes `board.SafeForDisplay`, which drops category Cc (C0, DEL and
+the C1 block) and `unicode.Bidi_Control`. The write-time helpers in
+`internal/board/ops.go` apply the same predicate, `board.UnsafeRune`, before
+a value is stored, and `store.ValidBoardName` applies it to board names.
+
+SEC-2 and SEC-4 answer different threats and neither subsumes the other.
+`html/template` prevents markup and script injection; it does nothing about a
+bidirectional override, which reorders the text a browser displays without any
+markup at all (CVE-2021-42574). Neither does it help the terminal surfaces,
+where an escape sequence in stored text drives the terminal itself. The guard
+is needed on the read path specifically because `board.md` is hand-editable
+and is parsed verbatim: the store assigns fields directly and re-emits them
+unchanged, so text already on disk has never met a write-time sanitizer.
+
+Deliberately out of scope: the rest of category Cf. Stripping it would take
+U+200C and U+200D, which are load-bearing in Persian and Indic shaping and in
+ZWJ emoji sequences, and the tag block that spells the England, Scotland and
+Wales flags. `Bidi_Control` is the narrow subset that misrepresents order.
+
 **SEC-3 (invariant).** Every state-changing route only accepts `POST`,
 never `GET` (already true of every mutation in §5's route table). In
 addition, every request is rejected unless it is same-origin: the `Host`

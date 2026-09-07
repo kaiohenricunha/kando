@@ -314,10 +314,16 @@ keeps the same id until the file is saved with the id in it.
 
 Text you type into a card through any surface has its control characters and
 bidirectional overrides removed before it is stored, so a note pasted from an
-issue or a web page cannot carry an escape sequence into the file. Your own
-file is left alone: kando never rewrites text you edited by hand. It de-fangs
-those characters when it displays them instead — an escape sequence in a
-hand-edited note shows as ordinary text rather than driving the terminal.
+issue or a web page cannot carry an escape sequence into the file.
+
+Text already in the file keeps its own bytes. A save re-emits what it parsed,
+character for character, so kando neither cleans those characters out of your
+hand-edited text nor adds any — the reshaping described above is all it does.
+It removes them on the way to the screen instead: an escape sequence in a
+hand-edited note is displayed with the control characters stripped, so it
+reads as ordinary text rather than driving the terminal. Editing that card
+through a surface does store the stripped version, since everything you commit
+goes through the same filter as anything else you type.
 
 ## Development
 

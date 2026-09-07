@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/kaiohenricunha/kando/internal/board"
@@ -52,10 +51,17 @@ const maxBoardName = 64
 
 // ValidBoardName reports whether name is acceptable as a board directory
 // name and as a URL path segment: non-empty, at most maxBoardName bytes,
-// valid UTF-8, no control runes, no path separators, none of the URL
+// valid UTF-8, no unsafe runes, no path separators, none of the URL
 // delimiters "#?%&+;", and no leading dot (which also excludes "." and
 // ".."). A valid name always resolves to a directory directly under root;
 // what a symlink placed under root points at is the user's own business.
+//
+// "Unsafe" is board.UnsafeRune, the same predicate the field sanitizers use,
+// rather than unicode.IsControl. A name is a stored value that every surface
+// renders — the web breadcrumb and boards list, kando board list, the TUI
+// header — so a bidi override in a directory name would display a board as a
+// name it does not have. Checking here rather than at each of those render
+// sites keeps the name clean at the source.
 func ValidBoardName(name string) bool {
 	if name == "" || len(name) > maxBoardName || !utf8.ValidString(name) {
 		return false
@@ -63,7 +69,7 @@ func ValidBoardName(name string) bool {
 	if strings.HasPrefix(name, ".") || strings.ContainsAny(name, `/\#?%&+;`) {
 		return false
 	}
-	return strings.IndexFunc(name, unicode.IsControl) < 0
+	return strings.IndexFunc(name, board.UnsafeRune) < 0
 }
 
 // Load reads root/name read-only: no directory is created, nothing is

@@ -3,7 +3,6 @@ package board
 import (
 	"strings"
 	"testing"
-	"unicode"
 )
 
 // TestSetNotesStripsControlRunesKeepingNewlinesAndTabs pins the one field that
@@ -57,8 +56,8 @@ func TestSetNotesStripsControlRunesKeepingNewlinesAndTabs(t *testing.T) {
 				t.Errorf("SetNotes(%q)\n got %q\nwant %q", tc.in, c.Notes, tc.want)
 			}
 			for _, r := range c.Notes {
-				if r != '\n' && r != '\t' && unicode.IsControl(r) {
-					t.Errorf("control rune %q survived in %q", r, c.Notes)
+				if r != '\n' && r != '\t' && UnsafeRune(r) {
+					t.Errorf("unsafe rune %q survived in %q", r, c.Notes)
 				}
 			}
 		})

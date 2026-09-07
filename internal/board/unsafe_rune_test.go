@@ -24,9 +24,13 @@ var bidiRunes = []rune{
 	0x2069, // POP DIRECTIONAL ISOLATE
 }
 
-// Runes that are also category Cf, or look like control characters, but carry
-// meaning and must survive. Stripping these is how a blanket unicode.Cf filter
-// breaks real text, which is why the predicate targets Bidi_Control instead.
+// Runes that must survive. U+200C and U+200D are the two that carry the
+// argument: they are category Cf, so a blanket unicode.Cf filter would strip
+// them and break Persian and Indic shaping and every ZWJ emoji sequence —
+// which is why the predicate targets Bidi_Control instead. The rest are not
+// Cf at all (the variation selectors are Mn, the Hebrew and Arabic letters
+// are ordinary letters) and are here as a regression net against a filter
+// that overreaches in some other direction.
 var mustSurvive = []struct {
 	r    rune
 	what string

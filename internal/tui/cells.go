@@ -27,10 +27,13 @@ func width(s string) int { return ansi.StringWidth(s) }
 // control characters become spaces (they would measure 0 cells but render
 // wider), carriage returns vanish, and every other unsafe rune is dropped.
 //
-// This is the TUI's single render-time guard: every visible string in every
-// view goes through it, which is why board.md content that never passed a
-// write-time sanitizer — a hand-edited file, or a note stored by a build from
-// before those sanitizers existed — is still safe on screen.
+// This is the TUI's render-time guard for text read off the board: every
+// read-only pane puts its strings through it, which is why board.md content
+// that never passed a write-time sanitizer — a hand-edited file, or a note
+// stored by a build from before those sanitizers existed — is safe on screen.
+// The inline editors render their own buffer and do not call this; they are
+// covered instead at their seed sites in detail.go, because bubbles' own
+// sanitizer drops only unicode.IsControl and lets the bidi controls through.
 //
 // The fast path must test for non-ASCII too. It is a byte-wise scan, and the
 // unsafe runes that are not C0 (the C1 block, the bidi overrides) are all

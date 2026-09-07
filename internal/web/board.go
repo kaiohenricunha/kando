@@ -1,6 +1,8 @@
 package web
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"strings"
 
@@ -42,7 +44,7 @@ type cardPage struct {
 	Lanes          [4]board.Lane
 	Created, Since string
 	Notes, Reason  string
-	Checklist      []board.Item
+	Checklist      []checklistItemView
 }
 
 type newPage struct {
@@ -157,17 +159,47 @@ func (s *server) newCard(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "new.html", newPage{Page: s.basePage(name, "new card"), Lane: lane, Lanes: board.Lanes})
 }
 
-// safeChecklist copies items with their text put through SafeForDisplay. The
-// copy matters: these items are pointers into the loaded board, and mutating
-// them here would change what a later save writes back to the file.
-func safeChecklist(items []board.Item) []board.Item {
-	if items == nil {
-		return nil
-	}
-	out := make([]board.Item, len(items))
+// checklistItemView splits what the page shows from what it submits back.
+//
+// Text is de-fanged for display. Was is a digest of the verbatim stored text:
+// the witness the toggle and edit forms post so checklistIndex can tell a
+// stale form from a current one.
+//
+// A digest rather than the text itself, for two reasons. The comparison is
+// against what is on disk, so a de-fanged witness would never match for the
+// hand-edited items this guard exists for — every toggle on such a card would
+// answer 409 "reload and try again", which no reload could fix. Sending the
+// raw text instead would fix the comparison but put the unsafe runes back
+// into the page, inside a hidden attribute where nothing displays them but
+// nothing strips them either. A digest is opaque, so neither problem arises,
+// and it still detects an edit that changed only unsafe runes — which
+// comparing de-fanged text would miss.
+type checklistItemView struct {
+	Text string
+	Was  string
+	Done bool
+}
+
+// checklistWitness fingerprints an item's stored text. Truncated because this
+// detects a concurrent edit, it does not defend against one: a writer who can
+// forge it can edit the file directly.
+func checklistWitness(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:8])
+}
+
+// safeChecklist projects items for rendering: visible text de-fanged, witness
+// digested. It builds a new slice rather than writing through items[i], which
+// would edit the backing array of the loaded board and change what a later
+// save writes to the file.
+func safeChecklist(items []board.Item) []checklistItemView {
+	out := make([]checklistItemView, len(items))
 	for i, it := range items {
-		it.Text = board.SafeForDisplay(it.Text)
-		out[i] = it
+		out[i] = checklistItemView{
+			Text: board.SafeForDisplay(it.Text),
+			Was:  checklistWitness(it.Text),
+			Done: it.Done,
+		}
 	}
 	return out
 }

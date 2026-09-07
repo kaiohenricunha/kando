@@ -228,8 +228,16 @@ func TestListBoardsIgnoresNonBoardDirs(t *testing.T) {
 }
 
 func TestValidBoardName(t *testing.T) {
-	valid := []string{"life", "work-2024", "a", "My Board", "日本"}
-	invalid := []string{"", ".", "..", ".hidden", "a/b", "../evil", "a\\b", "/etc", "a\nb", "tab\there", strings.Repeat("x", 65), "bad\xffutf8", "q#1", "a?b", "50%", "a&b", "a+b", "a;b"}
+	// Emoji and non-Latin scripts stay valid: the predicate targets the bidi
+	// controls, not everything non-ASCII.
+	valid := []string{"life", "work-2024", "a", "My Board", "日本", "\U0001F468\u200d\U0001F469", "עברית"}
+	invalid := []string{"", ".", "..", ".hidden", "a/b", "../evil", "a\\b", "/etc", "a\nb", "tab\there", strings.Repeat("x", 65), "bad\xffutf8", "q#1", "a?b", "50%", "a&b", "a+b", "a;b",
+		// A name is a stored value that every surface renders, so it is held
+		// to board.UnsafeRune rather than unicode.IsControl. A bidi override
+		// in a directory name would display a board as a name it does not
+		// have. An existing directory named this way stops being listed:
+		// ListBoards skips it, which is the intended outcome.
+		"life\u202egnp.exe", "a\u200fb", "\u2066spoof\u2069", "c1\u009bhere"}
 	for _, n := range valid {
 		if !ValidBoardName(n) {
 			t.Errorf("ValidBoardName(%q) = false, want true", n)

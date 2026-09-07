@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/kaiohenricunha/kando/internal/store"
 	"strings"
 	"testing"
 	"time"
@@ -49,13 +50,17 @@ func poisonedCard() *board.Card {
 	return c
 }
 
-// TestTerminalFormattersNeverEmitUnsafeRunes covers every formatter that
-// builds a block of text for the terminal with %s. These are the ones that
-// need the guard: the per-verb success lines use %q, which escapes both
-// control runes and the bidi controls (they are all non-printable), so a raw
-// ESC cannot reach the terminal through those.
+// TestTerminalFormattersNeverEmitUnsafeRunes covers the formatters that build
+// a block of text for the terminal with %s.
 //
-// The point of asserting on all of them together is that a formatter added
+// Most per-verb success lines are safe without a guard because they use %q,
+// which escapes anything failing unicode.IsPrint — that covers Cc and Cf, so
+// both a raw ESC and U+202E come out as escapes. But "they all use %q" was
+// not true: checklist toggle printed item text read straight back off the
+// board with %s, and the add and block lines echoed raw argv. Those are
+// guarded at their call sites now; TestVerbSuccessLinesAreSafe pins them.
+//
+// The point of asserting on all of these together is that a formatter added
 // later is the easy thing to forget, and forgetting is silent — the output
 // looks right and the escape sequence runs.
 func TestTerminalFormattersNeverEmitUnsafeRunes(t *testing.T) {
@@ -73,6 +78,12 @@ func TestTerminalFormattersNeverEmitUnsafeRunes(t *testing.T) {
 		"formatCard":        formatCard(board.Todo, c, now),
 		"formatList":        formatList(lanes, "", 1, 1, now),
 		"formatArchiveList": formatArchiveList(t.TempDir(), "life", groups, "", 1, 1, 1),
+		// The cap footnote is a second return in the same function and would
+		// otherwise be unguarded without anything noticing.
+		"formatArchiveList capped": formatArchiveList(t.TempDir(), "life", groups, "", 1, 1, 2),
+		// A filtered list prints its own summary line and takes a different
+		// path through formatList.
+		"formatList filtered": formatList(lanes, "safe"+string(rune(0x202e))+"query", 1, 3, now),
 	}
 
 	for name, out := range outputs {
@@ -89,6 +100,103 @@ func TestTerminalFormattersNeverEmitUnsafeRunes(t *testing.T) {
 			for _, r := range out {
 				if what, bad := forbidden[r]; bad {
 					t.Errorf("emitted U+%04X (%s) in:\n%s", r, what, out)
+					break
+				}
+			}
+		})
+	}
+}
+
+// TestCardJSONIsDefanged covers the fourth terminal output path. encoding/json
+// is not a guard here: it escapes bytes below 0x20 and U+2028/U+2029, but
+// copies everything from 0x80 up verbatim, so the C1 block and the bidi
+// controls pass straight through. That matters because a complete OSC 52
+// needs no ESC byte at all — U+009D opens it, U+009C ends it — and
+// `kando show --json` writes to the same terminal as `kando show`.
+func TestCardJSONIsDefanged(t *testing.T) {
+	now := time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC)
+	cj := cardToJSON(board.Todo, poisonedCard(), now)
+
+	var b strings.Builder
+	if err := writeJSON(&b, cj); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	if !strings.Contains(out, "gnp.exe") {
+		t.Errorf("payload text vanished rather than being de-fanged:\n%s", out)
+	}
+	for _, r := range out {
+		if what, bad := forbidden[r]; bad {
+			t.Errorf("writeJSON emitted U+%04X (%s) in:\n%s", r, what, out)
+			break
+		}
+	}
+}
+
+// TestVerbSuccessLinesAreSafe drives the real verbs through the subprocess
+// harness and reads their actual stdout. Building the format string here
+// instead would assert only that SafeForDisplay works, which is already
+// covered — it would not notice the guard being removed from the call site,
+// which is the regression worth catching.
+//
+// checklist toggle is the one that mattered: its item text is read back off
+// the board after the toggle, so it is whatever the file held and has never
+// been through a write-time sanitizer.
+func TestVerbSuccessLinesAreSafe(t *testing.T) {
+	home := t.TempDir()
+
+	// Build a board through the CLI, then poison it on disk the way a
+	// hand-edit or a pre-fix build would, bypassing every Set* helper.
+	if _, _, code := runCLI(t, home, "board", "create", "life"); code != 0 {
+		t.Fatal("board create failed")
+	}
+	if _, _, code := runCLI(t, home, "add", "Card", "life"); code != 0 {
+		t.Fatal("add failed")
+	}
+	root := home // KANDO_HOME is the boards root itself
+	b, err := store.Load(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Poison every user-controlled field, not just one: a fixture that
+	// poisons only the checklist would let an unguarded Notes or Title slip
+	// through every assertion below.
+	c := b.Lanes[board.Todo][0]
+	c.Title = "T" + poisoned
+	c.Notes = "N" + poisoned
+	c.Tag = "G" + poisoned
+	c.Checklist = []board.Item{{Text: "item " + poisoned}}
+	st, _, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveBoard(b); err != nil {
+		t.Fatal(err)
+	}
+	// Address the card by id: its title is poisoned now, so a title lookup
+	// would fail and every verb below would exit non-zero.
+	id := c.ID
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"checklist toggle", []string{"checklist", "toggle", id, "1", "life"}},
+		{"checklist add", []string{"checklist", "add", id, "new " + poisoned, "life"}},
+		{"block", []string{"block", id, "--reason", "why " + poisoned, "life"}},
+		{"show", []string{"show", id, "life"}},
+		{"list", []string{"list", "life"}},
+		{"show --json", []string{"show", id, "life", "--json"}},
+		{"list --json", []string{"list", "life", "--json"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, errOut, code := runCLI(t, home, tc.args...)
+			if code != 0 {
+				t.Fatalf("exit %d, stderr: %s", code, errOut)
+			}
+			for _, r := range out + errOut {
+				if what, bad := forbidden[r]; bad {
+					t.Errorf("emitted U+%04X (%s) in:\n%s", r, what, out+errOut)
 					break
 				}
 			}

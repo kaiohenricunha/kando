@@ -281,7 +281,7 @@ func checklistIndex(r *http.Request, c *board.Card, f url.Values) (int, error) {
 	if err != nil || i < 0 || i >= len(c.Checklist) {
 		return 0, &httpError{http.StatusNotFound, "no such checklist item"}
 	}
-	if was, ok := f["was"]; ok && was[0] != c.Checklist[i].Text {
+	if was, ok := f["was"]; ok && was[0] != checklistWitness(c.Checklist[i].Text) {
 		return 0, &httpError{http.StatusConflict, "this card changed — reload and try again"}
 	}
 	return i, nil

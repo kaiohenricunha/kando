@@ -14,8 +14,8 @@
 </form>
 <div class="section">CHECKLIST{{if .Card.Progress}} <span class="check">{{.Card.Progress}}</span>{{end}}</div>
 <ul class="items">{{range $i, $it := .Checklist}}<li{{if .Done}} class="done"{{end}}>
-  <form class="inline" method="post" action="{{$.URL}}/checklist/{{$i}}/toggle"><input type="hidden" name="was" value="{{.Text}}"><button type="submit" class="plain" aria-label="toggle">{{if .Done}}▣{{else}}▢{{end}}</button></form>
-  <form class="inline" method="post" action="{{$.URL}}/checklist/{{$i}}"><input type="hidden" name="was" value="{{.Text}}"><input type="text" name="text" value="{{.Text}}" required> <button type="submit" class="small">save</button></form>
+  <form class="inline" method="post" action="{{$.URL}}/checklist/{{$i}}/toggle"><input type="hidden" name="was" value="{{.Was}}"><button type="submit" class="plain" aria-label="toggle">{{if .Done}}▣{{else}}▢{{end}}</button></form>
+  <form class="inline" method="post" action="{{$.URL}}/checklist/{{$i}}"><input type="hidden" name="was" value="{{.Was}}"><input type="text" name="text" value="{{.Text}}" required> <button type="submit" class="small">save</button></form>
 </li>{{end}}</ul>
 <form class="inline" method="post" action="{{.URL}}/checklist"><input type="text" name="text" placeholder="new item" required> <button type="submit" class="small">add</button></form>
 <div class="section">BLOCKED</div>
