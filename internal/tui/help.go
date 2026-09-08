@@ -10,7 +10,8 @@ var helpLeft = []keyGroup{
 	{"/", "filter"}, {"q", "quit"},
 	// Appended, not slotted next to H/L: helpRows pairs the two columns by
 	// index, so inserting in the middle would re-pair every row below it and
-	// break the paired-row assertions in board_update_test.go. It also goes on
+	// break TestHelpOverlay, which asserts whole rows by their exact spacing
+	// ("u        undo (Done → Doing) D        archive view"). It also goes on
 	// the left because a right-column entry with no left partner renders as an
 	// orphan behind 29 blank cells.
 	{"J/K", "reorder in lane"},

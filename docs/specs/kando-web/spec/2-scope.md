@@ -69,10 +69,10 @@ Placing a card is an interactive act — you put it *there*, relative to what is
 on screen — and both surfaces that can do it resolve the position against a
 card the user is looking at. A headless verb has nothing to look at, so it
 would have to name the anchor by id, which is the one thing neither other
-surface makes you do. `--before`/`--after` on the same helper remains
-available if a script ever needs it, and would be a new unit rather than new
-rules. `README.md`'s capability table carries that as a footnoted `X`; §5's
-`/move` row and the parity checklist record the current state.
+surface makes you do. `README.md`'s capability table carries that as a
+footnoted `X` — a deliberate omission, not a backlog item, which is the
+distinction that table's `X`/`—` markers draw. §5's `/move` row and the parity
+checklist record the current state.
 
 The remaining CLI gap is narrower than "drag-and-drop is web-only" ever was:
 the *capability* — put a card in a lane — is on all three surfaces, and only

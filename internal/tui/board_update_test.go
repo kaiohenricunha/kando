@@ -424,8 +424,12 @@ func TestReorderKeysMoveTheCardWithinItsLane(t *testing.T) {
 		t.Errorf("selection still follows: sel=%d %v", m.sel, c)
 	}
 
-	// A reorder is not a lane change (board.go:233-235). This is the assertion
-	// that fails if someone routes the helper through Board.Move.
+	// A reorder is not a lane change: MoveAt stamps only when the lane changes
+	// (board.go:233-235). This catches a rewrite that stamps unconditionally,
+	// or one that removes and reinserts through stamp. It does NOT catch a
+	// switch to Board.Move — that short-circuits a same-lane move without
+	// touching the dates (board.go:189-199), so the ordering assertion above
+	// is what fails there, before this loop is reached.
 	for _, c := range m.b.Lanes[board.Todo] {
 		if !c.MovedAt.Equal(before[c]) || !c.DoneAt.IsZero() {
 			t.Errorf("reorder restamped %q: MovedAt=%v want %v, DoneAt=%v", c.Title, c.MovedAt, before[c], c.DoneAt)
@@ -474,10 +478,12 @@ func TestReorderThatChangesNothingWritesNothing(t *testing.T) {
 		t.Fatalf("J should be saved with Tax docs above Renew passport:\n%s", data)
 	}
 
-	// A no-op must not. The store detects change by mtime+size (store.go:123,
-	// 454), so rewriting identical bytes still wakes every connected kando web
-	// client — which is why comparing file *contents* cannot see this. Removing
-	// the file first makes a stray save unmistakable.
+	// A no-op must not. Rewriting identical bytes still wakes every connected
+	// kando web client: watchDir signals on any fsnotify event naming board.md
+	// with no content comparison at all (internal/store/watch.go:55-60), and
+	// the SSE endpoint turns each signal into a reload. So comparing file
+	// *contents* cannot see a stray save — the bytes are identical either way.
+	// Removing the file first makes one unmistakable.
 	if err := os.Remove(st.BoardPath()); err != nil {
 		t.Fatal(err)
 	}
@@ -520,8 +526,12 @@ func TestReorderStepsPastTheVisibleNeighbourUnderAFilter(t *testing.T) {
 	if got := titles(m.visible(board.Todo)); got[0] != "a" || got[1] != "b" {
 		t.Errorf("K must move a back above b: %v", got)
 	}
-	if got := titles(m.b.Lanes[board.Todo]); got[1] != "hidden" && got[0] != "hidden" {
-		t.Errorf("the hidden card must still be in the lane: %v", got)
+	// J then K restores the VISIBLE order but not the lane: `a` has crossed
+	// `hidden` for good. That is not a bug — a drag does the same thing, since
+	// both name the position against a card the user can see — but it is
+	// surprising enough to pin exactly rather than assert loosely.
+	if got := titles(m.b.Lanes[board.Todo]); !slices.Equal(got, []string{"hidden", "a", "b"}) {
+		t.Errorf("lane after J then K: got %v, want [hidden a b]", got)
 	}
 }
 
@@ -612,5 +622,71 @@ func TestReorderInDoneSurvivesTheDiskRoundTrip(t *testing.T) {
 	got := titles(reloaded.Lanes[board.Done])
 	if got[0] != second || got[1] != first {
 		t.Errorf("the Done reorder must survive a reload: got %v, want %q then %q", got, second, first)
+	}
+}
+
+func TestReorderMakesProgressWithDuplicateIDs(t *testing.T) {
+	// board.md is hand-editable and nothing dedupes ids: parseSections takes a
+	// written "id:" verbatim (internal/store/markdown.go:107) and only derives
+	// one when the field is empty, so copy-pasting a card block yields two
+	// cards sharing an id. laneIndex matches by pointer (model.go:332) while
+	// selectByID matches by id (model.go:344) — with a duplicate those two
+	// disagree, and the selection can snap to the card that did NOT move.
+	m := newTestModel(t, 120, 40)
+	dup := &board.Card{ID: "dup", Title: "first", CreatedAt: fixedNow, MovedAt: fixedNow}
+	twin := &board.Card{ID: "dup", Title: "second", CreatedAt: fixedNow, MovedAt: fixedNow}
+	tail := &board.Card{ID: "tail", Title: "third", CreatedAt: fixedNow, MovedAt: fixedNow}
+	m.b.Lanes[board.Todo] = []*board.Card{dup, twin, tail}
+	m.sel, m.first = 0, 0
+
+	m = press(m, "J")
+	if c := m.selectedCard(); c != dup {
+		t.Errorf("the selection must follow the card that moved, not its id-twin: got %q", c.Title)
+	}
+	if got := titles(m.b.Lanes[board.Todo]); got[0] != "second" || got[1] != "first" {
+		t.Fatalf("after one J: %v", got)
+	}
+
+	// Progress, not just position: a bounded run of presses must reach the
+	// bottom and stop. If the selection snaps back to the twin each time, the
+	// lane oscillates and every press writes board.md forever.
+	for range 6 {
+		m = press(m, "J")
+	}
+	if got := titles(m.b.Lanes[board.Todo]); got[2] != "first" {
+		t.Errorf("repeated J must carry the card to the bottom and clamp: %v", got)
+	}
+	if c := m.selectedCard(); c != dup {
+		t.Errorf("selection drifted off the moved card: %v", c)
+	}
+}
+
+func TestReorderScrollsToKeepTheMovedCardVisible(t *testing.T) {
+	// Every other reorder test runs at 120x40, where the whole lane fits and
+	// ensureVisible is a no-op — so deleting that call would leave them all
+	// green while the cursor walked off the rendered window. 80x24 gives R=14
+	// and room for two cards (TestOverflowIndicators pins the same geometry).
+	m := newTestModel(t, 80, 24)
+	if m.first != 0 {
+		t.Fatalf("first = %d, want 0 at the top", m.first)
+	}
+
+	m = press(m, "J", "J") // carry the top card to the bottom of a 3-card lane
+	if m.sel != 2 {
+		t.Fatalf("sel = %d, want 2", m.sel)
+	}
+	if m.first != 1 {
+		t.Errorf("the window must scroll to keep the moved card visible: first = %d, want 1", m.first)
+	}
+	if !strings.Contains(plainView(m), "Renew passport") {
+		t.Errorf("the moved card must still be rendered:\n%s", plainView(m))
+	}
+
+	m = press(m, "K", "K") // and back up again
+	if m.sel != 0 {
+		t.Fatalf("sel = %d, want 0", m.sel)
+	}
+	if m.first != 0 {
+		t.Errorf("the window must follow it back up: first = %d, want 0", m.first)
 	}
 }

@@ -120,7 +120,7 @@ func (m *Model) moveSelected(to board.Lane) {
 // lane itself, so with a filter active the visible neighbour is not the
 // adjacent lane element, and stepping by lane index would hop over hidden
 // cards — leaving the on-screen order unchanged. The web route names positions
-// against a visible card for exactly this reason (internal/web/cards.go:216).
+// against a visible card for exactly this reason (movePos, internal/web/cards.go).
 //
 // MoveAt's `at` is insert-before against the lane as it stood BEFORE the move
 // (board.go:209-219), so landing below a neighbour is that neighbour's index
@@ -146,7 +146,21 @@ func (m *Model) reorderSelected(delta int) {
 	}
 	m.b.MoveAt(m.lane, i, m.lane, at, m.now())
 	m.save()
-	m.selectByID(c.ID)
+	// Re-select by identity, the way this function located the card, rather
+	// than by id via selectByID. board.md is hand-editable and nothing dedupes
+	// ids — parseSections takes a written "id:" verbatim and only derives one
+	// for an empty field — so two cards in a lane can share an id. laneIndex
+	// matches by pointer and selectByID by id, and where those disagree the
+	// selection lands on the twin that did not move: the card then oscillates
+	// instead of descending, never reaching the clamp, and every press writes
+	// the board. MoveAt's return value cannot stand in here either — it is a
+	// lane index, and m.sel counts the filtered list.
+	for k, x := range m.visible(m.lane) {
+		if x == c {
+			m.sel = k
+			break
+		}
+	}
 	m.ensureVisible()
 }
 

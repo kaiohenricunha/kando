@@ -71,7 +71,8 @@ added in the same effort — see the "What each surface can do" table in the
 top-level `README.md`.
 
 Finalization pass (2026-09-08, TUI reorder): BOUND-1b is **closed for the
-TUI**. It was the last exception in §2, and it named its own fix, so this is
+TUI**. It was the last exception §2 listed — BOUND-1a still stands — and it
+named its own fix, so this is
 the change it anticipated: `J`/`K` bind two board-screen keys to
 `Board.MoveAt`, the helper the `/move` route already called, rather than
 adding a second placement rule. §2's BOUND-1b paragraph is rewritten from
@@ -100,9 +101,10 @@ frames, which contain that footer line and have no regeneration path; `x`,
 ## Parity audit
 
 [parity.md](parity.md) — every TUI key against the §5 route that does the
-same thing (U10). BOUND-1b, the one accepted exception it used to record, is
-closed for the TUI; what is left of it is the CLI's missing position
-argument, audited in the top-level `README.md` table.
+same thing (U10). BOUND-1b, one of the two accepted exceptions it records, is
+closed for the TUI; BOUND-1a (archived cards are restore-only on the web) is
+unchanged. What is left of BOUND-1b is the CLI's missing position argument,
+audited in the top-level `README.md` table.
 
 ## Research Sources
 
