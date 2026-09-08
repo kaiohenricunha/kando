@@ -40,9 +40,11 @@ var forbidden = map[rune]string{
 	0x200E: "LEFT-TO-RIGHT MARK",
 	0x200F: "RIGHT-TO-LEFT MARK",
 	0x061C: "ARABIC LETTER MARK",
+	0x2028: "LINE SEPARATOR (would forge an output row)",
+	0x2029: "PARAGRAPH SEPARATOR",
 }
 
-const poison = "safe\u202egnp.exe\x1b]52;c;cGF5bG9hZA==\x07\u009b2J"
+const poison = "safe\u202egnp.exe\x1b]52;c;cGF5bG9hZA==\x07\u009b2J\u2028id: FORGED"
 
 // writePoisonedBoard bypasses every Set* helper and writes the raw bytes
 // straight to board.md, which is the only way to reproduce the case that

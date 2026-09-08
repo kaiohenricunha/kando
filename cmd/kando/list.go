@@ -29,7 +29,10 @@ func listArgs(args []string, errOut io.Writer) (name, query string, jsonOut bool
 	if len(pos) == 1 {
 		name = pos[0]
 	}
-	return name, *f, *j, nil
+	// De-fanged at the entry point, so board.Parse, the %q echo and the JSON
+	// Filter field all see one string. Guarding only the echoed copy would
+	// report a filter that is not the one that ran.
+	return name, board.SafeForDisplay(*f), *j, nil
 }
 
 // listCards is kando list's testable core: a read-only load (list must
@@ -100,7 +103,7 @@ func runList(args []string) {
 		fatal(err)
 	}
 	if jsonOut {
-		out := listJSON{Board: b.Name, Filter: board.SafeForDisplay(query), Matched: matched, Total: total}
+		out := listJSON{Board: b.Name, Filter: query, Matched: matched, Total: total}
 		for _, l := range board.Lanes {
 			cj := make([]cardJSON, len(lanes[l]))
 			for i, c := range lanes[l] {

@@ -27,10 +27,11 @@ var bidiRunes = []rune{
 // The Unicode line separators. Categories Zl and Zp — neither Cc nor
 // Bidi_Control, so unicode.IsControl and Bidi_Control are both blind to them
 // and they survived the #18 filter. They are unsafe for a different reason
-// than the bidi set: they do not misrepresent text, they end a line. The TUI
-// composes rows of an exact terminal-cell count and measures U+2028 as one
-// cell, so a terminal that honours the break puts every later row out of
-// position.
+// than the bidi set: they do not misrepresent text, they end a line. Note that
+// ansi.StringWidth measures them as zero cells, exactly like the bidi
+// controls, so the row arithmetic is right — the break itself is the damage,
+// splitting a row the TUI built to an exact cell count and forging a line in
+// the CLI's one-per-line output.
 var lineSeparators = []rune{
 	0x2028, // LINE SEPARATOR
 	0x2029, // PARAGRAPH SEPARATOR
@@ -177,16 +178,27 @@ func TestSafeForDisplayDefangsWhatTheWritePathNeverSaw(t *testing.T) {
 			want: "one\n\ttwo",
 		},
 		{
-			// Converted, not dropped: a separator is a line ending the author
-			// meant. Dropping it would silently join two lines into one.
-			name: "line separator becomes the newline the store uses",
+			// Dropped, NOT converted to "\n". Most callers of this helper
+			// render a single line — a key: value row in kando show, a lane
+			// row in kando list, an HTML attribute — so a helper that
+			// manufactured a newline would let a card field forge one of
+			// those rows. SetNotes does the conversion instead, on the way
+			// in, where a line break is legal.
+			name: "line separator is dropped, not turned into a newline",
 			in:   "one\u2028two",
-			want: "one\ntwo",
+			want: "onetwo",
 		},
 		{
 			name: "paragraph separator likewise",
 			in:   "one\u2029two",
-			want: "one\ntwo",
+			want: "onetwo",
+		},
+		{
+			// The regression this pins: a field shaped like the structure a
+			// CLI formatter emits must not be able to produce that structure.
+			name: "a field cannot forge a key line",
+			in:   "x\u2028id: FORGED",
+			want: "xid: FORGED",
 		},
 		{
 			name: "ordinary text is returned unchanged",
@@ -203,8 +215,13 @@ func TestSafeForDisplayDefangsWhatTheWritePathNeverSaw(t *testing.T) {
 	}
 }
 
-// TestLineSeparatorsFollowTheNewlineRule pins the rule the two Zl/Zp runes
-// follow: each context treats them exactly as it already treats "\n".
+// TestLineSeparatorsFollowTheNewlineRule pins where the conversion lives.
+//
+// SetNotes normalizes a separator to "\n" alongside the CRLF it already
+// normalizes, because notes are the one multi-line field. Every single-line
+// field drops it, and so does SafeForDisplay — see the case above: a helper
+// that converted on the read path would let a card field forge an output row
+// in kando show and kando list.
 //
 // The split matters and is not cosmetic. Notes are the one multi-line field,
 // so a separator there becomes a real newline and the author's line break

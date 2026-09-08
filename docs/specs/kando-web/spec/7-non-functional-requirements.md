@@ -80,8 +80,8 @@ markup or script into the page.
 
 **SEC-4 (invariant).** Every user-provided string reaching a rendered
 surface passes `board.SafeForDisplay`, which drops category Cc (C0, DEL and
-the C1 block) and `unicode.Bidi_Control`, and converts the Zl/Zp line
-separators U+2028 and U+2029 to `\n`. The write-time helpers in
+the C1 block), `unicode.Bidi_Control`, and the Zl/Zp line separators U+2028
+and U+2029. Only `\n` and `\t` are kept, so multi-line text still lays out. The write-time helpers in
 `internal/board/ops.go` apply the same predicate, `board.UnsafeRune`, before
 a value is stored, and `store.ValidBoardName` applies it to board names.
 
@@ -94,14 +94,20 @@ is needed on the read path specifically because `board.md` is hand-editable
 and is parsed verbatim: the store assigns fields directly and re-emits them
 unchanged, so text already on disk has never met a write-time sanitizer.
 
-The line separators are a third case, and are converted rather than dropped
-because they are a line ending the author meant. They matter because the TUI
-composes rows of an exact terminal-cell count and measures U+2028 as one cell,
-while a terminal that honours the break emits none — every later row then sits
-one line out of position. Single-line values (titles, tags, board names) drop
-them instead, exactly as those values already drop `\n`, since a newline in a
-title would put a second line into `board.md`, which the parser reads as
-structure.
+The line separators are a third case. They matter because they break a row
+that is meant to be one row: the TUI composes rows of an exact terminal-cell
+count and the CLI prints one `key: value` or one card per line. Note that
+`ansi.StringWidth` measures them as zero cells, exactly like the bidi
+controls, so the row arithmetic is right and the break itself is the damage —
+a terminal that honours it shifts every later row, and in the CLI a card field
+containing one would print a line of its own, indistinguishable from a real
+one.
+
+The guard therefore drops them everywhere, and the conversion to `\n` that
+preserves the author's line break happens once, on the write path, in
+`SetNotes` — alongside the CRLF normalization it already performs, and only
+for notes, the one multi-line field. A read-path helper must never manufacture
+a newline, because most of its callers render a single line.
 
 Deliberately out of scope: the rest of category Cf. Stripping it would take
 U+200C and U+200D, which are load-bearing in Persian and Indic shaping and in

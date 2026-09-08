@@ -57,11 +57,12 @@ func clip(s string, n int) string {
 //
 // Zl and Zp — U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR — end a
 // line. They neither drive the terminal nor misrepresent order, so they are
-// here for a third reason: the TUI composes rows of an exact terminal-cell
-// count, and these measure one cell while a terminal that honours them emits a
-// break and none, which puts every later row out of position. SafeForDisplay
-// converts rather than drops them, since they are a line ending the author
-// meant; see there.
+// here for a third reason: they break a row that is supposed to be one row.
+// The TUI composes rows of an exact terminal-cell count, and ansi.StringWidth
+// measures these as zero cells, exactly like the bidi controls — so the row's
+// own arithmetic is right and the break itself is the damage. A terminal that
+// honours it splits the row anyway, and every later row lands one line out of
+// position. The same break forges a line in the CLI's key: value output.
 //
 // Deliberately NOT the whole of Cf. That would take U+200C and U+200D, the
 // zero-width non-joiner and joiner, which are load-bearing in Persian and
@@ -86,18 +87,17 @@ func UnsafeRune(r rune) bool {
 // with its escape sequences intact. Rather than rewrite the user's file, each
 // surface puts values through this on the way out.
 //
-// The two line separators are converted rather than dropped: U+2028 is a line
-// ending the author meant, so it becomes the one the store uses. Dropping it
-// would silently join two lines into one. The single-line sanitizers below do
-// drop it, because they drop "\n" too — a newline in a title would put a
-// second line into board.md, which the parser reads as structure.
+// It drops the line separators rather than converting them to "\n", and that
+// is deliberate: most callers render a single line — a key: value row in
+// kando show, a lane row in kando list, an HTML attribute — and a helper that
+// manufactures a newline lets a card field forge one of those rows. Turning a
+// separator into the author's line break is a normalization that only makes
+// sense where a line break is legal, so SetNotes does it on the way in,
+// alongside the CRLF normalization it already performs.
 func SafeForDisplay(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\t' {
 			return r
-		}
-		if r == '\u2028' || r == '\u2029' {
-			return '\n'
 		}
 		if UnsafeRune(r) {
 			return -1
@@ -173,9 +173,21 @@ func (c *Card) SetTag(value string) {
 // one typed in by hand — are handled on the way out instead, by
 // SafeForDisplay at each renderer, so nothing is rewritten behind the user's
 // back. See UnsafeRune for which runes both halves drop and why.
+//
+// The line separators are the one rune class this function converts rather
+// than drops, and it converts them here because notes are the one multi-line
+// field. SafeForDisplay drops them, so a hand-edited note keeps its own bytes
+// until it is next edited through a surface.
 func (c *Card) SetNotes(value string) {
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\r", "\n")
+	// The Unicode line separators are line endings too, so they normalize
+	// here with the others rather than being dropped by SafeForDisplay below.
+	// Notes are the one multi-line field, so this is the one place where
+	// turning a separator into a real break is both safe and what the author
+	// meant.
+	value = strings.ReplaceAll(value, "\u2028", "\n")
+	value = strings.ReplaceAll(value, "\u2029", "\n")
 	value = SafeForDisplay(value)
 	c.Notes = strings.TrimRight(clip(value, maxNotesBytes), "\n \t")
 }
