@@ -130,12 +130,16 @@ func (m Model) detailListName() string {
 // wrapNotes word-wraps notes at w cells, one entry per output row.
 //
 // The split runs on the raw value and sanitize runs per paragraph, in that
-// order. Reversed, this does nothing: sanitize maps "\n" to a space like every
-// other C0 rune — correct for its fifteen other callers, each of which renders
-// one exact-width row and must not gain a line — so splitting afterwards can
-// never find a newline. Notes are the one multi-line value the TUI renders,
-// and this is the one caller that has to keep the line structure.
-// cmd/kando/show.go does the same thing in the same order.
+// order. Reversed, this does nothing: sanitize maps "\n" to a space like the
+// rest of C0 (CR is the exception, it is dropped) — correct for its two dozen
+// other call sites, each of which renders one exact-width row and must not
+// gain a line — so splitting afterwards can never find a newline. Notes are
+// the one multi-line value the TUI renders, and this is the only place in the
+// repo where the order is load-bearing.
+//
+// cmd/kando/show.go:80 also splits the raw value, but it is immune either
+// way: it sanitizes once over the assembled block with board.SafeForDisplay,
+// which keeps newlines. Only the TUI has a sanitizer that destroys them.
 func wrapNotes(notes string, w int) []string {
 	var out []string
 	for _, para := range strings.Split(notes, "\n") {

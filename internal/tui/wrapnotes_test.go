@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -55,6 +54,22 @@ func TestWrapNotes(t *testing.T) {
 			want:  []string{"a b", "c"},
 		},
 		{
+			// The classes sanitize's ASCII fast path deliberately falls
+			// through for. These are the runes the whole guard series exists
+			// to remove, and the ones a future refactor of this loop would
+			// most plausibly lose — the C0 case above would not catch it.
+			name:  "C1 and bidi controls are dropped inside every paragraph",
+			notes: "a\u009bb\nc\u202ed",
+			w:     40,
+			want:  []string{"ab", "cd"},
+		},
+		{
+			name:  "ESC becomes a space, it does not open an OSC",
+			notes: "a\x1b]52;c;QQ==\x07b\nc",
+			w:     40,
+			want:  []string{"a ]52;c;QQ== b", "c"},
+		},
+		{
 			name:  "tabs become spaces, as everywhere else in the TUI",
 			notes: "a\tb",
 			w:     40,
@@ -92,8 +107,5 @@ func TestNewTextareaHeightCountsParagraphs(t *testing.T) {
 	if three.Height() <= one.Height() {
 		t.Errorf("a three-row note sized %d, a one-row note sized %d — paragraphs are not counted",
 			three.Height(), one.Height())
-	}
-	if got, want := strings.Count("first\n\nsecond", "\n")+1, 3; got != want {
-		t.Fatalf("test premise wrong: %d", got)
 	}
 }

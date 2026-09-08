@@ -70,9 +70,11 @@ type Card struct {
 //
 // It is a preview — the TUI puts it in one card row and the web in one
 // clipped div — so it is bounded to the single-line budget every other
-// one-line value already uses. Without that, a note holding no newline
-// returns the whole body, up to maxNotesBytes: 16 KiB into a row that
-// renders a few dozen cells, on every frame and in every board page.
+// one-line value already uses. Without that bound it would return the whole
+// body — and the real ceiling is not maxNotesBytes but nothing at all, since
+// store.parseSections assigns Notes verbatim with no cap, so a hand-edited
+// board.md can hold any size. That went into a row that renders a few dozen
+// cells, on every frame and in every board page.
 func (c *Card) FirstNoteLine() string {
 	if i := strings.IndexByte(c.Notes, '\n'); i >= 0 {
 		return clip(c.Notes[:i], maxFieldBytes)
