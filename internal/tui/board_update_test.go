@@ -2,6 +2,7 @@ package tui
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -437,7 +438,7 @@ func TestReorderClampsAtTheLaneEnds(t *testing.T) {
 	want := titles(m.b.Lanes[board.Todo])
 
 	m = press(m, "K") // already first
-	if got := titles(m.b.Lanes[board.Todo]); !slicesEqual(got, want) {
+	if got := titles(m.b.Lanes[board.Todo]); !slices.Equal(got, want) {
 		t.Errorf("K on the first card must not wrap to the bottom: %v", got)
 	}
 	if m.sel != 0 {
@@ -446,7 +447,7 @@ func TestReorderClampsAtTheLaneEnds(t *testing.T) {
 
 	m = press(m, "j", "j") // last card
 	m = press(m, "J")
-	if got := titles(m.b.Lanes[board.Todo]); !slicesEqual(got, want) {
+	if got := titles(m.b.Lanes[board.Todo]); !slices.Equal(got, want) {
 		t.Errorf("J on the last card must not wrap to the top: %v", got)
 	}
 	if m.sel != 2 {
@@ -567,18 +568,6 @@ func TestReorderOnEmptyAndSingleCardLanes(t *testing.T) {
 	if m.sel != 0 {
 		t.Errorf("sel = %d, want 0", m.sel)
 	}
-}
-
-func slicesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func TestReorderAtTheEndOfAFilteredLaneIsANoop(t *testing.T) {
