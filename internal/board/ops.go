@@ -83,11 +83,20 @@ func clip(s string, n int) string {
 // Persian, Indic, Hebrew and every emoji presentation sequence. What remains
 // is vertical bleed, which the terminal owns and no cell-width model
 // describes. The byte cost of such a value is bounded instead, at the point it
-// is rendered: see maxSlotBytes in internal/tui/cells.go.
+// is rendered: see maxRenderBytes in internal/tui/cells.go.
 func UnsafeRune(r rune) bool {
 	return unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) ||
 		r == '\u2028' || r == '\u2029'
 }
+
+// Why none of this happens at parse time, since it keeps coming up: the store
+// re-emits what it parsed. cardBlock writes Title, Tag, BlockedReason and
+// Notes straight back from memory (internal/store/markdown.go), and store.Open
+// rewrites the whole board through Marshal whenever any card lacks an id. So a
+// value clipped or sanitized during parsing would be written into the user's
+// hand-edited file on the next open, before they touched anything. That is why
+// every guard in this package is either a write-time helper the surfaces call
+// deliberately, or a read-time one applied on the way to a screen.
 
 // SafeForDisplay drops every unsafe rune from s, keeping newlines and tabs so
 // multi-line text still lays out. It is the read-side counterpart to the
@@ -202,7 +211,28 @@ func (c *Card) SetNotes(value string) {
 	value = strings.ReplaceAll(value, "\u2028", "\n")
 	value = strings.ReplaceAll(value, "\u2029", "\n")
 	value = SafeForDisplay(value)
+	value = trimLeadingBlankLines(value)
 	c.Notes = strings.TrimRight(clip(value, maxNotesBytes), "\n \t")
+}
+
+// trimLeadingBlankLines drops whole blank lines from the front of s, matching
+// what store.trimBlank already does on both the read and the write path.
+//
+// Whole lines, not characters: a TrimLeft over "\n \t" would also eat the
+// indentation of a first line that has content, which trimBlank never does.
+// The trailing end is handled by SetNotes' own TrimRight and is deliberately
+// left alone.
+//
+// Without this, SetNotes kept a leading blank line that the store then dropped
+// on save, so the TUI detail pane showed a row that disappeared on reload.
+func trimLeadingBlankLines(s string) string {
+	for {
+		i := strings.IndexByte(s, '\n')
+		if i < 0 || strings.TrimSpace(s[:i]) != "" {
+			return s
+		}
+		s = s[i+1:]
+	}
 }
 
 // SetBlocked sets the card's blocked reason (sanitized); a reason that's

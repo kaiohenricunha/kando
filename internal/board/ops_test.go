@@ -331,3 +331,40 @@ func TestArchiveDoneThenRestoreRoundTrip(t *testing.T) {
 		t.Errorf("restore must stamp like a move: done=%v moved=%v", c.DoneAt, c.MovedAt)
 	}
 }
+
+// TestSetNotesTrimsLeadingBlankLines closes an asymmetry between the two
+// trimmers. SetNotes trimmed only the right end, while store.trimBlank strips
+// blank lines from both ends on read and on write — so a note that began with
+// a blank line rendered an extra row in the TUI detail pane and then lost it
+// on the next reload, when the parse path trimmed what the write path had
+// kept. Now the stored value is what a reload would produce.
+func TestSetNotesTrimsLeadingBlankLines(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{"a leading newline", "\nfoo", "foo"},
+		{"several blank lines, some with whitespace", "\n\n  \n\t\nfoo", "foo"},
+		{"blank lines at both ends", "\n\nfoo\n\n", "foo"},
+		{
+			// The case a naive TrimLeft(value, "\n \t") would break:
+			// trimBlank drops whole whitespace-only lines, never the
+			// indentation of a line that has content.
+			name: "indentation on the first line survives",
+			in:   "  indented first\nsecond",
+			want: "  indented first\nsecond",
+		},
+		{
+			name: "a tab-indented first line survives",
+			in:   "\n\t indented\nsecond",
+			want: "\t indented\nsecond",
+		},
+		{"interior blank lines are untouched", "a\n\nb", "a\n\nb"},
+		{"all blank collapses to empty", "\n\n  \n", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Card{}
+			c.SetNotes(tc.in)
+			if c.Notes != tc.want {
+				t.Errorf("SetNotes(%q)\n got %q\nwant %q", tc.in, c.Notes, tc.want)
+			}
+		})
+	}
+}

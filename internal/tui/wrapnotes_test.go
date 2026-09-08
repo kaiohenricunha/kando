@@ -76,6 +76,17 @@ func TestWrapNotes(t *testing.T) {
 			want:  []string{"a b"},
 		},
 		{
+			// wrapNotes' own contract. Production can no longer produce this:
+			// SetNotes drops leading blank lines and store.trimBlank drops
+			// them on both read and write, so a card cannot arrive here with
+			// one. Pinned because the function is a pure helper and the
+			// blank-row branch is still reachable by a direct caller.
+			name:  "a leading newline is its own row",
+			notes: "\nfoo",
+			w:     40,
+			want:  []string{"", "foo"},
+		},
+		{
 			name:  "empty notes",
 			notes: "",
 			w:     40,
