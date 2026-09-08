@@ -71,6 +71,19 @@ func clip(s string, n int) string {
 // selectors are safe from a Cf filter either way — they are category Mn, not
 // Cf.) Bidi_Control is the narrow set that misrepresents order; the rest of
 // Cf is invisible but honest.
+//
+// Combining marks (category Mn) are deliberately absent, and this is the place
+// that question gets settled so nobody re-derives it. "Zalgo" text looks like
+// it should break the TUI's exact-cell rows, and it does not: ansi.StringWidth
+// clusters by UAX #29, so a base character with five hundred marks measures
+// one cell, and fit() pads from the same number the frame tests check with.
+// The arithmetic closes. A cap would also have to be a run-length rule, which
+// this predicate cannot express — it is one rune at a time — and U+0301 and
+// U+FE0F are both on the must-survive list, so a naive Mn filter would break
+// Persian, Indic, Hebrew and every emoji presentation sequence. What remains
+// is vertical bleed, which the terminal owns and no cell-width model
+// describes. The byte cost of such a value is bounded instead, at the point it
+// is rendered: see maxSlotBytes in internal/tui/cells.go.
 func UnsafeRune(r rune) bool {
 	return unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) ||
 		r == '\u2028' || r == '\u2029'

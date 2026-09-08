@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -92,15 +93,40 @@ func spaces(n int) string {
 	return strings.Repeat(" ", n)
 }
 
-// trunc keeps the first w-1 cells and appends "…" when s is wider than w.
+// maxSlotBytes bounds the bytes one cell of a row may carry.
+//
+// A cell is normally at most 4 bytes of UTF-8. The headroom is for legitimate
+// grapheme clusters, and it is generous on purpose: the densest this repo
+// knows of is the England flag tag sequence at 28 bytes over 2 cells, so 64
+// leaves about four times the margin. Nothing real approaches it.
+//
+// What does approach it is a value that measures far fewer cells than it has
+// bytes, because ansi.StringWidth clusters correctly: a base character with
+// hundreds of combining marks is one cluster of width 1, and FirstNoteLine can
+// hand a whole 16 KiB notes body to a one-cell slot. The cell arithmetic was
+// never wrong; only the bytes were unbounded, and they were emitted on every
+// frame.
+const maxSlotBytes = 64
+
+// trunc keeps the first w-1 cells and appends "…" when s is wider than w, and
+// bounds the bytes it emits either way.
 func trunc(s string, w int) string {
 	if w <= 0 {
 		return ""
 	}
-	if width(s) <= w {
-		return s
+	if width(s) > w {
+		s = ansi.Truncate(s, w, ellipsis)
 	}
-	return ansi.Truncate(s, w, ellipsis)
+	// The byte ceiling applies even when the cell count already fits: that is
+	// the case ansi.Truncate never sees. Cut on a rune boundary; fit() and
+	// hsplit() both re-measure afterwards, so the exact-cell contract holds.
+	if n := w * maxSlotBytes; len(s) > n {
+		for n > 0 && !utf8.RuneStart(s[n]) {
+			n--
+		}
+		s = s[:n]
+	}
+	return s
 }
 
 // fit truncates or pads s to exactly w cells.
