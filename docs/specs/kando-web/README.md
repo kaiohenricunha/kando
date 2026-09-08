@@ -70,10 +70,39 @@ verb built on the same U12 primitives (`kando archive`) is tracked outside
 added in the same effort — see the "What each surface can do" table in the
 top-level `README.md`.
 
+Finalization pass (2026-09-08, TUI reorder): BOUND-1b is **closed for the
+TUI**. It was the last exception in §2, and it named its own fix, so this is
+the change it anticipated: `J`/`K` bind two board-screen keys to
+`Board.MoveAt`, the helper the `/move` route already called, rather than
+adding a second placement rule. §2's BOUND-1b paragraph is rewritten from
+"web-only" to "narrowed to the CLI", §5's `/move` row swaps "the position is
+drag-and-drop only" for the key pair, and the parity audit's Board-screen row
+becomes a real pairing instead of a `—`. The audit's "Web-only" section now
+opens by saying no capability is web-only.
+
+Two properties transferred with the helper rather than being restated: a
+same-lane move does not restamp `MovedAt`/`DoneAt`, and a position is named
+against a card the user can *see* rather than an index — which is what makes
+a filtered lane behave the same on both surfaces. Only the gesture differs.
+
+No unit id: `U12` remains the last, and the follow-on work on another surface
+is tracked the way U12's CLI verbs were — outside this spec, in the top-level
+`README.md` capability table. That table is also where the **remaining** gap
+now lives, as a footnoted `X` rather than a `—`: `kando move` takes a lane and
+no position, and that is deliberate — a headless verb would have to name the
+anchor by id, which neither interactive surface makes you do.
+
+The persistent board footer was deliberately **not** touched, so `J`/`K` are
+documented in the `?` overlay only. R-1 (§8) freezes the three reference
+frames, which contain that footer line and have no regeneration path; `x`,
+`B` and `A` are help-only for the same reason.
+
 ## Parity audit
 
 [parity.md](parity.md) — every TUI key against the §5 route that does the
-same thing (U10), including the one accepted BOUND-1 exception.
+same thing (U10). BOUND-1b, the one accepted exception it used to record, is
+closed for the TUI; what is left of it is the CLI's missing position
+argument, audited in the top-level `README.md` table.
 
 ## Research Sources
 

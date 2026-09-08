@@ -78,7 +78,7 @@ Footer: `j/k move  u undo (back to Doing)  enter open  / filter  esc board`.
 
 ## Interactions & keys
 Both vim keys and arrows work everywhere.
-- Board: `j/k ↓↑` select card; `h/l ←→ tab shift-tab` change active lane (selection resets to first card of that lane); `H/L` move selected card to previous/next lane; `enter` open detail; `a` quick-add (an inline text input appears as a new card at the top of the active lane, accent border; `enter` saves, `esc` cancels); `d` move to Done; `/` filter; `?` help overlay; `q` quit.
+- Board: `j/k ↓↑` select card; `h/l ←→ tab shift-tab` change active lane (selection resets to first card of that lane); `H/L` move selected card to previous/next lane; `J/K` move selected card down/up inside its lane (clamps at the ends; the footer is unchanged, so this key pair lives in the `?` overlay only — see R-1); `enter` open detail; `a` quick-add (an inline text input appears as a new card at the top of the active lane, accent border; `enter` saves, `esc` cancels); `d` move to Done; `/` filter; `?` help overlay; `q` quit.
 - Selection wraps within a lane. Done cards are selectable (for `u` undo).
 - No animation. Redraw is instant; keep it flicker-free by rendering the whole frame each `View()`.
 

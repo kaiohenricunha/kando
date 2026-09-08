@@ -181,8 +181,9 @@ func (s *server) updateCard() http.HandlerFunc {
 
 // moveCard mirrors H/L, d and the m picker, plus the board page's drag: the
 // card goes to the top of the target lane with the same date stamping the
-// TUI applies, or to a named position in it when the form asks for one
-// (BOUND-1b, the one thing here the TUI cannot do).
+// TUI applies, or to a named position in it when the form asks for one. The
+// TUI reaches the same placements with J/K, one slot per press (BOUND-1b,
+// §2), and resolves them against a visible card the same way movePos does.
 func (s *server) moveCard() http.HandlerFunc {
 	return s.withCard(afterMove, func(b *board.Board, from board.Lane, i int, _ *board.Card, f url.Values) error {
 		to, ok := board.ParseLane(f.Get("lane"))

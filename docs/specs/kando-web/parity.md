@@ -17,7 +17,7 @@ surface can do" table is that audit at capability granularity.
 | `a` quick add | `GET /b/{board}/cards/new` → `POST /b/{board}/cards` | |
 | `enter` open card | `GET /b/{board}/cards/{id}` | |
 | `H`/`L` move card ±lane | `POST /b/{board}/cards/{id}/move` | The web picks the lane from a select; the TUI steps one lane at a time. Same `board.Move`. |
-| — | drag a card onto a lane | **BOUND-1b (§2): accepted exception.** Dragging also picks the *position* in the lane, which no TUI key does. Same route, same `board.MoveAt`; the TUI would need `J`/`K` to close it. |
+| `J`/`K` reorder in lane | drag a card onto a lane | **BOUND-1b (§2) is closed for the TUI.** Dragging also picks the *position* in the lane; `J`/`K` step the card one slot at a time to reach the same placements. Same `board.MoveAt`, and both name the position against a card the user can see rather than an index, so a filtered lane behaves the same on both. The CLI still has no position argument, which is what remains of the exception. |
 | `d` move to Done | `POST …/move` (`lane=done`) | |
 | `u` undo (Done → Doing) | `POST …/move` (`lane=doing`) | |
 | `x` delete card | `POST /b/{board}/cards/{id}/delete` | Immediate on both, no confirmation (§2). |
@@ -66,12 +66,15 @@ surface can do" table is that audit at capability granularity.
 
 ## Web-only
 
-One capability the TUI lacks: **where in a lane a card lands**. Dragging a
-card names a position, and no TUI key does — see BOUND-1b (§2) and the board
-row above. Every other route exists to serve something the TUI already does,
-and the two write paths share `internal/board` and `internal/store` rather
-than reimplementing the rules; even this one is a shared helper
-(`board.MoveAt`) the TUI could call tomorrow, not a second write path.
+No capability is web-only. **Where in a lane a card lands** was the last one,
+and `J`/`K` closed it — see BOUND-1b (§2) and the board row above. What differs
+now is only the gesture: a drag names a position in one motion, `J`/`K` step
+toward it one slot at a time. Both call the same `board.MoveAt`, so the rules
+for what a placement does are shared rather than reimplemented, and every
+other route exists to serve something the TUI already does.
+
+The CLI is the remaining gap: `kando move` takes a lane and no position. It is
+tracked in `README.md`'s capability table, which audits all three surfaces.
 
 Two routes have no TUI counterpart because they are plumbing rather than
 capabilities: `GET /static/live.js` serves the listener that turns an SSE
