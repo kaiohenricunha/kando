@@ -67,11 +67,19 @@ type Card struct {
 }
 
 // FirstNoteLine returns the first line of the notes, or "".
+//
+// It is a preview — the TUI puts it in one card row and the web in one
+// clipped div — so it is bounded to the single-line budget every other
+// one-line value already uses. Without that bound it would return the whole
+// body — and the real ceiling is not maxNotesBytes but nothing at all, since
+// store.parseSections assigns Notes verbatim with no cap, so a hand-edited
+// board.md can hold any size. That went into a row that renders a few dozen
+// cells, on every frame and in every board page.
 func (c *Card) FirstNoteLine() string {
 	if i := strings.IndexByte(c.Notes, '\n'); i >= 0 {
-		return c.Notes[:i]
+		return clip(c.Notes[:i], maxFieldBytes)
 	}
-	return c.Notes
+	return clip(c.Notes, maxFieldBytes)
 }
 
 // ChecklistProgress returns (done, total) checklist counts.

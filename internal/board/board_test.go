@@ -383,3 +383,25 @@ func TestMoveAtWithinDoneKeepsDoneAt(t *testing.T) {
 		}
 	}
 }
+
+// TestFirstNoteLineIsBounded pins the preview bound. A note with no newline
+// used to return its whole body — up to 16 KiB — into a card row and a web
+// card div, both of which show one line.
+func TestFirstNoteLineIsBounded(t *testing.T) {
+	// Assigned as a field, not through SetNotes: store.parseSections assigns
+	// Notes verbatim with no cap, so the real input is unbounded — megabytes,
+	// not the 16 KiB the write path would allow. And the budget is a literal,
+	// not maxFieldBytes: asserting against the constant the code uses means
+	// raising it would raise the bar too, and the test would keep passing
+	// while the bound stopped bounding.
+	c := &Card{Notes: strings.Repeat("x", 1<<20)}
+	if got := len(c.FirstNoteLine()); got > 512 {
+		t.Errorf("FirstNoteLine returned %d bytes for a 1 MiB note, budget is 512", got)
+	}
+	// An ordinary preview is untouched.
+	c2 := &Card{}
+	c2.SetNotes("first line\nsecond line")
+	if got := c2.FirstNoteLine(); got != "first line" {
+		t.Errorf("FirstNoteLine = %q, want %q", got, "first line")
+	}
+}

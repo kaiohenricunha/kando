@@ -185,6 +185,41 @@ func TestDetailNotesTagBlock(t *testing.T) {
 	if c.Notes != wantNotes || m.mode != modeNormal {
 		t.Fatalf("notes = %q", c.Notes)
 	}
+	// The value above is two paragraphs. Assert the pane actually renders it
+	// as two — this test has built multi-line notes since it was written and
+	// never looked at the screen, which is how wrapNotes flattening every
+	// newline went unnoticed.
+	right := rightPane(plainLines(m))
+	var notesRows []string
+	for i, l := range right {
+		if strings.TrimSpace(l) == "NOTES" {
+			for _, r := range right[i+1:] {
+				if strings.HasPrefix(strings.TrimSpace(r), "CHECKLIST") {
+					break
+				}
+				notesRows = append(notesRows, strings.TrimSpace(r))
+			}
+			break
+		}
+	}
+	if len(notesRows) == 0 {
+		t.Fatalf("no NOTES section in the right pane:\n%s", strings.Join(right, "\n"))
+	}
+	if !strings.Contains(strings.Join(notesRows, "\n"), "Second line.") {
+		t.Errorf("second paragraph missing from the pane:\n%s", strings.Join(notesRows, "\n"))
+	}
+	// "Second line." must start a row of its own, not be joined onto the tail
+	// of the first paragraph by a space.
+	var onOwnRow bool
+	for _, r := range notesRows {
+		if r == "Second line." {
+			onOwnRow = true
+		}
+	}
+	if !onOwnRow {
+		t.Errorf("second paragraph did not start its own row:\n%s", strings.Join(notesRows, "\n"))
+	}
+
 	m = press(m, "e")
 	m = typeText(m, "zzz")
 	m = press(m, "esc")

@@ -128,9 +128,22 @@ func (m Model) detailListName() string {
 }
 
 // wrapNotes word-wraps notes at w cells, one entry per output row.
+//
+// The split runs on the raw value and sanitize runs per paragraph, in that
+// order. Reversed, this does nothing: sanitize maps "\n" to a space like the
+// rest of C0 (CR is the exception, it is dropped) — correct for its two dozen
+// other call sites, each of which renders one exact-width row and must not
+// gain a line — so splitting afterwards can never find a newline. Notes are
+// the one multi-line value the TUI renders, and this is the only place in the
+// repo where the order is load-bearing.
+//
+// cmd/kando/show.go:80 also splits the raw value, but it is immune either
+// way: it sanitizes once over the assembled block with board.SafeForDisplay,
+// which keeps newlines. Only the TUI has a sanitizer that destroys them.
 func wrapNotes(notes string, w int) []string {
 	var out []string
-	for _, para := range strings.Split(sanitize(notes), "\n") {
+	for _, para := range strings.Split(notes, "\n") {
+		para = sanitize(para)
 		if strings.TrimSpace(para) == "" {
 			out = append(out, "")
 			continue
@@ -249,7 +262,9 @@ func (m Model) detailRight(c *board.Card, rp int) []string {
 		rows = append(rows, s.Muted.Render("— no notes. ")+s.Bold.Render("e")+s.Muted.Render(" to write"))
 	default:
 		for _, l := range wrapNotes(c.Notes, m.notesWidth()) {
-			rows = append(rows, s.Fg.Render(l))
+			// render() rather than s.Fg.Render(): a blank paragraph row would
+			// otherwise emit an SGR open/close pair around an empty string.
+			rows = append(rows, render(s.Fg, l))
 		}
 	}
 	rows = append(rows, "")

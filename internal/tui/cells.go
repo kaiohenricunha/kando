@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -56,7 +57,30 @@ func width(s string) int { return ansi.StringWidth(s) }
 // allocations per keystroke out of seventeen hundred, and it would cost a
 // second, hand-maintained encoding of which runes are unsafe — exactly the
 // duplication board.UnsafeRune was introduced to remove.
+// maxRenderBytes bounds a single value on its way to the screen.
+//
+// It sits here because sanitize is the TUI's one read-time guard and always
+// receives unstyled field text, so bounding here cannot sever an escape
+// sequence the way bounding a composed row would.
+//
+// The value is the largest legitimate input: SetNotes caps notes at
+// maxNotesBytes, and wrapNotes hands one paragraph at a time, so nothing the
+// write path produces reaches it. Single-line fields are far smaller — the
+// write path caps them at 512 bytes. What it does bound is the read path,
+// which is verbatim: store.parseSections assigns Title, Tag and BlockedReason
+// straight from the file with no cap, so a hand-edited board.md can hand a
+// megabyte to a row that shows a few dozen cells, and sanitize would allocate
+// a builder that size on every frame.
+const maxRenderBytes = 16 << 10
+
 func sanitize(s string) string {
+	if len(s) > maxRenderBytes {
+		n := maxRenderBytes
+		for n > 0 && !utf8.RuneStart(s[n]) {
+			n--
+		}
+		s = s[:n]
+	}
 	clean := true
 	for i := 0; i < len(s); i++ {
 		if s[i] < 0x20 || s[i] == 0x7f || s[i] >= 0x80 {
@@ -93,6 +117,16 @@ func spaces(n int) string {
 }
 
 // trunc keeps the first w-1 cells and appends "…" when s is wider than w.
+//
+// It stays purely cell-based and ANSI-aware on purpose. An earlier revision of
+// this change added a byte ceiling here and cut with s[:n] on a utf8.RuneStart
+// boundary, which is rune-safe but not escape-safe: every caller passes an
+// already-styled row, every byte of a CSI sequence is ASCII, and RuneStart is
+// true for all of them. The cut dropped the trailing reset, so a row opened a
+// colour it never closed — and a byte-exact input severs the escape itself,
+// which ansi.StringWidth still measures as the same cell count, so fit() pads
+// and every width assertion passes while the terminal eats the padding. Bytes
+// are bounded where the content enters instead: see sanitize.
 func trunc(s string, w int) string {
 	if w <= 0 {
 		return ""
