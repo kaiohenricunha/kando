@@ -63,7 +63,10 @@ func archiveListArgs(args []string, errOut io.Writer) (name, query string, jsonO
 	if len(pos) == 1 {
 		name = pos[0]
 	}
-	return name, *f, *j, nil
+	// De-fanged at the entry point, so board.Parse, the %q echo and the JSON
+	// Filter field all see one string. Guarding only the echoed copy would
+	// report a filter that is not the one that ran.
+	return name, board.SafeForDisplay(*f), *j, nil
 }
 
 // archiveList is kando archive list's testable core: the package-level

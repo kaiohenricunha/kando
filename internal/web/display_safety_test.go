@@ -40,9 +40,11 @@ var forbidden = map[rune]string{
 	0x200E: "LEFT-TO-RIGHT MARK",
 	0x200F: "RIGHT-TO-LEFT MARK",
 	0x061C: "ARABIC LETTER MARK",
+	0x2028: "LINE SEPARATOR (would forge an output row)",
+	0x2029: "PARAGRAPH SEPARATOR",
 }
 
-const poison = "safe\u202egnp.exe\x1b]52;c;cGF5bG9hZA==\x07\u009b2J"
+const poison = "safe\u202egnp.exe\x1b]52;c;cGF5bG9hZA==\x07\u009b2J\u2028id: FORGED"
 
 // writePoisonedBoard bypasses every Set* helper and writes the raw bytes
 // straight to board.md, which is the only way to reproduce the case that
@@ -117,6 +119,11 @@ func TestPagesNeverServeUnsafeRunes(t *testing.T) {
 		{"/b/life/cards/poison01", true},
 		{"/b/life/archive", true},
 		{"/boards", false},
+		// The query is reflected into the search box on both filtered pages.
+		// No path in this table carried a ?q= before, which is how it stayed
+		// the one user-controlled string the web rendered unguarded.
+		{"/b/life?q=" + url.QueryEscape(poison), false},
+		{"/b/life/archive?q=" + url.QueryEscape(poison), false},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			rec, body := get(t, h, tc.path)

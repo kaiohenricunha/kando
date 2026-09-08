@@ -42,6 +42,20 @@ func width(s string) int { return ansi.StringWidth(s) }
 // find) would otherwise take the early return and reach the terminal intact.
 // Any byte >= 0x80 therefore falls through to the rune loop, which decides
 // with board.UnsafeRune.
+//
+// The cost of that bail-out is measured, not assumed — BenchmarkSanitize and
+// BenchmarkBoardFrame exist to answer it. One call is 6.6 ns and no allocation
+// on the ASCII path, 140-220 ns and one allocation off it. A whole 120x40
+// frame is ~0.6 ms and ~1690 allocations, and prefixing every card title with
+// a non-ASCII rune — so that not one of them takes the fast path — moves that
+// to ~1700 allocations and leaves the time inside run-to-run noise (both
+// variants span 0.59-0.71 ms over five runs).
+//
+// So it is not worth narrowing this test to the three lead bytes that can
+// begin an unsafe rune (0xC2, 0xD8, 0xE2). That would buy roughly eleven
+// allocations per keystroke out of seventeen hundred, and it would cost a
+// second, hand-maintained encoding of which runes are unsafe — exactly the
+// duplication board.UnsafeRune was introduced to remove.
 func sanitize(s string) string {
 	clean := true
 	for i := 0; i < len(s); i++ {

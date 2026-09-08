@@ -95,7 +95,11 @@ func (s *server) board(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	// De-fanged at entry, not in the view model: the same string is both
+	// parsed into the filter and rendered back into the search box, so
+	// guarding only the displayed copy would show results computed from one
+	// query beside an input holding another.
+	q := board.SafeForDisplay(strings.TrimSpace(r.URL.Query().Get("q")))
 	f := board.Parse(q)
 	now := s.now()
 	p := boardPage{Page: s.basePage(name, name), Query: q, Total: b.Count()}

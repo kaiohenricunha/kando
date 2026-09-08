@@ -36,9 +36,11 @@ var forbidden = map[rune]string{
 	0x200E: "LEFT-TO-RIGHT MARK",
 	0x200F: "RIGHT-TO-LEFT MARK",
 	0x061C: "ARABIC LETTER MARK",
+	0x2028: "LINE SEPARATOR (would forge an output row)",
+	0x2029: "PARAGRAPH SEPARATOR",
 }
 
-const poisoned = "safe\u202egnp.exe\x1b]52;c;cGF5bG9hZA==\x07\u009b2J"
+const poisoned = "safe\u202egnp.exe\x1b]52;c;cGF5bG9hZA==\x07\u009b2J\u2028id: FORGED"
 
 func poisonedCard() *board.Card {
 	c := &board.Card{ID: "poison01", Title: "T" + poisoned}
@@ -188,6 +190,12 @@ func TestVerbSuccessLinesAreSafe(t *testing.T) {
 		{"list", []string{"list", "life"}},
 		{"show --json", []string{"show", id, "life", "--json"}},
 		{"list --json", []string{"list", "life", "--json"}},
+		// The filter is echoed back in the summary line and in the JSON
+		// Filter field; a query is user-controlled like any card text.
+		{"list --filter", []string{"list", "life", "--filter", poisoned}},
+		{"list --filter --json", []string{"list", "life", "--filter", poisoned, "--json"}},
+		{"archive list --filter", []string{"archive", "list", "life", "--filter", poisoned}},
+		{"archive list --filter --json", []string{"archive", "list", "life", "--filter", poisoned, "--json"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out, errOut, code := runCLI(t, home, tc.args...)
@@ -203,3 +211,46 @@ func TestVerbSuccessLinesAreSafe(t *testing.T) {
 		})
 	}
 }
+
+// TestFormattersNeverGainALine is the structural guard the membership scan
+// above cannot be: it counts lines rather than looking for a forbidden rune.
+//
+// That distinction is the whole point. These formatters build a block of
+// "key: value" lines and then guard the assembled block at the return, so any
+// read-path helper that turns a rune inside a field into "\n" forges an output
+// line indistinguishable from a real one — a card tagged "x\u2028id: FORGED"
+// printing its own id: line. A scan for unsafe runes sees nothing wrong,
+// because the emitted rune is a perfectly legitimate newline.
+func TestFormattersNeverGainALine(t *testing.T) {
+	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+
+	clean := &board.Card{ID: "7f3a11", Title: "Innocent", Tag: "home"}
+	// Same card, but every single-line field carries a line separator plus
+	// text shaped like the structure the formatter itself emits.
+	forged := &board.Card{ID: "7f3a11", Title: "Innocent\u2028lane: Done"}
+	forged.Tag = "home\u2028id: FORGED"
+	forged.Blocked, forged.BlockedReason = true, "why\u2028created: 1999-01-01"
+	clean.Blocked, clean.BlockedReason = true, "why"
+
+	if got, want := lines(formatCard(board.Todo, forged, now)), lines(formatCard(board.Todo, clean, now)); got != want {
+		t.Errorf("formatCard: %d lines with separators, %d without — a field forged %d line(s):\n%s",
+			got, want, got-want, formatCard(board.Todo, forged, now))
+	}
+
+	var lanesClean, lanesForged [4][]*board.Card
+	lanesClean[board.Todo] = []*board.Card{clean}
+	lanesForged[board.Todo] = []*board.Card{forged}
+	if got, want := lines(formatList(lanesForged, "", 1, 1, now)), lines(formatList(lanesClean, "", 1, 1, now)); got != want {
+		t.Errorf("formatList: %d lines with separators, %d without:\n%s",
+			got, want, formatList(lanesForged, "", 1, 1, now))
+	}
+
+	gc := []board.ArchiveGroup{{Label: "THIS WEEK", Cards: []*board.Card{clean}}}
+	gf := []board.ArchiveGroup{{Label: "THIS WEEK", Cards: []*board.Card{forged}}}
+	if got, want := lines(formatArchiveList(t.TempDir(), "life", gf, "", 1, 1, 1)),
+		lines(formatArchiveList(t.TempDir(), "life", gc, "", 1, 1, 1)); got != want {
+		t.Errorf("formatArchiveList: %d lines with separators, %d without", got, want)
+	}
+}
+
+func lines(s string) int { return strings.Count(s, "\n") + 1 }

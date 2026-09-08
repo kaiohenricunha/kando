@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -297,5 +298,41 @@ func TestNotesFirstLineLookingLikeAKeyRoundTrips(t *testing.T) {
 				t.Errorf("a note overwrote a real key: tag=%q id=%q\n%s", r.Tag, r.ID, out)
 			}
 		})
+	}
+}
+
+// TestLineSeparatorsRoundTripAsOneCard is the Zl/Zp twin of
+// TestSanitizedFieldsRoundTripAsOneCard, which has this exact shape but only
+// uses "\n". A separator reaching a single-line field must not be able to add
+// a line the parser would read as structure.
+func TestLineSeparatorsRoundTripAsOneCard(t *testing.T) {
+	c := board.NewCard("Renew passport", board.Todo, ts(2026, 9, 1))
+	c.SetTag("home\u2028## Bogus")
+	c.SetBlocked("wait\u2029created: nope")
+	c.InsertChecklistItem(-1, "a\u2028### Injected")
+	c.SetNotes("first\u2028second")
+
+	b := &board.Board{Name: "life"}
+	b.Insert(board.Todo, 0, c)
+
+	got, _, err := Parse(Marshal(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := got.Count(); n != 1 {
+		t.Fatalf("round trip produced %d cards, want 1", n)
+	}
+	out := got.Lanes[board.Todo][0]
+	// Notes keep the break as a real newline; nothing else may hold one.
+	if out.Notes != "first\nsecond" {
+		t.Errorf("Notes = %q, want %q", out.Notes, "first\nsecond")
+	}
+	for name, v := range map[string]string{
+		"Tag": out.Tag, "BlockedReason": out.BlockedReason, "Title": out.Title,
+		"Checklist[0]": out.Checklist[0].Text,
+	} {
+		if strings.ContainsAny(v, "\n\u2028\u2029") {
+			t.Errorf("%s = %q, must be a single line", name, v)
+		}
 	}
 }
