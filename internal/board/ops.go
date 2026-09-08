@@ -83,11 +83,20 @@ func clip(s string, n int) string {
 // Persian, Indic, Hebrew and every emoji presentation sequence. What remains
 // is vertical bleed, which the terminal owns and no cell-width model
 // describes. The byte cost of such a value is bounded instead, at the point it
-// is rendered: see maxSlotBytes in internal/tui/cells.go.
+// is rendered: see maxRenderBytes in internal/tui/cells.go.
 func UnsafeRune(r rune) bool {
 	return unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) ||
 		r == '\u2028' || r == '\u2029'
 }
+
+// Why none of this happens at parse time, since it keeps coming up: the store
+// re-emits what it parsed. cardBlock writes Title, Tag, BlockedReason and
+// Notes straight back from memory (internal/store/markdown.go), and store.Open
+// rewrites the whole board through Marshal whenever any card lacks an id. So a
+// value clipped or sanitized during parsing would be written into the user's
+// hand-edited file on the next open, before they touched anything. That is why
+// every guard in this package is either a write-time helper the surfaces call
+// deliberately, or a read-time one applied on the way to a screen.
 
 // SafeForDisplay drops every unsafe rune from s, keeping newlines and tabs so
 // multi-line text still lays out. It is the read-side counterpart to the
@@ -202,7 +211,51 @@ func (c *Card) SetNotes(value string) {
 	value = strings.ReplaceAll(value, "\u2028", "\n")
 	value = strings.ReplaceAll(value, "\u2029", "\n")
 	value = SafeForDisplay(value)
-	c.Notes = strings.TrimRight(clip(value, maxNotesBytes), "\n \t")
+	// The clip runs before the trim, not after: cutting at a byte ceiling can
+	// leave a blank last line that was interior text a moment ago, and a value
+	// stored that way would carry the same asymmetry the trim exists to close.
+	value = trimBlankLines(clip(value, maxNotesBytes))
+	// Composed after the line trim, and narrower on purpose: this also strips
+	// trailing spaces from a line that *has* content ("foo   " -> "foo"), which
+	// a line-based trim leaves alone. store.trimBlank does not do this, so it is
+	// the one trailing behaviour that is ours rather than a mirror of the store.
+	c.Notes = strings.TrimRight(value, "\n \t")
+}
+
+// trimBlankLines drops whole blank lines from both ends of s, matching what
+// store.trimBlank already does on both the read and the write path.
+//
+// Whole lines, not characters: a TrimLeft over "\n \t" would also eat the
+// indentation of a first line that has content, which trimBlank never does.
+//
+// Blank means unicode.IsSpace, because that is what trimBlank's strings.TrimSpace
+// means. An ASCII cutset would not agree with it: a line holding only U+00A0 or
+// U+3000 is blank to the store and non-blank to a cutset of "\n \t", and a note
+// pasted out of a web page ends in one readily.
+//
+// Without this, SetNotes kept a blank edge line that the store then dropped on
+// save, so the TUI detail pane showed a row that disappeared on reload.
+func trimBlankLines(s string) string {
+	for {
+		i := strings.IndexByte(s, '\n')
+		if i < 0 || strings.TrimSpace(s[:i]) != "" {
+			break
+		}
+		s = s[i+1:]
+	}
+	for {
+		i := strings.LastIndexByte(s, '\n')
+		if i < 0 {
+			if strings.TrimSpace(s) == "" {
+				return ""
+			}
+			return s
+		}
+		if strings.TrimSpace(s[i+1:]) != "" {
+			return s
+		}
+		s = s[:i]
+	}
 }
 
 // SetBlocked sets the card's blocked reason (sanitized); a reason that's

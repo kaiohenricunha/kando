@@ -91,6 +91,22 @@ func TestSetNotesStepOrdering(t *testing.T) {
 		t.Errorf("control rune beside a line ending: got %q, want %q", c.Notes, "a\nb")
 	}
 
+	// The blank-line trim must run AFTER the strip. TrimSpace does not see a
+	// control or bidi rune as space, so a first line holding only one is
+	// non-blank before the strip and blank after it. Trimming first would
+	// store a leading blank line that store.trimBlank drops on save — the
+	// row-vanishes-on-reload asymmetry the trim exists to close.
+	c.SetNotes("\u0001\nfoo")
+	if c.Notes != "foo" {
+		t.Errorf("the trim must follow the strip: got %q, want %q", c.Notes, "foo")
+	}
+	// And AFTER the separator conversion: "\u2028foo" holds no "\n" until
+	// U+2028 becomes one, so an earlier trim would find nothing to do.
+	c.SetNotes("\u2028foo")
+	if c.Notes != "foo" {
+		t.Errorf("the trim must follow the separator conversion: got %q, want %q", c.Notes, "foo")
+	}
+
 	// The strip must run BEFORE the clip. strings.Map rewrites each invalid
 	// UTF-8 byte to U+FFFD, which is 3 bytes, so sanitizing can grow the
 	// value threefold. Clipping first would spend the budget on bytes that

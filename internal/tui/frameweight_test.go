@@ -11,7 +11,7 @@ import (
 // bound different things and are worth stating separately rather than under
 // one number.
 //
-// The notes preview is bounded tightly: FirstNoteLine clips to 512 bytes, so a
+// The notes preview is bounded tightly: NotePreview clips to 512 bytes, so a
 // 16 KiB note adds about half a kilobyte to a frame instead of sixteen.
 //
 // A title is bounded loosely. store.parseSections assigns it verbatim with no

@@ -62,14 +62,14 @@ func TestMove(t *testing.T) {
 
 func TestCardHelpers(t *testing.T) {
 	c := &Card{Notes: "first line\nsecond", Checklist: []Item{{"a", true}, {"b", false}, {"c", false}}}
-	if c.FirstNoteLine() != "first line" {
-		t.Errorf("FirstNoteLine = %q", c.FirstNoteLine())
+	if c.NotePreview() != "first line" {
+		t.Errorf("NotePreview = %q", c.NotePreview())
 	}
 	d, n := c.ChecklistProgress()
 	if d != 1 || n != 3 {
 		t.Errorf("progress = %d/%d", d, n)
 	}
-	if (&Card{}).FirstNoteLine() != "" {
+	if (&Card{}).NotePreview() != "" {
 		t.Errorf("empty notes")
 	}
 	done := &Card{CreatedAt: now.Add(-10 * 24 * time.Hour), DoneAt: now.Add(-24 * time.Hour)}
@@ -384,10 +384,10 @@ func TestMoveAtWithinDoneKeepsDoneAt(t *testing.T) {
 	}
 }
 
-// TestFirstNoteLineIsBounded pins the preview bound. A note with no newline
+// TestNotePreviewIsBounded pins the preview bound. A note with no newline
 // used to return its whole body — up to 16 KiB — into a card row and a web
 // card div, both of which show one line.
-func TestFirstNoteLineIsBounded(t *testing.T) {
+func TestNotePreviewIsBounded(t *testing.T) {
 	// Assigned as a field, not through SetNotes: store.parseSections assigns
 	// Notes verbatim with no cap, so the real input is unbounded — megabytes,
 	// not the 16 KiB the write path would allow. And the budget is a literal,
@@ -395,13 +395,13 @@ func TestFirstNoteLineIsBounded(t *testing.T) {
 	// raising it would raise the bar too, and the test would keep passing
 	// while the bound stopped bounding.
 	c := &Card{Notes: strings.Repeat("x", 1<<20)}
-	if got := len(c.FirstNoteLine()); got > 512 {
-		t.Errorf("FirstNoteLine returned %d bytes for a 1 MiB note, budget is 512", got)
+	if got := len(c.NotePreview()); got > 512 {
+		t.Errorf("NotePreview returned %d bytes for a 1 MiB note, budget is 512", got)
 	}
 	// An ordinary preview is untouched.
 	c2 := &Card{}
 	c2.SetNotes("first line\nsecond line")
-	if got := c2.FirstNoteLine(); got != "first line" {
-		t.Errorf("FirstNoteLine = %q, want %q", got, "first line")
+	if got := c2.NotePreview(); got != "first line" {
+		t.Errorf("NotePreview = %q, want %q", got, "first line")
 	}
 }
