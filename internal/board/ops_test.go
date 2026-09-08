@@ -411,7 +411,7 @@ func TestSetNotesTrimsLeadingBlankLines(t *testing.T) {
 func TestSetNotesClipCannotLeaveABlankLastLine(t *testing.T) {
 	// Fill to just under the ceiling, then a blank line, then enough text that
 	// the clip must land inside it.
-	in := strings.Repeat("a", 16380) + "\n \n" + strings.Repeat("b", 4096)
+	in := strings.Repeat("a", 16380) + "\n\u00a0\n" + strings.Repeat("b", 4096)
 
 	c := &Card{}
 	c.SetNotes(in)
