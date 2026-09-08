@@ -63,7 +63,7 @@ func (m Model) cardRows(c *board.Card, l board.Lane, outerW int, selected bool) 
 			meta = append(meta, p.accent2.Render("⊘ "+sanitize(bl)))
 		}
 	}
-	r1 := p.muted.Render(fit(sanitize(c.FirstNoteLine()), tw))
+	r1 := p.muted.Render(fit(sanitize(c.NotePreview()), tw))
 	r2 = fitWith(strings.Join(meta, gap), tw, p.fill)
 
 	border := lipgloss.RoundedBorder()

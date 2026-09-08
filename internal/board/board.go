@@ -66,7 +66,14 @@ type Card struct {
 	DoneAt        time.Time
 }
 
-// FirstNoteLine returns the first line of the notes, or "".
+// NotePreview returns the first line of the notes, clipped, or "".
+//
+// The name is the contract: callers get a preview, not the field. This is the
+// only read accessor in the package that bounds what it returns, so a consumer
+// that wanted the stored value — a JSON projection, an export — would be
+// getting a quietly shortened one. Nothing needs that today; both callers are
+// presentation, and if one ever does need the full value it should read
+// c.Notes rather than this.
 //
 // It is a preview — the TUI puts it in one card row and the web in one
 // clipped div — so it is bounded to the single-line budget every other
@@ -75,7 +82,7 @@ type Card struct {
 // store.parseSections assigns Notes verbatim with no cap, so a hand-edited
 // board.md can hold any size. That went into a row that renders a few dozen
 // cells, on every frame and in every board page.
-func (c *Card) FirstNoteLine() string {
+func (c *Card) NotePreview() string {
 	if i := strings.IndexByte(c.Notes, '\n'); i >= 0 {
 		return clip(c.Notes[:i], maxFieldBytes)
 	}

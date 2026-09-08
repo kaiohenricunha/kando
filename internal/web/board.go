@@ -70,7 +70,7 @@ func (s *server) cardView(c *board.Card, lane board.Lane) cardView {
 	// nothing about a bidi override, which would reorder what the page shows.
 	return cardView{
 		ID: c.ID, Title: board.SafeForDisplay(c.Title),
-		Notes: board.SafeForDisplay(c.FirstNoteLine()), Tag: board.SafeForDisplay(c.Tag),
+		Notes: board.SafeForDisplay(c.NotePreview()), Tag: board.SafeForDisplay(c.Tag),
 		Age:      board.Age(s.now(), c.AgeSince()),
 		Progress: c.ProgressLabel(),
 		Blocked:  board.SafeForDisplay(c.BlockedLabel()),
