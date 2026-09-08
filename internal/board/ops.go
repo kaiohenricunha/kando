@@ -211,27 +211,50 @@ func (c *Card) SetNotes(value string) {
 	value = strings.ReplaceAll(value, "\u2028", "\n")
 	value = strings.ReplaceAll(value, "\u2029", "\n")
 	value = SafeForDisplay(value)
-	value = trimLeadingBlankLines(value)
-	c.Notes = strings.TrimRight(clip(value, maxNotesBytes), "\n \t")
+	// The clip runs before the trim, not after: cutting at a byte ceiling can
+	// leave a blank last line that was interior text a moment ago, and a value
+	// stored that way would carry the same asymmetry the trim exists to close.
+	value = trimBlankLines(clip(value, maxNotesBytes))
+	// Composed after the line trim, and narrower on purpose: this also strips
+	// trailing spaces from a line that *has* content ("foo   " -> "foo"), which
+	// a line-based trim leaves alone. store.trimBlank does not do this, so it is
+	// the one trailing behaviour that is ours rather than a mirror of the store.
+	c.Notes = strings.TrimRight(value, "\n \t")
 }
 
-// trimLeadingBlankLines drops whole blank lines from the front of s, matching
-// what store.trimBlank already does on both the read and the write path.
+// trimBlankLines drops whole blank lines from both ends of s, matching what
+// store.trimBlank already does on both the read and the write path.
 //
 // Whole lines, not characters: a TrimLeft over "\n \t" would also eat the
 // indentation of a first line that has content, which trimBlank never does.
-// The trailing end is handled by SetNotes' own TrimRight and is deliberately
-// left alone.
 //
-// Without this, SetNotes kept a leading blank line that the store then dropped
-// on save, so the TUI detail pane showed a row that disappeared on reload.
-func trimLeadingBlankLines(s string) string {
+// Blank means unicode.IsSpace, because that is what trimBlank's strings.TrimSpace
+// means. An ASCII cutset would not agree with it: a line holding only U+00A0 or
+// U+3000 is blank to the store and non-blank to a cutset of "\n \t", and a note
+// pasted out of a web page ends in one readily.
+//
+// Without this, SetNotes kept a blank edge line that the store then dropped on
+// save, so the TUI detail pane showed a row that disappeared on reload.
+func trimBlankLines(s string) string {
 	for {
 		i := strings.IndexByte(s, '\n')
 		if i < 0 || strings.TrimSpace(s[:i]) != "" {
-			return s
+			break
 		}
 		s = s[i+1:]
+	}
+	for {
+		i := strings.LastIndexByte(s, '\n')
+		if i < 0 {
+			if strings.TrimSpace(s) == "" {
+				return ""
+			}
+			return s
+		}
+		if strings.TrimSpace(s[i+1:]) != "" {
+			return s
+		}
+		s = s[:i]
 	}
 }
 

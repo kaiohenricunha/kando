@@ -76,11 +76,14 @@ func TestWrapNotes(t *testing.T) {
 			want:  []string{"a b"},
 		},
 		{
-			// wrapNotes' own contract. Production can no longer produce this:
-			// SetNotes drops leading blank lines and store.trimBlank drops
-			// them on both read and write, so a card cannot arrive here with
-			// one. Pinned because the function is a pure helper and the
-			// blank-row branch is still reachable by a direct caller.
+			// wrapNotes' own contract. A card can no longer arrive with a
+			// blank line at either *edge* — SetNotes trims both and
+			// store.trimBlank trims both on read and write — but the
+			// blank-row branch stays live in production for interior blank
+			// lines, which are exactly what separates two paragraphs and are
+			// the reason the branch exists at all. Only this edge case is
+			// unreachable, and it is pinned because the function is a pure
+			// helper a direct caller can still hand it.
 			name:  "a leading newline is its own row",
 			notes: "\nfoo",
 			w:     40,

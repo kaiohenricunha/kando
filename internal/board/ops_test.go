@@ -358,6 +358,34 @@ func TestSetNotesTrimsLeadingBlankLines(t *testing.T) {
 		},
 		{"interior blank lines are untouched", "a\n\nb", "a\n\nb"},
 		{"all blank collapses to empty", "\n\n  \n", ""},
+		{
+			// Both ends must use the same definition of "blank" that
+			// store.trimBlank uses, which is unicode.IsSpace. A non-ASCII
+			// space is the case that tells a line-based trim apart from a
+			// TrimRight cutset of "\n \t", and it arrives readily: a note
+			// pasted from a web page through kando notes --file often ends
+			// in one.
+			name: "a leading non-breaking-space line",
+			in:   "\u00a0\nfoo",
+			want: "foo",
+		},
+		{
+			name: "a trailing non-breaking-space line",
+			in:   "foo\n\u00a0",
+			want: "foo",
+		},
+		{
+			name: "a trailing ideographic-space line",
+			in:   "foo\n\u3000",
+			want: "foo",
+		},
+		{
+			// Trailing spaces on a line that has content are still stripped;
+			// that is TrimRight's job and it is unchanged.
+			name: "trailing spaces on a content line still go",
+			in:   "foo   ",
+			want: "foo",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := &Card{}
@@ -366,5 +394,33 @@ func TestSetNotesTrimsLeadingBlankLines(t *testing.T) {
 				t.Errorf("SetNotes(%q)\n got %q\nwant %q", tc.in, c.Notes, tc.want)
 			}
 		})
+	}
+}
+
+// TestSetNotesClipCannotLeaveABlankLastLine pins the ordering of the clip and
+// the blank-line trim.
+//
+// The clip is what makes the order load-bearing: it cuts at a byte ceiling with
+// no idea where the lines are, so a line that was interior text can become the
+// last line. If the trim ran first, the value stored here would end in a blank
+// line — the exact asymmetry with store.trimBlank that the trim exists to close,
+// reintroduced at the 16 KiB boundary where no other test looks.
+//
+// The budget is a literal, not maxNotesBytes: asserting against the constant the
+// code clips by would pass at any value of it.
+func TestSetNotesClipCannotLeaveABlankLastLine(t *testing.T) {
+	// Fill to just under the ceiling, then a blank line, then enough text that
+	// the clip must land inside it.
+	in := strings.Repeat("a", 16380) + "\n \n" + strings.Repeat("b", 4096)
+
+	c := &Card{}
+	c.SetNotes(in)
+
+	if len(c.Notes) > 16384 {
+		t.Fatalf("notes not clipped: %d bytes", len(c.Notes))
+	}
+	lines := strings.Split(c.Notes, "\n")
+	if last := lines[len(lines)-1]; strings.TrimSpace(last) == "" {
+		t.Errorf("the clip left a blank last line: %q (%d lines)", last, len(lines))
 	}
 }
