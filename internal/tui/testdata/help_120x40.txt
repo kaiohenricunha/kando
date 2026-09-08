@@ -11,18 +11,18 @@
  │                    │  │                                            │  │                    │  │                    │ 
  │                    │  │ ╭────────────────────────────────────────╮ │  │                    │  │                    │ 
  │                    │  │ │  Tax docs to accountant            2d  │ │  │                    │  │                    │ 
- │                    │  │ │  P60, dividend statements, the sprea…  │ │  │                    │  │                    │ 
- │                    │  │ │  #╭────────────────────────────────────────────────────────╮     │  │                    │ 
- │                    │  │ ╰───│ KEYS                                                   │     │  │                    │ 
- │                    │  │     │                                                        │     │  │                    │ 
- │                    │  │ ╭───│ j/k ↓↑   select card         a        quick add        │     │  │                    │ 
- │                    │  │ │  B│ h/l ←→   change lane         enter    open card        │     │  │                    │ 
- │                    │  │ │  T│ tab      next lane           H/L      move card ±lane  │     │  │                    │ 
- │                    │  │ │  #│ H/L      move card           d        move to Done     │     │  │                    │ 
- │                    │  │ ╰───│ u        undo (Done → Doing) D        archive view     │     │  │                    │ 
- │                    │  │     │ x        delete card         A        archive (Done)   │     │  │                    │ 
+ │                    │  │ │  P╭────────────────────────────────────────────────────────╮     │  │                    │ 
+ │                    │  │ │  #│ KEYS                                                   │     │  │                    │ 
+ │                    │  │ ╰───│                                                        │     │  │                    │ 
+ │                    │  │     │ j/k ↓↑   select card         a        quick add        │     │  │                    │ 
+ │                    │  │ ╭───│ h/l ←→   change lane         enter    open card        │     │  │                    │ 
+ │                    │  │ │  B│ tab      next lane           H/L      move card ±lane  │     │  │                    │ 
+ │                    │  │ │  T│ H/L      move card           d        move to Done     │     │  │                    │ 
+ │                    │  │ │  #│ u        undo (Done → Doing) D        archive view     │     │  │                    │ 
+ │                    │  │ ╰───│ x        delete card         A        archive (Done)   │     │  │                    │ 
  │                    │  │     │ /        filter              B        boards           │     │  │                    │ 
  │                    │  │     │ q        quit                ?        close help       │     │  │                    │ 
+ │                    │  │     │ J/K      reorder in lane                               │     │  │                    │ 
  │                    │  │     ╰────────────────────────────────────────────────────────╯     │  │                    │ 
  │                    │  │                                            │  │                    │  │                    │ 
  │                    │  │                                            │  │                    │  │                    │ 

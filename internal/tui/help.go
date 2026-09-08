@@ -8,6 +8,12 @@ var helpLeft = []keyGroup{
 	{"j/k ↓↑", "select card"}, {"h/l ←→", "change lane"}, {"tab", "next lane"},
 	{"H/L", "move card"}, {"u", "undo (Done → Doing)"}, {"x", "delete card"},
 	{"/", "filter"}, {"q", "quit"},
+	// Appended, not slotted next to H/L: helpRows pairs the two columns by
+	// index, so inserting in the middle would re-pair every row below it and
+	// break the paired-row assertions in board_update_test.go. It also goes on
+	// the left because a right-column entry with no left partner renders as an
+	// orphan behind 29 blank cells.
+	{"J/K", "reorder in lane"},
 }
 
 var helpRight = []keyGroup{
