@@ -8,6 +8,13 @@ var helpLeft = []keyGroup{
 	{"j/k ↓↑", "select card"}, {"h/l ←→", "change lane"}, {"tab", "next lane"},
 	{"H/L", "move card"}, {"u", "undo (Done → Doing)"}, {"x", "delete card"},
 	{"/", "filter"}, {"q", "quit"},
+	// Appended, not slotted next to H/L: helpRows pairs the two columns by
+	// index, so inserting in the middle would re-pair every row below it and
+	// break TestHelpOverlay, which asserts whole rows by their exact spacing
+	// ("u        undo (Done → Doing) D        archive view"). It also goes on
+	// the left because a right-column entry with no left partner renders as an
+	// orphan behind 29 blank cells.
+	{"J/K", "reorder in lane"},
 }
 
 var helpRight = []keyGroup{

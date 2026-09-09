@@ -2,6 +2,7 @@ package tui
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -370,5 +371,322 @@ func TestHelpOverlayListsDeleteAndBoards(t *testing.T) {
 	m = press(m, "esc")
 	if !strings.HasPrefix(plainLines(m)[39], " j/k move  h/l tab lane  a add  enter open  H/L move card  d done  / filter  ? help  q quit") {
 		t.Errorf("footer must not change: %q", plainLines(m)[39])
+	}
+}
+
+// reorderBoard builds a Todo lane of cards with the given titles and tags, so a
+// filter can hide a card *between* two visible ones — the case that separates a
+// position derived from the visible list from one derived from the lane.
+func reorderBoard(t *testing.T, spec ...[2]string) Model {
+	t.Helper()
+	m := newTestModel(t, 120, 40)
+	cards := make([]*board.Card, len(spec))
+	for i, s := range spec {
+		cards[i] = &board.Card{
+			ID: s[0], Title: s[0], Tag: s[1],
+			CreatedAt: fixedNow.AddDate(0, 0, -1), MovedAt: fixedNow.AddDate(0, 0, -1),
+		}
+	}
+	m.b.Lanes[board.Todo] = cards
+	m.sel, m.first = 0, 0
+	return m
+}
+
+func TestReorderKeysMoveTheCardWithinItsLane(t *testing.T) {
+	m := newTestModel(t, 120, 40) // Todo: Renew passport, Tax docs, Book dentist
+	// Keyed by card, not by index: the whole point is that the order changes.
+	before := map[*board.Card]time.Time{}
+	for _, c := range m.b.Lanes[board.Todo] {
+		before[c] = c.MovedAt
+	}
+
+	m = press(m, "J")
+	if got := titles(m.b.Lanes[board.Todo]); got[0] != "Tax docs to accountant" || got[1] != "Renew passport" {
+		t.Fatalf("J moves the card one slot down: %v", got)
+	}
+	if c := m.selectedCard(); c == nil || c.Title != "Renew passport" {
+		t.Errorf("the selection must follow the card, got %v", c)
+	}
+	if m.sel != 1 {
+		t.Errorf("sel should track the card's new position, got %d", m.sel)
+	}
+
+	m = press(m, "J")
+	if got := titles(m.b.Lanes[board.Todo]); got[2] != "Renew passport" {
+		t.Errorf("a second J reaches the bottom: %v", got)
+	}
+
+	m = press(m, "K", "K")
+	if got := titles(m.b.Lanes[board.Todo]); got[0] != "Renew passport" {
+		t.Errorf("K walks it back to the top: %v", got)
+	}
+	if c := m.selectedCard(); c.Title != "Renew passport" || m.sel != 0 {
+		t.Errorf("selection still follows: sel=%d %v", m.sel, c)
+	}
+
+	// A reorder is not a lane change: MoveAt stamps only when the lane changes
+	// (board.go:233-235). This catches a rewrite that stamps unconditionally,
+	// or one that removes and reinserts through stamp. It does NOT catch a
+	// switch to Board.Move — that short-circuits a same-lane move without
+	// touching the dates (board.go:189-199), so the ordering assertion above
+	// is what fails there, before this loop is reached.
+	for _, c := range m.b.Lanes[board.Todo] {
+		if !c.MovedAt.Equal(before[c]) || !c.DoneAt.IsZero() {
+			t.Errorf("reorder restamped %q: MovedAt=%v want %v, DoneAt=%v", c.Title, c.MovedAt, before[c], c.DoneAt)
+		}
+	}
+}
+
+func TestReorderClampsAtTheLaneEnds(t *testing.T) {
+	m := newTestModel(t, 120, 40)
+	want := titles(m.b.Lanes[board.Todo])
+
+	m = press(m, "K") // already first
+	if got := titles(m.b.Lanes[board.Todo]); !slices.Equal(got, want) {
+		t.Errorf("K on the first card must not wrap to the bottom: %v", got)
+	}
+	if m.sel != 0 {
+		t.Errorf("sel = %d, want 0", m.sel)
+	}
+
+	m = press(m, "j", "j") // last card
+	m = press(m, "J")
+	if got := titles(m.b.Lanes[board.Todo]); !slices.Equal(got, want) {
+		t.Errorf("J on the last card must not wrap to the top: %v", got)
+	}
+	if m.sel != 2 {
+		t.Errorf("sel = %d, want 2", m.sel)
+	}
+}
+
+func TestReorderThatChangesNothingWritesNothing(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Lanes = sampleBoard(t).Lanes
+	m := New(Options{Store: st, Board: b, Styles: testStyles, Now: func() time.Time { return fixedNow }, Width: 120, Height: 40})
+
+	// A real reorder must reach the disk.
+	m = press(m, "J")
+	data, err := os.ReadFile(st.BoardPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i, j := strings.Index(string(data), "Tax docs"), strings.Index(string(data), "Renew passport"); i < 0 || j < 0 || i > j {
+		t.Fatalf("J should be saved with Tax docs above Renew passport:\n%s", data)
+	}
+
+	// A no-op must not. Rewriting identical bytes still wakes every connected
+	// kando web client: watchDir signals on any fsnotify event naming board.md
+	// with no content comparison at all (internal/store/watch.go:55-60), and
+	// the SSE endpoint turns each signal into a reload. So comparing file
+	// *contents* cannot see a stray save — the bytes are identical either way.
+	// Removing the file first makes one unmistakable.
+	if err := os.Remove(st.BoardPath()); err != nil {
+		t.Fatal(err)
+	}
+	// Select the last card explicitly. Pressing "j" would be ambiguous here:
+	// lowercase j WRAPS (TestJKWrap), so a miscount lands back on the top card
+	// and turns the press below into a real move.
+	m.sel = len(m.visible(board.Todo)) - 1
+	m = press(m, "J") // the bottom card, pressed further down: nothing to do
+	if _, err := os.Stat(st.BoardPath()); !os.IsNotExist(err) {
+		t.Errorf("a no-op reorder must not write board.md (stat err = %v)", err)
+	}
+}
+
+func TestReorderStepsPastTheVisibleNeighbourUnderAFilter(t *testing.T) {
+	// Lane order is a, hidden, b; the filter shows only a and b. Deriving the
+	// target from the visible list (a is at visible 0, so "one below" looks
+	// like lane index 1) drops the card between "hidden" and b, which leaves
+	// the on-screen order unchanged — the move appears to do nothing.
+	m := reorderBoard(t, [2]string{"a", "keep"}, [2]string{"hidden", "other"}, [2]string{"b", "keep"})
+	m = press(m, "/")
+	m = typeText(m, "#keep")
+	m = press(m, "enter")
+
+	if got := titles(m.visible(board.Todo)); len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Fatalf("filter should show exactly a and b, got %v", got)
+	}
+
+	m = press(m, "J")
+	if got := titles(m.b.Lanes[board.Todo]); got[2] != "a" {
+		t.Errorf("J must move a past the visible neighbour b, landing last: %v", got)
+	}
+	if got := titles(m.visible(board.Todo)); got[0] != "b" || got[1] != "a" {
+		t.Errorf("on screen a must now follow b: %v", got)
+	}
+	if c := m.selectedCard(); c == nil || c.Title != "a" {
+		t.Errorf("selection follows the card under a filter too: %v", c)
+	}
+
+	m = press(m, "K")
+	if got := titles(m.visible(board.Todo)); got[0] != "a" || got[1] != "b" {
+		t.Errorf("K must move a back above b: %v", got)
+	}
+	// J then K restores the VISIBLE order but not the lane: `a` has crossed
+	// `hidden` for good. That is not a bug — a drag does the same thing, since
+	// both name the position against a card the user can see — but it is
+	// surprising enough to pin exactly rather than assert loosely.
+	if got := titles(m.b.Lanes[board.Todo]); !slices.Equal(got, []string{"hidden", "a", "b"}) {
+		t.Errorf("lane after J then K: got %v, want [hidden a b]", got)
+	}
+}
+
+func TestReorderInDoneKeepsDoneAt(t *testing.T) {
+	m := newTestModel(t, 120, 40)
+	m = press(m, "l", "l") // Done
+	if len(m.b.Lanes[board.Done]) < 2 {
+		t.Fatalf("fixture needs at least two Done cards")
+	}
+	want := map[*board.Card]time.Time{}
+	for _, c := range m.b.Lanes[board.Done] {
+		want[c] = c.DoneAt
+	}
+	first := m.b.Lanes[board.Done][0]
+
+	m = press(m, "J")
+	if m.b.Lanes[board.Done][1] != first {
+		t.Errorf("J should reorder inside Done")
+	}
+	for _, c := range m.b.Lanes[board.Done] {
+		if !c.DoneAt.Equal(want[c]) {
+			t.Errorf("reordering inside Done must not restamp %q's DoneAt: %v != %v", c.Title, c.DoneAt, want[c])
+		}
+	}
+	if first.DoneAt.Equal(fixedNow) {
+		t.Errorf("DoneAt was stamped to now: the archive buckets cards by it")
+	}
+}
+
+func TestReorderOnEmptyAndSingleCardLanes(t *testing.T) {
+	m := newTestModel(t, 120, 40)
+	m.b.Lanes[board.Todo] = nil
+	before := m.b.Count()
+	m = press(m, "J", "K")
+	if m.b.Count() != before || m.scr != screenBoard {
+		t.Errorf("J/K on an empty lane must do nothing")
+	}
+
+	m = reorderBoard(t, [2]string{"only", "x"})
+	m = press(m, "J", "K")
+	if got := titles(m.b.Lanes[board.Todo]); len(got) != 1 || got[0] != "only" {
+		t.Errorf("J/K on a single-card lane must do nothing: %v", got)
+	}
+	if m.sel != 0 {
+		t.Errorf("sel = %d, want 0", m.sel)
+	}
+}
+
+func TestReorderAtTheEndOfAFilteredLaneIsANoop(t *testing.T) {
+	// "hidden" sits below the last visible card. J on that card must not sink
+	// it into the hidden tail: with a filter on, "after the last one I can
+	// see" names no real position — the same rule the web states in
+	// internal/web/cards.go:217-221.
+	m := reorderBoard(t, [2]string{"a", "keep"}, [2]string{"b", "keep"}, [2]string{"hidden", "other"})
+	m = press(m, "/")
+	m = typeText(m, "#keep")
+	m = press(m, "enter")
+
+	m.sel = len(m.visible(board.Todo)) - 1 // "b", the last visible card
+	m = press(m, "J")
+	if got := titles(m.b.Lanes[board.Todo]); got[0] != "a" || got[1] != "b" || got[2] != "hidden" {
+		t.Errorf("J at the end of a filtered lane must change nothing: %v", got)
+	}
+}
+
+func TestReorderInDoneSurvivesTheDiskRoundTrip(t *testing.T) {
+	// Lane order is carried by slice order through store.Marshal, and the
+	// archive — not the board — is what sorts by DoneAt. If that sort ever
+	// reached the Done lane, a reorder there would look right on screen and
+	// silently revert on the next open, which no in-memory test can see.
+	root := t.TempDir()
+	st, b, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Lanes = sampleBoard(t).Lanes
+	m := New(Options{Store: st, Board: b, Styles: testStyles, Now: func() time.Time { return fixedNow }, Width: 120, Height: 40})
+
+	m = press(m, "l", "l") // Done
+	first := m.b.Lanes[board.Done][0].Title
+	second := m.b.Lanes[board.Done][1].Title
+	m = press(m, "J")
+
+	_, reloaded, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := titles(reloaded.Lanes[board.Done])
+	if got[0] != second || got[1] != first {
+		t.Errorf("the Done reorder must survive a reload: got %v, want %q then %q", got, second, first)
+	}
+}
+
+func TestReorderMakesProgressWithDuplicateIDs(t *testing.T) {
+	// board.md is hand-editable and nothing dedupes ids: parseSections takes a
+	// written "id:" verbatim (internal/store/markdown.go:107) and only derives
+	// one when the field is empty, so copy-pasting a card block yields two
+	// cards sharing an id. laneIndex matches by pointer (model.go:332) while
+	// selectByID matches by id (model.go:344) — with a duplicate those two
+	// disagree, and the selection can snap to the card that did NOT move.
+	m := newTestModel(t, 120, 40)
+	dup := &board.Card{ID: "dup", Title: "first", CreatedAt: fixedNow, MovedAt: fixedNow}
+	twin := &board.Card{ID: "dup", Title: "second", CreatedAt: fixedNow, MovedAt: fixedNow}
+	tail := &board.Card{ID: "tail", Title: "third", CreatedAt: fixedNow, MovedAt: fixedNow}
+	m.b.Lanes[board.Todo] = []*board.Card{dup, twin, tail}
+	m.sel, m.first = 0, 0
+
+	m = press(m, "J")
+	if c := m.selectedCard(); c != dup {
+		t.Errorf("the selection must follow the card that moved, not its id-twin: got %q", c.Title)
+	}
+	if got := titles(m.b.Lanes[board.Todo]); got[0] != "second" || got[1] != "first" {
+		t.Fatalf("after one J: %v", got)
+	}
+
+	// Progress, not just position: a bounded run of presses must reach the
+	// bottom and stop. If the selection snaps back to the twin each time, the
+	// lane oscillates and every press writes board.md forever.
+	for range 6 {
+		m = press(m, "J")
+	}
+	if got := titles(m.b.Lanes[board.Todo]); got[2] != "first" {
+		t.Errorf("repeated J must carry the card to the bottom and clamp: %v", got)
+	}
+	if c := m.selectedCard(); c != dup {
+		t.Errorf("selection drifted off the moved card: %v", c)
+	}
+}
+
+func TestReorderScrollsToKeepTheMovedCardVisible(t *testing.T) {
+	// Every other reorder test runs at 120x40, where the whole lane fits and
+	// ensureVisible is a no-op — so deleting that call would leave them all
+	// green while the cursor walked off the rendered window. 80x24 gives R=14
+	// and room for two cards (TestOverflowIndicators pins the same geometry).
+	m := newTestModel(t, 80, 24)
+	if m.first != 0 {
+		t.Fatalf("first = %d, want 0 at the top", m.first)
+	}
+
+	m = press(m, "J", "J") // carry the top card to the bottom of a 3-card lane
+	if m.sel != 2 {
+		t.Fatalf("sel = %d, want 2", m.sel)
+	}
+	if m.first != 1 {
+		t.Errorf("the window must scroll to keep the moved card visible: first = %d, want 1", m.first)
+	}
+	if !strings.Contains(plainView(m), "Renew passport") {
+		t.Errorf("the moved card must still be rendered:\n%s", plainView(m))
+	}
+
+	m = press(m, "K", "K") // and back up again
+	if m.sel != 0 {
+		t.Fatalf("sel = %d, want 0", m.sel)
+	}
+	if m.first != 0 {
+		t.Errorf("the window must follow it back up: first = %d, want 0", m.first)
 	}
 }

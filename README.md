@@ -23,7 +23,7 @@ footnotes), not because it is missing; `—` means it is not built yet⁵.
 | Quick-add a card | V | V | V |
 | Show a card's full detail | V | V | V |
 | Move a card between lanes | V | V | V |
-| Reorder a card within a lane (drag position) | V | X¹ | X¹ |
+| Reorder a card within a lane | V | V | X¹ |
 | Delete a card | V | V | V |
 | Edit title | V | V | X² |
 | Edit tag | V | V | V |
@@ -37,9 +37,13 @@ footnotes), not because it is missing; `—` means it is not built yet⁵.
 | Live auto-refresh on external changes | V | V | X³ |
 | Help | X⁴ | V | V |
 
-¹ Positioning a card within a lane needs a pointer; the TUI and CLI move a
-card to the top of a lane instead (`docs/specs/kando-web/spec/2-scope.md`,
-BOUND-1b). ² Not in this effort's scope — `Card.SetTitle` already exists, so a
+¹ The web drags a card to a position; the TUI steps it there with `J`/`K`,
+one slot per press. Both call the same `board.MoveAt`. `kando move` takes a
+lane and no position, and that is deliberate rather than pending: placing a
+card is an interactive act — you put it *there*, relative to what you can see
+— and a headless verb would have to name the anchor by id, which is the one
+thing neither of the other two surfaces makes you do
+(`docs/specs/kando-web/spec/2-scope.md`, BOUND-1b). ² Not in this effort's scope — `Card.SetTitle` already exists, so a
 `kando title` verb is a one-file follow-up on the same pattern as `kando tag`.
 ³ A CLI verb is a one-shot process — there is nothing running for it to
 refresh. ⁴ The web page labels its own controls instead of a help key.
@@ -99,9 +103,9 @@ in flight, waits until you are done before refreshing, so a reload never eats
 what you are typing or the card you are still aiming.
 
 Cards drag between lanes, and a drop lands where the line shows: above or
-below the card you dropped it against. That position is the one thing the web
-page can do that the terminal cannot — everything else `kando web` does, the
-TUI does too, and the other way round. Dragging needs a mouse, so on a touch
+below the card you dropped it against. The terminal reaches the same
+positions with `J`/`K`, one slot per press — only the gesture differs, and
+both call the same helper. Dragging needs a mouse, so on a touch
 screen use the lane picker on a card's own page, as the terminal does.
 `docs/specs/kando-web/parity.md` is the audit, key by key.
 
@@ -261,7 +265,8 @@ caught before any file was opened, so a `2` always means nothing changed.
 ## Keys
 
 Board: `j/k` select card · `h/l` `tab` `shift+tab` change lane · `H/L` move the
-card to the previous/next lane (the lane follows it) · `a` quick add · `enter`
+card to the previous/next lane (the lane follows it) · `J/K` move the card up or
+down inside its lane · `a` quick add · `enter`
 open card · `d` move to Done · `u` undo (Done → Doing) · `x` delete card · `/` filter
 · `D` archive view · `A` archive the card (Done only) · `B` boards · `?` help
 · `q` quit. Arrow keys work everywhere `j/k/h/l` do.

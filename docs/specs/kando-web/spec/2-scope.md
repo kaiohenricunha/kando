@@ -47,28 +47,40 @@ U12 adds the write path in the other direction — a Done card moving *into*
 the archive, on all three surfaces — which is a new capability, not a
 narrowing of this exception: an already-archived card is still restore-only.
 
-**BOUND-1b — accepted exception: a chosen drop position is web-only.** The
-board page lets a card be dragged to an exact place in a lane — in front of a
-named card, or last — and the TUI has no equivalent: `H`/`L`, `d` and `u`
-still land a card on top of its new lane, and nothing reorders a lane from
-the terminal. The gap is accepted, not overlooked: a pointer makes "put it
-*there*" a one-gesture operation, and the keyboard equivalent is a second
-grammar (a grab key plus movement keys) that the TUI has not needed. Both
-surfaces share one rule for what a placement does — `Board.MoveAt` in
-`internal/board/board.go`, the same helper the route calls — so re-opening
-this is binding two TUI keys (`J`/`K` to reorder inside a lane) to a helper
-that already exists, not a second implementation. §5's `/move` row and the
-parity checklist record the exception so the audit has something to check
-against.
+**BOUND-1b — closed for the TUI; narrowed to the CLI.** This was recorded as
+an accepted exception while a chosen drop position was web-only: the board
+page could drag a card to an exact place in a lane, and `H`/`L`, `d` and `u`
+only ever landed a card on top of its new lane. The exception named its own
+fix — binding `J`/`K` to `Board.MoveAt`, the helper the route already calls,
+rather than writing a second implementation — and that is what closed it.
+`J`/`K` move the selected card one slot at a time inside its lane, which
+reaches the same placements a drag does.
 
-The exception is narrower than "drag-and-drop is web-only": the *capability*
-— put a card in a lane — is on both surfaces, and only the *precision* is
-not. It is narrower still in practice, because HTML5 drag fires from neither
-touch nor the keyboard: a phone or keyboard user of the web page is in
-exactly the TUI's position, re-laning through the `<select>` and unable to
-reorder. That is acceptable only because the card stays an ordinary link and
-that `<select>` stays untouched — which the "no position asked for means the
-move it always meant" rule guarantees.
+Two properties came along with the shared helper rather than being restated.
+A same-lane move does not restamp `MovedAt` or `DoneAt`, so a reorder is not
+a lane change on either surface; and both name a position against a card the
+user can *see* rather than an index, so a filtered lane behaves the same in
+the terminal as on the page. The gesture is what still differs: a drag names
+a position in one motion, `J`/`K` step toward it.
+
+**What remains of the exception is the CLI**, and it stays an exception on
+purpose. `kando move` takes a lane and no position (`cmd/kando/move.go`).
+Placing a card is an interactive act — you put it *there*, relative to what is
+on screen — and both surfaces that can do it resolve the position against a
+card the user is looking at. A headless verb has nothing to look at, so it
+would have to name the anchor by id, which is the one thing neither other
+surface makes you do. `README.md`'s capability table carries that as a
+footnoted `X` — a deliberate omission, not a backlog item, which is the
+distinction that table's `X`/`—` markers draw. §5's `/move` row and the parity
+checklist record the current state.
+
+The remaining CLI gap is narrower than "drag-and-drop is web-only" ever was:
+the *capability* — put a card in a lane — is on all three surfaces, and only
+the *precision* is missing from one. HTML5 drag also fires from neither touch
+nor the keyboard, so a phone user of the web page is in the CLI's position,
+re-laning through the `<select>`. That is acceptable only because the card
+stays an ordinary link and that `<select>` stays untouched — which the "no
+position asked for means the move it always meant" rule guarantees.
 
 | Touches | Does Not Touch |
 | ------- | -------------- |

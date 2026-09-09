@@ -45,6 +45,10 @@ func (m Model) updateBoard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.lane < board.Done {
 			m.moveSelected(m.lane + 1)
 		}
+	case "J":
+		m.reorderSelected(1)
+	case "K":
+		m.reorderSelected(-1)
 	case "d":
 		if m.lane != board.Done {
 			if c := m.selectedCard(); c != nil {
@@ -103,6 +107,60 @@ func (m *Model) moveSelected(to board.Lane) {
 	m.save()
 	m.setLane(to)
 	m.selectByID(c.ID)
+	m.ensureVisible()
+}
+
+// reorderSelected moves the selected card one slot down (delta 1) or up
+// (delta -1) inside its own lane, and keeps it selected. It clamps at the ends
+// like H/L rather than wrapping like j/k: a card falling off the bottom and
+// reappearing on top is not a gesture this board has anywhere else.
+//
+// The target is named against the neighbour the user can SEE, never a raw
+// index. m.sel counts the filtered list while MoveAt needs positions in the
+// lane itself, so with a filter active the visible neighbour is not the
+// adjacent lane element, and stepping by lane index would hop over hidden
+// cards — leaving the on-screen order unchanged. The web route names positions
+// against a visible card for exactly this reason (movePos, internal/web/cards.go).
+//
+// MoveAt's `at` is insert-before against the lane as it stood BEFORE the move
+// (board.go:209-219), so landing below a neighbour is that neighbour's index
+// plus one. The natural-looking `at = i+1` is wrong: it names the position the
+// card already holds and does nothing. A same-lane move deliberately leaves
+// MovedAt and DoneAt alone — a reorder is not a lane change.
+func (m *Model) reorderSelected(delta int) {
+	c := m.selectedCard()
+	if c == nil {
+		return
+	}
+	v := m.visible(m.lane)
+	j := m.sel + delta
+	if j < 0 || j >= len(v) {
+		return // at the end already: nothing to move, and nothing to save
+	}
+	i, at := m.laneIndex(m.lane, c), m.laneIndex(m.lane, v[j])
+	if i < 0 || at < 0 {
+		return
+	}
+	if delta > 0 {
+		at++
+	}
+	m.b.MoveAt(m.lane, i, m.lane, at, m.now())
+	m.save()
+	// Re-select by identity, the way this function located the card, rather
+	// than by id via selectByID. board.md is hand-editable and nothing dedupes
+	// ids — parseSections takes a written "id:" verbatim and only derives one
+	// for an empty field — so two cards in a lane can share an id. laneIndex
+	// matches by pointer and selectByID by id, and where those disagree the
+	// selection lands on the twin that did not move: the card then oscillates
+	// instead of descending, never reaching the clamp, and every press writes
+	// the board. MoveAt's return value cannot stand in here either — it is a
+	// lane index, and m.sel counts the filtered list.
+	for k, x := range m.visible(m.lane) {
+		if x == c {
+			m.sel = k
+			break
+		}
+	}
 	m.ensureVisible()
 }
 
