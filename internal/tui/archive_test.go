@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -270,6 +272,9 @@ func TestArchiveKeyFromDetail(t *testing.T) {
 	if m.scr != screenDetail || len(m.archive.Cards) != before {
 		t.Errorf("A on an archived card's detail must be a no-op")
 	}
+	if m.err == nil || !strings.Contains(m.err.Error(), "is already archived") {
+		t.Errorf("A on an archived card must say why nothing happened: err = %v", m.err)
+	}
 }
 
 func TestArchiveKeyLoadsArchiveLazily(t *testing.T) {
@@ -346,9 +351,19 @@ func TestArchiveKeyRefusesADuplicate(t *testing.T) {
 	m := newTestModel(t, 120, 40)
 	dup := m.archive.Cards[0].ID
 	m.b.Lanes[board.Done][0].ID = dup // a previous half-failed archive
+	title := m.b.Lanes[board.Done][0].Title
 	m = press(m, "l", "l", "A")
 	if len(m.b.Lanes[board.Done]) != 3 || len(m.archive.Cards) != 10 {
 		t.Errorf("a duplicate id must refuse the archive: done=%d archive=%d", len(m.b.Lanes[board.Done]), len(m.archive.Cards))
+	}
+	// The web answers this with a 409 and the CLI with an error; the TUI must
+	// not be the one surface where the key just appears dead.
+	want := fmt.Sprintf("%q is already archived", title)
+	if m.err == nil || !strings.Contains(m.err.Error(), want) {
+		t.Errorf("the refusal must say why: err = %v, want %q", m.err, want)
+	}
+	if footer := plainLines(m)[39]; !strings.Contains(footer, "⊘ "+want) {
+		t.Errorf("the board footer must show the refusal: %q", footer)
 	}
 }
 
@@ -360,4 +375,191 @@ func TestWidthInvariantsArchive(t *testing.T) {
 			checkInvariants(t, name, m, sz[0], sz[1])
 		}
 	}
+}
+
+// twinByTitle gives the board card titled title the id of the archived card
+// with the same title — the state a half-failed restore or archive leaves, where
+// one card sits in both files. The web and CLI guards refuse to move it either
+// way; these tests pin that the TUI does too.
+func twinByTitle(t *testing.T, b *board.Board, a *board.Archive, title string) string {
+	t.Helper()
+	var live, arch *board.Card
+	for _, l := range board.Lanes {
+		for _, c := range b.Lanes[l] {
+			if c.Title == title {
+				live = c
+			}
+		}
+	}
+	for _, c := range a.Cards {
+		if c.Title == title {
+			arch = c
+		}
+	}
+	if live == nil || arch == nil {
+		t.Fatalf("fixture has no board and archive card both titled %q", title)
+	}
+	live.ID = arch.ID
+	return arch.ID
+}
+
+func TestRestoreRefusesACardAlreadyOnTheBoard(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Lanes = sampleBoard(t).Lanes
+	a := sampleArchive(t)
+	const title = "Pay electric bill"
+	dup := twinByTitle(t, b, a, title)
+	if err := st.SaveBoard(b); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.ArchivePath(), []byte(store.MarshalArchive(a)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := New(Options{Store: st, Board: b, Styles: testStyles, Now: func() time.Time { return fixedNow }, Width: 120, Height: 40})
+	m = press(m, "D")
+	for i, c := range m.visibleArchive() {
+		if c.ID == dup {
+			m.arch.cursor = i
+		}
+	}
+	cursor := m.arch.cursor
+	archived, doing := len(m.archive.Cards), len(m.b.Lanes[board.Doing])
+	boardBefore, archiveBefore := mustReadFile(t, st.BoardPath()), mustReadFile(t, st.ArchivePath())
+	past := pinMtimes(t, st.BoardPath(), st.ArchivePath())
+
+	m = press(m, "u")
+
+	if len(m.archive.Cards) != archived || len(m.b.Lanes[board.Doing]) != doing {
+		t.Errorf("the restore must be refused: archive %d -> %d, Doing %d -> %d",
+			archived, len(m.archive.Cards), doing, len(m.b.Lanes[board.Doing]))
+	}
+	if string(mustReadFile(t, st.BoardPath())) != string(boardBefore) || string(mustReadFile(t, st.ArchivePath())) != string(archiveBefore) {
+		t.Error("a refused restore must write nothing")
+	}
+	if !unwritten(past, st.BoardPath(), st.ArchivePath()) {
+		t.Error("a refused restore must not touch either file — a rewrite of identical bytes still moves the mtime")
+	}
+	if m.arch.cursor != cursor {
+		t.Errorf("a refused restore must leave the cursor: %d -> %d", cursor, m.arch.cursor)
+	}
+	want := fmt.Sprintf("%q is already on the board", title)
+	if m.err == nil || !strings.Contains(m.err.Error(), want) {
+		t.Errorf("the refusal must say why, in the CLI's words: err = %v, want %q", m.err, want)
+	}
+	if footer := plainLines(m)[39]; !strings.HasPrefix(footer, " j/k move  u undo") || !strings.Contains(footer, "⊘ "+want) {
+		t.Errorf("the archive footer must keep its hints and show the refusal: %q", footer)
+	}
+	// The reason the guard exists after #23: had the restore gone through, the
+	// next open would keep the shared id on the Doing copy (Board.Find reaches
+	// Doing before Done) and give the live Done card a new one.
+	reopened, err := store.Load(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l, _, c := reopened.Find(dup); c == nil || l != board.Done || c.Title != title {
+		t.Errorf("the live Done card must keep its id on reopen: Find(%s) = %v in %v", dup, c, l)
+	}
+}
+
+func TestArchiveKeyFromDetailRefusalStaysOnTheCard(t *testing.T) {
+	// (a) A on a Done card that is already archived.
+	m := newTestModel(t, 120, 40)
+	title := m.b.Lanes[board.Done][0].Title
+	m.b.Lanes[board.Done][0].ID = m.archive.Cards[0].ID
+	m = press(m, "l", "l", "enter", "A")
+	if m.scr != screenDetail {
+		t.Errorf("a refused archive must stay on the card, not look like it worked: screen = %v", m.scr)
+	}
+	if len(m.b.Lanes[board.Done]) != 3 || len(m.archive.Cards) != 10 {
+		t.Errorf("nothing may move: done=%d archive=%d", len(m.b.Lanes[board.Done]), len(m.archive.Cards))
+	}
+	want := fmt.Sprintf("%q is already archived", title)
+	if m.err == nil || !strings.Contains(m.err.Error(), want) {
+		t.Errorf("err = %v, want %q", m.err, want)
+	}
+	if footer := plainLines(m)[39]; !strings.HasPrefix(footer, " j/k item") || !strings.Contains(footer, "⊘") {
+		t.Errorf("the detail footer must keep its hints and show the refusal: %q", footer)
+	}
+
+	// (b) A on a card that is not in Done at all.
+	m = newTestModel(t, 120, 40)
+	m = press(m, "enter", "A")
+	if m.scr != screenDetail {
+		t.Errorf("A outside Done must stay on the card: screen = %v", m.scr)
+	}
+	if m.err == nil || !strings.Contains(m.err.Error(), `"Renew passport" is in Todo, not Done`) {
+		t.Errorf("A outside Done must say where the card is: err = %v", m.err)
+	}
+}
+
+func TestArchiveAndDetailFootersShowError(t *testing.T) {
+	cases := []struct {
+		name   string
+		keys   []string
+		prefix string
+	}{
+		{"board", nil, " j/k move"},
+		{"archive", []string{"D"}, " j/k move  u undo"},
+		{"detail", []string{"enter"}, " j/k item"},
+		{"archived detail", []string{"D", "enter"}, " j/k item"},
+	}
+	for _, c := range cases {
+		// A save failure on the archive screen was invisible before: only the
+		// board footer ever read m.err.
+		m := press(newTestModel(t, 120, 40), c.keys...)
+		m.err = os.ErrPermission
+		if footer := plainLines(m)[39]; !strings.HasPrefix(footer, c.prefix) || !strings.Contains(footer, "⊘ permission denied") {
+			t.Errorf("%s at 120x40: footer = %q", c.name, footer)
+		}
+		// A refusal names its card, so it is longer than a save error. The board
+		// footer used to drop any message that did not fit beside its hints.
+		m.err = errors.New(`"Tax docs to accountant before the end of the month" is already archived`)
+		if footer := plainLines(m)[39]; !strings.Contains(footer, `⊘ "Tax docs to accountant before`) {
+			t.Errorf("%s at 120x40 with a refusal: footer = %q", c.name, footer)
+		}
+
+		m = press(newTestModel(t, 60, 16), c.keys...)
+		m.err = errors.New(strings.Repeat("x", 200))
+		checkInvariants(t, c.name+" error at 60x16", m, 60, 16)
+		if footer := plainLines(m)[15]; !strings.Contains(footer, "⊘ xxx") {
+			t.Errorf("%s at 60x16: a refused key must be able to say so at every size: %q", c.name, footer)
+		}
+	}
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// pinMtimes sets each file's mtime in the past, so that any later write is
+// detectable — including a canonical rewrite, which reproduces the same bytes
+// and so is invisible to a byte comparison.
+func pinMtimes(t *testing.T, paths ...string) time.Time {
+	t.Helper()
+	past := time.Unix(1_000_000_000, 0)
+	for _, p := range paths {
+		if err := os.Chtimes(p, past, past); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return past
+}
+
+// unwritten reports whether every file still carries the mtime pinMtimes set.
+func unwritten(past time.Time, paths ...string) bool {
+	for _, p := range paths {
+		if fi, err := os.Stat(p); err != nil || !fi.ModTime().Equal(past) {
+			return false
+		}
+	}
+	return true
 }

@@ -249,9 +249,10 @@ untouched by this filter."
 
 `kando archive restore <card> [board]` brings an archived card back to the
 top of Doing — the TUI's `u` and the web's restore button, going through the
-exact same `board.Restore` call. Refused if a card with that id is already
-on the board (a previous restore or archive half failed; one copy has to be
-deleted by hand first) or if the board has nothing archived at all.
+exact same `board.Restore` call. Refused if a card with that id is already on
+the board, as the TUI's `u` and the web's button are too (a previous restore or
+archive half failed; one copy has to be deleted by hand first), or if the board
+has nothing archived at all.
 
 ## Exit codes
 

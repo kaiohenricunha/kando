@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -398,5 +399,66 @@ func TestArchiveRestoreWritesBothFiles(t *testing.T) {
 	}
 	if len(a.Cards) != before-1 {
 		t.Errorf("archive.md has %d cards, want %d", len(a.Cards), before-1)
+	}
+}
+
+func TestDetailMoveRefusesAnArchivedTwin(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Lanes = sampleBoard(t).Lanes
+	a := sampleArchive(t)
+	const title = "Cancel gym membership"
+	dup := twinByTitle(t, b, a, title)
+	if err := st.SaveBoard(b); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.ArchivePath(), []byte(store.MarshalArchive(a)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := New(Options{Store: st, Board: b, Styles: testStyles, Now: func() time.Time { return fixedNow }, Width: 120, Height: 40})
+	m = press(m, "D")
+	for i, c := range m.visibleArchive() {
+		if c.ID == dup {
+			m.arch.cursor = i
+		}
+	}
+	m = press(m, "enter")
+	if !m.detail.archived {
+		t.Fatal("expected an archived detail view")
+	}
+	lane := m.lane
+	backlog, archived := len(m.b.Lanes[board.Backlog]), len(m.archive.Cards)
+	boardBefore, archiveBefore := mustReadFile(t, st.BoardPath()), mustReadFile(t, st.ArchivePath())
+	past := pinMtimes(t, st.BoardPath(), st.ArchivePath())
+
+	// m then 1: move the open archived card to Backlog — the lane picker's
+	// unarchive, the second restore path and the one with no web counterpart.
+	m = press(m, "m", "1")
+
+	if m.scr != screenDetail || !m.detail.archived || m.mode != modeNormal {
+		t.Errorf("a refused move must leave the archived card open: screen=%v archived=%v mode=%v", m.scr, m.detail.archived, m.mode)
+	}
+	if len(m.b.Lanes[board.Backlog]) != backlog || len(m.archive.Cards) != archived {
+		t.Errorf("nothing may move: Backlog %d -> %d, archive %d -> %d",
+			backlog, len(m.b.Lanes[board.Backlog]), archived, len(m.archive.Cards))
+	}
+	if m.lane != lane {
+		t.Errorf("a refused move must not switch lanes: %v -> %v", lane, m.lane)
+	}
+	if string(mustReadFile(t, st.BoardPath())) != string(boardBefore) || string(mustReadFile(t, st.ArchivePath())) != string(archiveBefore) {
+		t.Error("a refused move must write nothing")
+	}
+	if !unwritten(past, st.BoardPath(), st.ArchivePath()) {
+		t.Error("a refused move must not touch either file — a rewrite of identical bytes still moves the mtime")
+	}
+	want := fmt.Sprintf("%q is already on the board", title)
+	if m.err == nil || !strings.Contains(m.err.Error(), want) {
+		t.Errorf("err = %v, want %q", m.err, want)
+	}
+	if footer := plainLines(m)[39]; !strings.HasPrefix(footer, " j/k item") || !strings.Contains(footer, "⊘ "+want) {
+		t.Errorf("the detail footer must show the refusal: %q", footer)
 	}
 }

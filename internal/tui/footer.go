@@ -44,14 +44,26 @@ func (m Model) groups(gs []keyGroup) string {
 	return strings.Join(parts, "  ")
 }
 
-// boardFooter applies the fallback chain: full+count, reduced+count, reduced, truncated.
+// boardFooter applies the fallback chain: full+count, reduced+count, reduced,
+// truncated. With an error the message takes the count's place and is never
+// the part dropped for lack of room: the hints give way instead, as they do on
+// the archive and detail footers.
 func (m Model) boardFooter(cw int) string {
-	count := m.styles.Muted.Render(fmt.Sprintf("%d cards", m.visibleCount()))
-	if m.err != nil { // a failed save or watcher takes the count's place until the next success
-		count = m.styles.Accent2.Render(trunc("⊘ "+sanitize(m.err.Error()), cw/2))
-	}
 	full := m.groups(boardFooterFull)
 	reduced := m.groups(boardFooterReduced)
+	if m.err != nil {
+		// A failed save, the watcher, or a refused key, until the next
+		// successful write. The old chain dropped a message that did not fit
+		// beside the reduced hints — at 120 wide, any refusal naming a card
+		// with a title much over twenty characters.
+		e := m.errPart(cw)
+		left := full
+		if width(full)+2+width(e) > cw {
+			left = reduced
+		}
+		return hsplit(left, e, cw)
+	}
+	count := m.styles.Muted.Render(fmt.Sprintf("%d cards", m.visibleCount()))
 	switch {
 	case width(full)+2+width(count) <= cw:
 		return hsplit(full, count, cw)
@@ -60,6 +72,26 @@ func (m Model) boardFooter(cw int) string {
 	default:
 		return fit(reduced, cw)
 	}
+}
+
+// errPart is the footer's report slot: "⊘ message" in accent2, held to half
+// the row so the hints beside it keep at least the other half.
+func (m Model) errPart(cw int) string {
+	return m.styles.Accent2.Render(trunc("⊘ "+sanitize(m.err.Error()), cw/2))
+}
+
+// footerWithErr is the archive and detail footers: the key hints, and at the
+// right end the message whenever a save, the watcher or a refused key has
+// something to say — the slot boardFooter gives the card count. The message
+// wins over the hints (hsplit shrinks the left part, never the right), so a
+// refused key can say so at every size. With nothing to report it is
+// fit(left, cw), byte for byte what these footers rendered before, so no golden
+// moves.
+func (m Model) footerWithErr(left string, cw int) string {
+	if m.err == nil {
+		return fit(left, cw)
+	}
+	return hsplit(left, m.errPart(cw), cw)
 }
 
 // footerWithRight draws groups on the left and an optional right part that is

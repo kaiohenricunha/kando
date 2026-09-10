@@ -264,10 +264,10 @@ func archiveRestoreArgs(args []string) (card, name string, err error) {
 
 // archiveRestore is kando archive restore's testable core: the same
 // Board.Restore the TUI's u and the web's restore
-// button use, with the same duplicate-id guard the web route enforces
-// (internal/web/archive.go): if the card's id is already on the board, a
-// previous restore or archive half failed, and one copy has to be deleted
-// by hand before this can proceed.
+// button use, with the same duplicate-id guard the web route and the TUI's u
+// enforce (internal/web/archive.go, internal/tui/archive.go): if the card's id
+// is already on the board, a previous restore or archive half failed, and one
+// copy has to be deleted by hand before this can proceed.
 //
 // Unlike archiveList this needs the Store method, not the package-level
 // LoadArchive: it holds the Store that will do the writing. That method
