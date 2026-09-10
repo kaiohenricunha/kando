@@ -626,12 +626,12 @@ func TestReorderInDoneSurvivesTheDiskRoundTrip(t *testing.T) {
 }
 
 func TestReorderMakesProgressWithDuplicateIDs(t *testing.T) {
-	// board.md is hand-editable and nothing dedupes ids: parseSections takes a
-	// written "id:" verbatim (internal/store/markdown.go:107) and only derives
-	// one when the field is empty, so copy-pasting a card block yields two
-	// cards sharing an id. laneIndex matches by pointer (model.go:332) while
-	// selectByID matches by id (model.go:344) — with a duplicate those two
-	// disagree, and the selection can snap to the card that did NOT move.
+	// Parsing gives every card in a file its own id (store.assignIDs), so a
+	// copy-pasted card block no longer arrives here sharing one. A Board built
+	// in memory still can, and that is what this constructs: laneIndex matches
+	// by pointer (model.go:332) while selectByID matches by id (model.go:344),
+	// and with a shared id those two disagree — the selection can snap to the
+	// card that did NOT move. The regression guard for re-selecting by identity.
 	m := newTestModel(t, 120, 40)
 	dup := &board.Card{ID: "dup", Title: "first", CreatedAt: fixedNow, MovedAt: fixedNow}
 	twin := &board.Card{ID: "dup", Title: "second", CreatedAt: fixedNow, MovedAt: fixedNow}

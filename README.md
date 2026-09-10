@@ -303,7 +303,10 @@ Expires 14 Nov. Two photos, old passport, printed form.
 lines (`tag`, `created`, `moved`, `done`, `blocked`, `id`) follow the heading;
 then free-text notes; then `- [ ]` / `- [x]` checklist items. Dates are written
 date-only at midnight, otherwise as RFC 3339. A card without an `id` gets one on
-load, derived from its contents so every read agrees. `archive.md` groups
+load, derived from its contents so every read agrees — and so does every card
+sharing an id but one, since a copy-pasted card block keeps its `id:` line.
+The card that keeps it is the one kando already reached, so anything pointing
+at it still does. `archive.md` groups
 cards under `## 2026-W36` ISO-week headings by each card's `done` date. `A`
 on a Done card in the TUI and the **archive** button on a Done card's page
 move a card there; `u` and **restore** bring it back to Doing. All three CLI archive verbs
@@ -315,7 +318,11 @@ above the checklist on the next save. A note line that would otherwise read as
 structure — a `## ` heading or a `- [ ] ` item — is written with a leading
 backslash and read back without it, so notes can hold Markdown of their own.
 A card written without an `id` is given one derived from its contents, so it
-keeps the same id until the file is saved with the id in it.
+keeps the same id until the file is saved with the id in it. When cards share
+an `id`, every one but the card kando looks up first — lanes in their fixed
+order, archived cards newest first — is given a new one the same way. Opening
+the board in the TUI, or any command or web action that changes it, writes the
+repaired ids; a read such as `kando list` leaves the file as it is until then.
 
 Text you type into a card through any surface has its control characters and
 bidirectional overrides removed before it is stored, so a note pasted from an

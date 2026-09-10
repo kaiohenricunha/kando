@@ -92,11 +92,20 @@ func UnsafeRune(r rune) bool {
 // Why none of this happens at parse time, since it keeps coming up: the store
 // re-emits what it parsed. cardBlock writes Title, Tag, BlockedReason and
 // Notes straight back from memory (internal/store/markdown.go), and store.Open
-// rewrites the whole board through Marshal whenever any card lacks an id. So a
+// rewrites the whole board through Marshal whenever a card lacks or shares an id. So a
 // value clipped or sanitized during parsing would be written into the user's
 // hand-edited file on the next open, before they touched anything. That is why
 // every guard in this package is either a write-time helper the surfaces call
 // deliberately, or a read-time one applied on the way to a screen.
+//
+// One value is the exception, and it is an id, never content. The store fills
+// in an id a card lacks, and it reassigns every card sharing an id except the
+// one Board.Find reaches (store.assignIDs) — a copy-pasted card block keeps its
+// id: line. That is a parse-time change to a line the user may have typed,
+// taken on purpose: an id naming two cards identifies neither, and Board.Find
+// only ever reaches one of them, so the other was already unreachable — on the
+// web, deleting it deleted the one Find reached. Keeping the id on that card
+// means nothing that resolved before resolves differently after.
 
 // SafeForDisplay drops every unsafe rune from s, keeping newlines and tabs so
 // multi-line text still lays out. It is the read-side counterpart to the
@@ -185,7 +194,7 @@ func (c *Card) SetTag(value string) {
 //
 // This is a guard on what the surfaces write, not on what the file holds.
 // kando does rewrite the file — every mutation re-marshals the whole board,
-// and store.Open rewrites it outright when a card has no id — but the read
+// and store.Open rewrites it outright when a card lacks or shares an id — but the read
 // path assigns Notes directly (store.parseSections) and Marshal re-emits
 // whatever it parsed, so a rewrite preserves unsanitized bytes rather than
 // cleaning them. A hand-edited board.md therefore keeps whatever the user put
