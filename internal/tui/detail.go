@@ -108,13 +108,16 @@ func (m Model) detailCard() *board.Card {
 // detailList is the navigation list in the left pane and the cursor position in
 // it. The cursor is the FIRST card carrying the open id, the same card
 // detailCard shows through Board.Find: with two cards sharing an id, taking the
-// last put the cursor on one card and the pane on the other.
+// last put the cursor on one card and the pane on the other. It is -1 when no
+// row is the open card, because a filter hides it: the pane then highlights
+// nothing, and J and K start from the ends of the list.
 func (m Model) detailList() (cards []*board.Card, cur int) {
 	if m.detail.archived {
 		cards = m.visibleArchive()
 	} else {
 		cards = m.visible(m.lane)
 	}
+	cur = -1
 	for i, c := range cards {
 		if c.ID == m.detail.id {
 			cur = i
@@ -386,6 +389,13 @@ func (m *Model) detailSwitch(delta int) {
 		return
 	}
 	next := (cur + delta + len(cards)) % len(cards)
+	if cur < 0 {
+		// No row is the open card: start from the end the key points at.
+		next = 0
+		if delta < 0 {
+			next = len(cards) - 1
+		}
+	}
 	m.detail.id = cards[next].ID
 	m.detail.cursor = 0
 	if m.detail.archived {

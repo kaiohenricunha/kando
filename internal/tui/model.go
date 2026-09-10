@@ -473,8 +473,14 @@ func (m *Model) reload() {
 		}
 		m.clampSel()
 		if detailID != "" {
-			if _, _, c := m.b.Find(detailID); c == nil {
+			if l, _, c := m.b.Find(detailID); c == nil {
 				m.scr, m.mode = screenBoard, modeNormal
+			} else if l != m.lane {
+				// The card moved lanes: follow it, so the pane lists the lane the
+				// card is now in and the cursor and J/K work from it.
+				m.setLane(l)
+				m.selectByID(detailID)
+				m.clampSel()
 			}
 		}
 	}

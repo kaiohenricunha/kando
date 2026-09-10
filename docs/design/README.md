@@ -63,7 +63,7 @@ Footer (muted labels, keys in fg, medium weight): `j/k move  h/l tab lane  a add
 ### 2. Card detail (`1d` content; restyle to chosen theme)
 Full-view swap, same header row with breadcrumb: `kando  life › Todo › Renew passport`.
 Two panes: left **30 cols**, gap 4 cols, right pane fills remainder with a left rule (`│` in `border`) and 3-col left padding.
-- Left: active lane name bold with accent count, underline in accent; then card titles, cursor row `▸ Title` bold on `selectionBg`, others `• Title` muted.
+- Left: active lane name bold with accent count, underline in accent; then card titles, cursor row `▸ Title` bold on `selectionBg`, others `• Title` muted. When a filter hides the open card, no row has the cursor; when a reload moves the card to another lane, the list follows it.
 - Right, top to bottom: title (bold); meta row muted: tag (accent), `created Mon 31 Aug`, `in Todo since Tue 1 Sep`; blank; `NOTES` label (muted uppercase); notes wrapped at 64 cols; blank; `CHECKLIST 1/4` (count in accent); items — done `▣ text` muted struck, focused `▢ text` on `selectionBg` with a block cursor after the text, open `▢ text`; blank; `BLOCKED` label; `— not blocked. b to set a reason` muted.
 Footer: `j/k item  x toggle  o new item  e edit notes  t tag  m move  b block  esc back`.
 Editing (notes, title, new item, tag) uses an inline `textinput`/`textarea` in place of the field, accent cursor.
