@@ -222,7 +222,7 @@ func archiveCard(root, name, cardArg string, now time.Time) (title string, doneA
 	}
 	a, err := st.LoadArchive()
 	if err != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, conflictErr(err)
 	}
 	// The archive already holding this id means a previous archive half
 	// failed after archive.md was written: archiving again would file the
@@ -282,7 +282,7 @@ func archiveRestore(root, name, cardArg string, now time.Time) (title string, er
 	}
 	a, err := st.LoadArchive()
 	if err != nil {
-		return "", err
+		return "", conflictErr(err)
 	}
 	if len(a.Cards) == 0 {
 		return "", fmt.Errorf("nothing archived on %q", b.Name)

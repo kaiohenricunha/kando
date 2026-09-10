@@ -44,10 +44,21 @@ func (s *server) openForWrite(name string) (*store.Store, *board.Board, error) {
 	}
 	st, b, err := store.Open(s.root, name)
 	if err != nil {
-		s.logf("open %s: %v", name, err)
-		return nil, nil, &httpError{http.StatusInternalServerError, "cannot open board"}
+		return nil, nil, s.openFailure("open", name, err, "cannot open board")
 	}
 	return st, b, nil
+}
+
+// openFailure answers an error from store.Open or (*Store).LoadArchive. Both
+// repair a file's ids through the checked writer and retry a lost race, so a
+// conflict that outlasts the retries is a stale write like any other and gets
+// commit's 409; anything else is a 500 with the detail logged (OPS-4).
+func (s *server) openFailure(what, name string, err error, msg string) *httpError {
+	if errors.Is(err, store.ErrConflict) {
+		return &httpError{http.StatusConflict, "the board changed on disk — reload and try again"}
+	}
+	s.logf("%s %s: %v", what, name, err)
+	return &httpError{http.StatusInternalServerError, msg}
 }
 
 // findCard resolves {id} on b, or 404.

@@ -134,7 +134,7 @@ func runWeb(args []string) {
 	if name != "" {
 		// Like the TUI, naming a board on the command line creates it if needed.
 		if _, _, err := store.Open(root, name); err != nil {
-			fatal(err)
+			fatal(conflictErr(err))
 		}
 	}
 	ln, err := web.Listen(port)
@@ -198,7 +198,7 @@ func main() {
 
 	st, b, err := store.Open(root, name)
 	if err != nil {
-		fatal(err)
+		fatal(conflictErr(err))
 	}
 
 	// Resolve the theme before Bubble Tea takes over the terminal: background
