@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kaiohenricunha/kando/internal/board"
 	"github.com/kaiohenricunha/kando/internal/store"
@@ -190,23 +191,18 @@ func (s *server) moveCard() http.HandlerFunc {
 		if !ok {
 			return &httpError{http.StatusBadRequest, "invalid lane"}
 		}
-		anchor, pos, err := movePos(b, to, f)
+		place, err := movePos(b, to, f)
 		if err != nil {
 			return err
 		}
-		switch pos {
-		case "":
+		if place == nil {
 			// No position asked for: the lane picker's move, unchanged —
 			// including its same-lane no-op, which MoveAt would otherwise
 			// turn into a jump to the top of the lane the card is in.
 			b.Move(from, i, to, s.now())
-		case "start":
-			b.MoveAt(from, i, to, 0, s.now())
-		case "after":
-			b.MoveAfter(from, i, to, anchor, s.now())
-		default: // "before"
-			b.MoveBefore(from, i, to, anchor, s.now())
+			return nil
 		}
+		place(from, i, s.now())
 		return nil
 	})
 }
@@ -232,28 +228,34 @@ func (s *server) moveCard() http.HandlerFunc {
 // pos and anchor are separate fields so no id-shaped value is ever reserved;
 // a hand-edited board.md may give a card any id at all, "start" included.
 //
-// It returns the position word and, for before and after, the anchor's index in
-// the destination lane; moveCard picks MoveBefore or MoveAfter from the word, so
-// the insert-before arithmetic lives in one place, internal/board.
-func movePos(b *board.Board, to board.Lane, f url.Values) (anchor int, pos string, err error) {
-	switch pos = f.Get("pos"); pos {
-	case "", "start":
-		return 0, pos, nil
+// It returns how to place the card, or nil when no position was asked for — the
+// lane picker's move. Only this function names the positions, so moveCard cannot
+// drift from it, and the insert-before arithmetic stays in internal/board.
+func movePos(b *board.Board, to board.Lane, f url.Values) (place func(from board.Lane, i int, now time.Time), err error) {
+	switch pos := f.Get("pos"); pos {
+	case "":
+		return nil, nil
+	case "start":
+		return func(from board.Lane, i int, now time.Time) { b.MoveAt(from, i, to, 0, now) }, nil
 	case "before", "after":
 		id := f.Get("anchor")
 		if id == "" {
-			return 0, "", &httpError{http.StatusBadRequest, "a position needs an anchor card"}
+			return nil, &httpError{http.StatusBadRequest, "a position needs an anchor card"}
 		}
 		// A card dropped against itself resolves to a position it already
 		// holds, which MoveBefore and MoveAfter treat as the no-op it is.
-		for i, c := range b.Lanes[to] {
-			if c.ID == id {
-				return i, pos, nil
+		for anchor, c := range b.Lanes[to] {
+			if c.ID != id {
+				continue
 			}
+			if pos == "after" {
+				return func(from board.Lane, i int, now time.Time) { b.MoveAfter(from, i, to, anchor, now) }, nil
+			}
+			return func(from board.Lane, i int, now time.Time) { b.MoveBefore(from, i, to, anchor, now) }, nil
 		}
-		return 0, "", &httpError{http.StatusConflict, "that card moved — reload and try again"}
+		return nil, &httpError{http.StatusConflict, "that card moved — reload and try again"}
 	default:
-		return 0, "", &httpError{http.StatusBadRequest, "invalid position"}
+		return nil, &httpError{http.StatusBadRequest, "invalid position"}
 	}
 }
 
