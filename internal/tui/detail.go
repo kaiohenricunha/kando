@@ -189,7 +189,7 @@ func (m Model) renderDetail() []string {
 		picks := []keyGroup{{"1", "Backlog"}, {"2", "Todo"}, {"3", "Doing"}, {"4", "Done"}}
 		footer = fit(s.Muted.Render("move to:")+"  "+m.groups(picks), cw)
 	} else {
-		footer = m.footerWithErr(m.groups(detailFooterGroups), cw)
+		footer = m.footerWithReport(m.groups(detailFooterGroups), cw)
 	}
 	return m.screenRows(header, body, footer)
 }
@@ -563,7 +563,7 @@ func (m *Model) archiveDetailCard() {
 	if m.detail.archived {
 		// An archived card is in no lane, so archiveDone's lane check would miss
 		// it and Board.Find could name a live twin instead.
-		m.err = fmt.Errorf("%q is already archived", c.Title)
+		m.notice = fmt.Sprintf("%q is already archived", c.Title)
 		return
 	}
 	if !m.archiveDone(c) {

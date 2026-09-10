@@ -205,7 +205,7 @@ func (m Model) renderArchive() []string {
 	if m.mode == modeFilter {
 		footer = m.filterFooter(cw)
 	} else {
-		footer = m.footerWithErr(m.groups(archiveFooterGroups), cw)
+		footer = m.footerWithReport(m.groups(archiveFooterGroups), cw)
 	}
 	return m.screenRows(header, rows[top:], footer)
 }
@@ -242,7 +242,7 @@ func (m Model) updateArchive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // restoreRefused reports whether restoring c must be refused because a card
-// with its id is already on the board, and records why in m.err in the CLI's
+// with its id is already on the board, and records why in m.notice in the CLI's
 // words — the guard the web's restore route answers with a 409 and `kando
 // archive restore` with an error. After a restore or archive that half failed,
 // the card sits in both files. Restoring anyway would put two cards with one id
@@ -254,7 +254,7 @@ func (m *Model) restoreRefused(c *board.Card) bool {
 	if _, _, dup := m.b.Find(c.ID); dup == nil {
 		return false
 	}
-	m.err = fmt.Errorf("%q is already on the board", c.Title)
+	m.notice = fmt.Sprintf("%q is already on the board", c.Title)
 	return true
 }
 
@@ -279,7 +279,7 @@ func (m *Model) restoreArchived(c *board.Card) {
 }
 
 // archiveDone moves c — which must be in Done — into the archive, saves both
-// files, and reports whether it did. It refuses, with the reason in m.err in
+// files, and reports whether it did. It refuses, with the reason in m.notice in
 // the CLI's words, when c is not in Done or is already archived: a stale
 // selection racing an external edit, or an archive that half failed after
 // archive.md was written. Those are the two guards the web's archive route
@@ -291,10 +291,12 @@ func (m *Model) restoreArchived(c *board.Card) {
 func (m *Model) archiveDone(c *board.Card) bool {
 	i := m.laneIndex(board.Done, c)
 	if i < 0 {
-		if l, _, live := m.b.Find(c.ID); live != nil {
-			m.err = fmt.Errorf("%q is in %s, not Done", c.Title, l)
-		} else {
-			m.err = fmt.Errorf("%q is no longer on the board", c.Title)
+		// Both callers hand over a card that is on the board, so it is in some
+		// lane; find which by pointer, as laneIndex does, rather than by id.
+		for _, l := range board.Lanes {
+			if m.laneIndex(l, c) >= 0 {
+				m.notice = fmt.Sprintf("%q is in %s, not Done", c.Title, l)
+			}
 		}
 		return false
 	}
@@ -302,7 +304,7 @@ func (m *Model) archiveDone(c *board.Card) bool {
 		return false
 	}
 	if _, dup := m.archive.Find(c.ID); dup != nil {
-		m.err = fmt.Errorf("%q is already archived", c.Title)
+		m.notice = fmt.Sprintf("%q is already archived", c.Title)
 		return false
 	}
 	m.b.ArchiveDone(m.archive, i, m.now())

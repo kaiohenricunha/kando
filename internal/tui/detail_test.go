@@ -455,8 +455,8 @@ func TestDetailMoveRefusesAnArchivedTwin(t *testing.T) {
 		t.Error("a refused move must not touch either file — a rewrite of identical bytes still moves the mtime")
 	}
 	want := fmt.Sprintf("%q is already on the board", title)
-	if m.err == nil || !strings.Contains(m.err.Error(), want) {
-		t.Errorf("err = %v, want %q", m.err, want)
+	if !strings.Contains(m.notice, want) {
+		t.Errorf("notice = %q, want %q", m.notice, want)
 	}
 	if footer := plainLines(m)[39]; !strings.HasPrefix(footer, " j/k item") || !strings.Contains(footer, "⊘ "+want) {
 		t.Errorf("the detail footer must show the refusal: %q", footer)

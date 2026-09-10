@@ -272,8 +272,8 @@ func TestArchiveKeyFromDetail(t *testing.T) {
 	if m.scr != screenDetail || len(m.archive.Cards) != before {
 		t.Errorf("A on an archived card's detail must be a no-op")
 	}
-	if m.err == nil || !strings.Contains(m.err.Error(), "is already archived") {
-		t.Errorf("A on an archived card must say why nothing happened: err = %v", m.err)
+	if !strings.Contains(m.notice, "is already archived") {
+		t.Errorf("A on an archived card must say why nothing happened: notice = %q", m.notice)
 	}
 }
 
@@ -359,8 +359,8 @@ func TestArchiveKeyRefusesADuplicate(t *testing.T) {
 	// The web answers this with a 409 and the CLI with an error; the TUI must
 	// not be the one surface where the key just appears dead.
 	want := fmt.Sprintf("%q is already archived", title)
-	if m.err == nil || !strings.Contains(m.err.Error(), want) {
-		t.Errorf("the refusal must say why: err = %v, want %q", m.err, want)
+	if !strings.Contains(m.notice, want) {
+		t.Errorf("the refusal must say why: notice = %q, want %q", m.notice, want)
 	}
 	if footer := plainLines(m)[39]; !strings.Contains(footer, "⊘ "+want) {
 		t.Errorf("the board footer must show the refusal: %q", footer)
@@ -447,8 +447,8 @@ func TestRestoreRefusesACardAlreadyOnTheBoard(t *testing.T) {
 		t.Errorf("a refused restore must leave the cursor: %d -> %d", cursor, m.arch.cursor)
 	}
 	want := fmt.Sprintf("%q is already on the board", title)
-	if m.err == nil || !strings.Contains(m.err.Error(), want) {
-		t.Errorf("the refusal must say why, in the CLI's words: err = %v, want %q", m.err, want)
+	if !strings.Contains(m.notice, want) {
+		t.Errorf("the refusal must say why, in the CLI's words: notice = %q, want %q", m.notice, want)
 	}
 	if footer := plainLines(m)[39]; !strings.HasPrefix(footer, " j/k move  u undo") || !strings.Contains(footer, "⊘ "+want) {
 		t.Errorf("the archive footer must keep its hints and show the refusal: %q", footer)
@@ -478,10 +478,10 @@ func TestArchiveKeyFromDetailRefusalStaysOnTheCard(t *testing.T) {
 		t.Errorf("nothing may move: done=%d archive=%d", len(m.b.Lanes[board.Done]), len(m.archive.Cards))
 	}
 	want := fmt.Sprintf("%q is already archived", title)
-	if m.err == nil || !strings.Contains(m.err.Error(), want) {
-		t.Errorf("err = %v, want %q", m.err, want)
+	if !strings.Contains(m.notice, want) {
+		t.Errorf("notice = %q, want %q", m.notice, want)
 	}
-	if footer := plainLines(m)[39]; !strings.HasPrefix(footer, " j/k item") || !strings.Contains(footer, "⊘") {
+	if footer := plainLines(m)[39]; !strings.HasPrefix(footer, " j/k item") || !strings.Contains(footer, "⊘ "+want) {
 		t.Errorf("the detail footer must keep its hints and show the refusal: %q", footer)
 	}
 
@@ -491,8 +491,8 @@ func TestArchiveKeyFromDetailRefusalStaysOnTheCard(t *testing.T) {
 	if m.scr != screenDetail {
 		t.Errorf("A outside Done must stay on the card: screen = %v", m.scr)
 	}
-	if m.err == nil || !strings.Contains(m.err.Error(), `"Renew passport" is in Todo, not Done`) {
-		t.Errorf("A outside Done must say where the card is: err = %v", m.err)
+	if !strings.Contains(m.notice, `"Renew passport" is in Todo, not Done`) {
+		t.Errorf("A outside Done must say where the card is: notice = %q", m.notice)
 	}
 }
 
@@ -517,7 +517,7 @@ func TestArchiveAndDetailFootersShowError(t *testing.T) {
 		}
 		// A refusal names its card, so it is longer than a save error. The board
 		// footer used to drop any message that did not fit beside its hints.
-		m.err = errors.New(`"Tax docs to accountant before the end of the month" is already archived`)
+		m.err, m.notice = nil, `"Tax docs to accountant before the end of the month" is already archived`
 		if footer := plainLines(m)[39]; !strings.Contains(footer, `⊘ "Tax docs to accountant before`) {
 			t.Errorf("%s at 120x40 with a refusal: footer = %q", c.name, footer)
 		}
@@ -562,4 +562,37 @@ func unwritten(past time.Time, paths ...string) bool {
 		}
 	}
 	return true
+}
+
+func TestARefusalDoesNotHideFileWatchingDisabled(t *testing.T) {
+	// "file watching disabled" is a standing condition that nothing reports twice.
+	// A refusal is about one keypress. It must show, and then give the slot back —
+	// not overwrite the only notice that live reload is off.
+	m, _ := newRootModel(t, 120, 40)
+	m.watch = true
+	m, _ = feed(m, watchStartedMsg{gen: 0, err: os.ErrPermission})
+	m = press(m, "enter")
+	if m.scr != screenDetail {
+		t.Fatalf("setup: expected the detail screen, got %v", m.scr)
+	}
+	m = press(m, "A") // refused: the open card is not in Done
+	if footer := plainLines(m)[39]; !strings.Contains(footer, "not Done") {
+		t.Fatalf("the refusal must show first: %q", footer)
+	}
+	m = press(m, "esc")
+	if footer := plainLines(m)[39]; !strings.Contains(footer, "⊘ file watching disabled") {
+		t.Errorf("after the next key the watcher's notice must be back: %q", footer)
+	}
+}
+
+func TestARefusalClearsOnTheNextKey(t *testing.T) {
+	m := newTestModel(t, 120, 40)
+	m = press(m, "enter", "A") // refused: Renew passport is in Todo
+	if footer := plainLines(m)[39]; !strings.Contains(footer, "is in Todo, not Done") {
+		t.Fatalf("setup: the refusal must show: %q", footer)
+	}
+	m = press(m, "j")
+	if footer := plainLines(m)[39]; strings.Contains(footer, "⊘") {
+		t.Errorf("a refusal is about the key that caused it; the next key clears it: %q", footer)
+	}
 }
