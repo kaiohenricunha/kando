@@ -323,7 +323,11 @@ keeps the same id until the file is saved with the id in it. When cards share
 an `id`, every one but the card kando looks up first — lanes in their fixed
 order, archived cards newest first — is given a new one the same way. Opening
 the board in the TUI, or any command or web action that changes it, writes the
-repaired ids; a read such as `kando list` leaves the file as it is until then.
+repaired ids; a read such as `kando list` leaves the file as it is until then. Text
+outside any card — anything before the first `## ` heading, or between a
+heading and its first `### ` card — belongs to no card and is dropped the next
+time kando writes the file: any edit does that, and so does opening a board
+whose ids need repairing.
 
 Text you type into a card through any surface has its control characters and
 bidirectional overrides removed before it is stored, so a note pasted from an
