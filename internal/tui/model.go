@@ -101,6 +101,11 @@ type Model struct {
 	boards boardsState
 
 	err error
+	// notice is a refused key's reason. It shows in the footer's report slot ahead
+	// of err and is cleared by the next key: a refusal is about one keypress,
+	// while err holds standing conditions — a failed save, a watcher that could
+	// not start — that nothing reports twice and a refusal must not erase.
+	notice string
 }
 
 // New builds a Model. The Todo lane starts active with its first card selected.
@@ -216,6 +221,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.teardown()
 		return m, tea.Quit
 	}
+	m.notice = ""
 	switch m.mode {
 	case modeQuickAdd:
 		return m.updateQuickAdd(msg)

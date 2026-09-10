@@ -122,11 +122,10 @@ func (m *Model) moveSelected(to board.Lane) {
 // cards — leaving the on-screen order unchanged. The web route names positions
 // against a visible card for exactly this reason (movePos, internal/web/cards.go).
 //
-// MoveAt's `at` is insert-before against the lane as it stood BEFORE the move
-// (board.go:209-219), so landing below a neighbour is that neighbour's index
-// plus one. The natural-looking `at = i+1` is wrong: it names the position the
-// card already holds and does nothing. A same-lane move deliberately leaves
-// MovedAt and DoneAt alone — a reorder is not a lane change.
+// Down lands after that neighbour and up lands before it. MoveAfter and
+// MoveBefore carry the index arithmetic, so it is not re-derived here. A
+// same-lane move deliberately leaves MovedAt and DoneAt alone — a reorder is not
+// a lane change.
 func (m *Model) reorderSelected(delta int) {
 	c := m.selectedCard()
 	if c == nil {
@@ -137,14 +136,15 @@ func (m *Model) reorderSelected(delta int) {
 	if j < 0 || j >= len(v) {
 		return // at the end already: nothing to move, and nothing to save
 	}
-	i, at := m.laneIndex(m.lane, c), m.laneIndex(m.lane, v[j])
-	if i < 0 || at < 0 {
+	i, anchor := m.laneIndex(m.lane, c), m.laneIndex(m.lane, v[j])
+	if i < 0 || anchor < 0 {
 		return
 	}
 	if delta > 0 {
-		at++
+		m.b.MoveAfter(m.lane, i, m.lane, anchor, m.now())
+	} else {
+		m.b.MoveBefore(m.lane, i, m.lane, anchor, m.now())
 	}
-	m.b.MoveAt(m.lane, i, m.lane, at, m.now())
 	m.save()
 	// Re-select by identity, the way this function located the card, rather
 	// than by id via selectByID. Parsing gives every card in a file its own id

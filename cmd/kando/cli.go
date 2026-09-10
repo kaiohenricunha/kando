@@ -66,6 +66,17 @@ func usageErr(err error) {
 // stale write.
 var errConflict = errors.New("the board changed on disk — try again")
 
+// conflictErr gives store.ErrConflict the verb's own wording. A save refuses with
+// it when the board changed since it was opened, and so do Open and LoadArchive
+// when a concurrent write outlasts their retries: they repair ids through the
+// same checked writer.
+func conflictErr(err error) error {
+	if errors.Is(err, store.ErrConflict) {
+		return errConflict
+	}
+	return err
+}
+
 // resolveBoard applies every verb's shared board-name rule: "" defaults to
 // "life", the name must be valid, and the board must already exist — only
 // `board create`, `kando [board]` and `kando web [board]` are allowed to
@@ -96,7 +107,8 @@ func openBoard(root, name string) (*store.Store, *board.Board, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return store.Open(root, name)
+	st, b, err := store.Open(root, name)
+	return st, b, conflictErr(err)
 }
 
 // readBoard resolves name and loads it read-only, for a verb that must
@@ -115,13 +127,7 @@ func readBoard(root, name string) (*board.Board, error) {
 // between the open and the save — refuse a stale write rather than
 // silently overwrite it.
 func saveBoard(st *store.Store, b *board.Board) error {
-	if err := st.SaveBoardIfUnchanged(b); err != nil {
-		if errors.Is(err, store.ErrConflict) {
-			return errConflict
-		}
-		return err
-	}
-	return nil
+	return conflictErr(st.SaveBoardIfUnchanged(b))
 }
 
 // findCard resolves arg against b: a card id first (Board.Find), then — on a

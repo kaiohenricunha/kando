@@ -205,7 +205,7 @@ func (m Model) renderArchive() []string {
 	if m.mode == modeFilter {
 		footer = m.filterFooter(cw)
 	} else {
-		footer = fit(m.groups(archiveFooterGroups), cw)
+		footer = m.footerWithReport(m.groups(archiveFooterGroups), cw)
 	}
 	return m.screenRows(header, rows[top:], footer)
 }
@@ -241,8 +241,30 @@ func (m Model) updateArchive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// restoreArchived moves an archived card back to the top of Doing.
+// restoreRefused reports whether restoring c must be refused because a card
+// with its id is already on the board, and records why in m.notice in the CLI's
+// words — the guard the web's restore route answers with a 409 and `kando
+// archive restore` with an error. After a restore or archive that half failed,
+// the card sits in both files. Restoring anyway would put two cards with one id
+// on the board, and the next open keeps the id on the card Board.Find reaches
+// first (store.assignIDs): a restored card lands in Doing, ahead of a live twin
+// in Done, so the card that silently lost its id would be the live one that
+// links and scripts point at.
+func (m *Model) restoreRefused(c *board.Card) bool {
+	if _, _, dup := m.b.Find(c.ID); dup == nil {
+		return false
+	}
+	m.notice = fmt.Sprintf("%q is already on the board", c.Title)
+	return true
+}
+
+// restoreArchived moves an archived card back to the top of Doing — u on the
+// archive screen. A refusal writes nothing and leaves the cursor where it was,
+// with the reason in the footer.
 func (m *Model) restoreArchived(c *board.Card) {
+	if m.restoreRefused(c) {
+		return
+	}
 	for i, x := range m.archive.Cards {
 		if x == c {
 			m.b.Restore(m.archive, i, m.now())
@@ -256,24 +278,36 @@ func (m *Model) restoreArchived(c *board.Card) {
 	}
 }
 
-// archiveDone moves c — which must be in Done — into the archive and saves
-// both files. A no-op if c is not in Done or is already archived (a stale
-// selection racing an external edit), the same class of guard the web's
-// archive route enforces with a 409, and a no-op if archive.md cannot be
-// read: writing then would replace an archive we never saw with a one-card
-// file, which is the one way this feature could lose a card rather than
-// duplicate it. The web route refuses the same case with a 500.
-func (m *Model) archiveDone(c *board.Card) {
+// archiveDone moves c — which must be in Done — into the archive, saves both
+// files, and reports whether it did. It refuses, with the reason in m.notice in
+// the CLI's words, when c is not in Done or is already archived: a stale
+// selection racing an external edit, or an archive that half failed after
+// archive.md was written. Those are the two guards the web's archive route
+// answers with a 409 and `kando archive` with an error. It also refuses when
+// archive.md cannot be read (ensureArchive records that error): writing then
+// would replace an archive we never saw with a one-card file, which is the one
+// way this feature could lose a card rather than duplicate it. The web route
+// refuses that case with a 500.
+func (m *Model) archiveDone(c *board.Card) bool {
 	i := m.laneIndex(board.Done, c)
 	if i < 0 {
-		return
+		// Both callers hand over a card that is on the board, so it is in some
+		// lane; find which by pointer, as laneIndex does, rather than by id.
+		for _, l := range board.Lanes {
+			if m.laneIndex(l, c) >= 0 {
+				m.notice = fmt.Sprintf("%q is in %s, not Done", c.Title, l)
+			}
+		}
+		return false
 	}
 	if !m.ensureArchive() {
-		return
+		return false
 	}
 	if _, dup := m.archive.Find(c.ID); dup != nil {
-		return
+		m.notice = fmt.Sprintf("%q is already archived", c.Title)
+		return false
 	}
 	m.b.ArchiveDone(m.archive, i, m.now())
 	m.saveArchival()
+	return true
 }

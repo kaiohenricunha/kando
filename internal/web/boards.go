@@ -39,8 +39,7 @@ func (s *server) createBoard(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.writeLock(name)()
 	if _, _, err := store.Open(s.root, name); err != nil {
-		s.logf("create board %s: %v", name, err)
-		s.fail(w, &httpError{http.StatusInternalServerError, "cannot create board"})
+		s.fail(w, s.openFailure("create board", name, err, "cannot create board"))
 		return
 	}
 	http.Redirect(w, r, boardURL(name), http.StatusSeeOther)

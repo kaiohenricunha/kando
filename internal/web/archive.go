@@ -88,8 +88,7 @@ func (s *server) restoreCard(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := st.LoadArchive()
 	if err != nil {
-		s.logf("archive %s: %v", name, err)
-		s.fail(w, &httpError{http.StatusInternalServerError, "cannot read archive"})
+		s.fail(w, s.openFailure("archive", name, err, "cannot read archive"))
 		return
 	}
 	at, _ := a.Find(id)
@@ -148,8 +147,7 @@ func (s *server) archiveCard(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := st.LoadArchive()
 	if err != nil {
-		s.logf("archive %s: %v", name, err)
-		s.fail(w, &httpError{http.StatusInternalServerError, "cannot read archive"})
+		s.fail(w, s.openFailure("archive", name, err, "cannot read archive"))
 		return
 	}
 	// The archive already holding this id means a previous archive half

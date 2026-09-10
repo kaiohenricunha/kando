@@ -126,8 +126,45 @@ func Version(root, name string) string {
 	return hex.EncodeToString(h.Sum(nil)[:8])
 }
 
+// testHook, when non-nil, is called at a named point inside a read-then-write
+// sequence, so a test can land a concurrent write exactly there. Only tests set
+// it. The points:
+//
+//	"read"   after a file's bytes were read, before they are parsed
+//	"repair" after the baseline is recorded, before the checked write
+//	"wrote"  after this Store's own write, before its baseline is recorded
+//	"reload" after CheckReload read a changed file, before it is parsed
+var testHook func(point string)
+
+// hook calls testHook at point, if a test has set it.
+func hook(point string) {
+	if f := testHook; f != nil {
+		f(point)
+	}
+}
+
+// maxOpenAttempts bounds how many times Open and (*Store).LoadArchive re-read a
+// file whose repair was refused. A refusal means another writer landed between
+// the read and the repair, and the next read sees that write, so one retry
+// normally settles it; past the bound the ErrConflict is returned rather than
+// spun on.
+const maxOpenAttempts = 3
+
 // Open loads (or creates) the board under root/name. Cards missing an id, or
-// sharing one, are assigned one and the file is rewritten once.
+// sharing one, are assigned one and the file is rewritten through the checked
+// writer, against a baseline whose stat was taken before the read. A write the
+// checked writer can detect — anything landing between Open's read and its
+// repair — makes the repair refuse, and Open re-reads and repairs what it then
+// finds, up to maxOpenAttempts times, returning ErrConflict past that. The repair
+// is a pure function of the bytes on disk, so repairing the winner's bytes loses
+// nothing.
+//
+// Two gaps remain, shared by every checked write in this package rather than
+// introduced here: the check and the rename are separate steps, so a write
+// landing between them is overwritten; and a same-size write within one mtime
+// tick passes the fast path. So this narrows the repair's window without making
+// REL-3 hold on its own — the TUI and the web never silently losing an edit —
+// and the TUI's own saves stay unchecked on purpose (see SaveArchival).
 func Open(root, name string) (*Store, *board.Board, error) {
 	if !ValidBoardName(name) {
 		return nil, nil, fmt.Errorf("invalid board name %q", name)
@@ -136,32 +173,57 @@ func Open(root, name string) (*Store, *board.Board, error) {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return nil, nil, err
 	}
-	data, err := os.ReadFile(s.BoardPath())
-	if errors.Is(err, fs.ErrNotExist) {
-		b := &board.Board{Name: name}
-		if err := s.SaveBoard(b); err != nil {
+	for attempt := 1; ; attempt++ {
+		// b is rebound on every attempt. After a lost race the board to return is
+		// the one repaired from the winner's bytes: handing back the first read
+		// would leave the caller holding a board older than the Store's baseline,
+		// and its next checked save would overwrite the winner without noticing.
+		b, err := s.openBoard()
+		if err == nil {
+			s.noteArchive()
+			return s, b, nil
+		}
+		if !errors.Is(err, ErrConflict) || attempt == maxOpenAttempts {
 			return nil, nil, err
 		}
-		s.noteArchive()
-		return s, b, nil
+	}
+}
+
+// openBoard is one attempt at Open's read-and-repair. It records what it read as
+// the Store's baseline before deciding whether to write, so the checked writer
+// has something to compare against: a fresh Store's zero fileState would
+// otherwise make every repair look like a conflict.
+func (s *Store) openBoard() (*board.Board, error) {
+	data, seen, err := readState(s.BoardPath())
+	if errors.Is(err, fs.ErrNotExist) {
+		// The baseline is "no file". changedContent reports a still-missing file
+		// as unchanged and one that has since appeared as changed, so this creates
+		// the board only if nobody else has in the meantime.
+		s.board = fileState{}
+		b := &board.Board{Name: s.name}
+		hook("repair")
+		if err := s.SaveBoardIfUnchanged(b); err != nil {
+			return nil, err
+		}
+		return b, nil
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	b, rewrite, err := Parse(data)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	b.Name = name
-	if rewrite {
-		if err := s.SaveBoard(b); err != nil {
-			return nil, nil, err
-		}
-	} else {
-		s.board = stateOf(s.BoardPath(), data)
+	b.Name = s.name
+	s.board = seen
+	if !rewrite {
+		return b, nil
 	}
-	s.noteArchive()
-	return s, b, nil
+	hook("repair")
+	if err := s.SaveBoardIfUnchanged(b); err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 // Exists reports whether root/name is an openable board: a valid name whose
@@ -209,8 +271,8 @@ func ListBoards(root string) ([]string, error) {
 // noteArchive records the archive file's current state so that a pre-existing
 // archive is not reported as a change on the first CheckReload.
 func (s *Store) noteArchive() {
-	if data, err := os.ReadFile(s.ArchivePath()); err == nil {
-		s.archive = stateOf(s.ArchivePath(), data)
+	if _, seen, err := readState(s.ArchivePath()); err == nil {
+		s.archive = seen
 	}
 }
 
@@ -363,16 +425,34 @@ func (s *Store) saveBoard(b *board.Board) error {
 	if err := writeAtomic(s.BoardPath(), data); err != nil {
 		return err
 	}
+	hook("wrote")
 	s.board = stateOf(s.BoardPath(), data)
 	return nil
 }
 
 // LoadArchive reads archive.md (empty if missing). Cards missing or sharing an
-// id are assigned one, and archive.md is rewritten with them.
+// id are assigned one and archive.md is rewritten with them, through the same
+// checked, retried path as Open's repair and with the same remaining gaps; it
+// returns ErrConflict past maxOpenAttempts.
 func (s *Store) LoadArchive() (*board.Archive, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	data, err := os.ReadFile(s.ArchivePath())
+	for attempt := 1; ; attempt++ {
+		a, err := s.loadArchive()
+		if err == nil {
+			return a, nil
+		}
+		if !errors.Is(err, ErrConflict) || attempt == maxOpenAttempts {
+			return nil, err
+		}
+	}
+}
+
+// loadArchive is one attempt at LoadArchive, openBoard's archive twin. The caller
+// holds s.mu, so it checks and writes inline rather than through the locking
+// SaveArchivalIfUnchanged.
+func (s *Store) loadArchive() (*board.Archive, error) {
+	data, seen, err := readState(s.ArchivePath())
 	if errors.Is(err, fs.ErrNotExist) {
 		s.archive = fileState{}
 		return &board.Archive{}, nil
@@ -384,13 +464,19 @@ func (s *Store) LoadArchive() (*board.Archive, error) {
 	if err != nil {
 		return nil, err
 	}
-	if rewrite {
-		data = MarshalArchive(a)
-		if err := writeAtomic(s.ArchivePath(), data); err != nil {
-			return nil, err
-		}
+	s.archive = seen
+	if !rewrite {
+		return a, nil
 	}
-	s.archive = stateOf(s.ArchivePath(), data)
+	hook("repair")
+	if _, changed, err := changedContent(s.ArchivePath(), &s.archive); err != nil {
+		return nil, err
+	} else if changed {
+		return nil, ErrConflict
+	}
+	if err := s.saveArchive(a); err != nil {
+		return nil, err
+	}
 	return a, nil
 }
 
@@ -418,25 +504,26 @@ func (s *Store) CheckReload() (Reload, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var r Reload
-	data, changed, err := changedContent(s.BoardPath(), &s.board)
+	data, seen, changed, err := changedContentState(s.BoardPath(), &s.board)
 	if err != nil {
 		return r, err
 	}
 	if changed {
+		hook("reload")
 		if b, _, perr := Parse(data); perr == nil {
 			b.Name = s.name
 			r.Board = b
-			s.board = stateOf(s.BoardPath(), data)
+			s.board = seen
 		}
 	}
-	data, changed, err = changedContent(s.ArchivePath(), &s.archive)
+	data, seen, changed, err = changedContentState(s.ArchivePath(), &s.archive)
 	if err != nil {
 		return r, err
 	}
 	if changed {
 		if a, _, perr := ParseArchive(data); perr == nil {
 			r.Archive = a
-			s.archive = stateOf(s.ArchivePath(), data)
+			s.archive = seen
 		}
 	}
 	return r, nil
@@ -444,32 +531,66 @@ func (s *Store) CheckReload() (Reload, error) {
 
 // changedContent returns the file's bytes when they differ from the recorded state.
 func changedContent(path string, st *fileState) ([]byte, bool, error) {
+	data, _, changed, err := changedContentState(path, st)
+	return data, changed, err
+}
+
+// changedContentState is changedContent that also returns, for a changed file,
+// the baseline to record for the bytes it read: their hash with the stat taken
+// before the read, for the reason readState gives.
+func changedContentState(path string, st *fileState) ([]byte, fileState, bool, error) {
 	fi, err := os.Stat(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		st.valid = false
-		return nil, false, nil
+		return nil, fileState{}, false, nil
 	}
 	if err != nil {
-		return nil, false, err
+		return nil, fileState{}, false, err
 	}
 	if st.valid && fi.ModTime().Equal(st.mtime) && fi.Size() == st.size {
-		return nil, false, nil
+		return nil, fileState{}, false, nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, false, err
+		return nil, fileState{}, false, err
 	}
-	if st.valid && sha256.Sum256(data) == st.hash {
+	sum := sha256.Sum256(data)
+	if st.valid && sum == st.hash {
 		st.mtime, st.size = fi.ModTime(), fi.Size()
-		return nil, false, nil
+		return nil, fileState{}, false, nil
 	}
-	return data, true, nil
+	return data, fileState{valid: true, hash: sum, mtime: fi.ModTime(), size: fi.Size()}, true, nil
 }
 
+// readState reads path and returns its bytes with the baseline to record for
+// them. The stat is taken BEFORE the read. A write landing after that stat shows
+// up at the next check as a changed stat, which forces a hash comparison, and
+// the hash then tells the truth either way. Taken after the read instead, a
+// write landing in between pairs the old bytes' hash with the new file's stat,
+// and changedContent's fast path calls the file unchanged.
+func readState(path string) ([]byte, fileState, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return nil, fileState{}, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fileState{}, err
+	}
+	hook("read")
+	return data, fileState{valid: true, hash: sha256.Sum256(data), mtime: fi.ModTime(), size: fi.Size()}, nil
+}
+
+// stateOf records the baseline for bytes this Store has just written to path.
+// Its stat can only follow the write, so a write by someone else landing in
+// between would pair our hash with their stat. When the sizes disagree that is
+// detectable: the mtime is left zero, changedContent never takes its fast path on
+// it, and the next check compares hashes instead. A same-size write in that gap
+// is not detectable this way; see Open's doc for the gaps that remain.
 func stateOf(path string, data []byte) fileState {
 	st := fileState{valid: true, hash: sha256.Sum256(data), size: int64(len(data))}
-	if fi, err := os.Stat(path); err == nil {
-		st.mtime, st.size = fi.ModTime(), fi.Size()
+	if fi, err := os.Stat(path); err == nil && fi.Size() == st.size {
+		st.mtime = fi.ModTime()
 	}
 	return st
 }

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kaiohenricunha/kando/internal/board"
 	"github.com/kaiohenricunha/kando/internal/store"
@@ -43,10 +44,21 @@ func (s *server) openForWrite(name string) (*store.Store, *board.Board, error) {
 	}
 	st, b, err := store.Open(s.root, name)
 	if err != nil {
-		s.logf("open %s: %v", name, err)
-		return nil, nil, &httpError{http.StatusInternalServerError, "cannot open board"}
+		return nil, nil, s.openFailure("open", name, err, "cannot open board")
 	}
 	return st, b, nil
+}
+
+// openFailure answers an error from store.Open or (*Store).LoadArchive. Both
+// repair a file's ids through the checked writer and retry a lost race, so a
+// conflict that outlasts the retries is a stale write like any other and gets
+// commit's 409; anything else is a 500 with the detail logged (OPS-4).
+func (s *server) openFailure(what, name string, err error, msg string) *httpError {
+	if errors.Is(err, store.ErrConflict) {
+		return &httpError{http.StatusConflict, "the board changed on disk — reload and try again"}
+	}
+	s.logf("%s %s: %v", what, name, err)
+	return &httpError{http.StatusInternalServerError, msg}
 }
 
 // findCard resolves {id} on b, or 404.
@@ -190,18 +202,18 @@ func (s *server) moveCard() http.HandlerFunc {
 		if !ok {
 			return &httpError{http.StatusBadRequest, "invalid lane"}
 		}
-		at, positioned, err := movePos(b, to, f)
+		place, err := movePos(b, to, f)
 		if err != nil {
 			return err
 		}
-		if !positioned {
+		if place == nil {
 			// No position asked for: the lane picker's move, unchanged —
 			// including its same-lane no-op, which MoveAt would otherwise
 			// turn into a jump to the top of the lane the card is in.
 			b.Move(from, i, to, s.now())
 			return nil
 		}
-		b.MoveAt(from, i, to, at, s.now())
+		place(from, i, s.now())
 		return nil
 	})
 }
@@ -226,30 +238,36 @@ func (s *server) moveCard() http.HandlerFunc {
 //
 // pos and anchor are separate fields so no id-shaped value is ever reserved;
 // a hand-edited board.md may give a card any id at all, "start" included.
-func movePos(b *board.Board, to board.Lane, f url.Values) (at int, positioned bool, err error) {
+//
+// It returns how to place the card, or nil when no position was asked for — the
+// lane picker's move. moveCard calls what it gets rather than switching on the
+// position words a second time, so the two cannot disagree about what a word
+// means, and the insert-before arithmetic stays in internal/board.
+func movePos(b *board.Board, to board.Lane, f url.Values) (place func(from board.Lane, i int, now time.Time), err error) {
 	switch pos := f.Get("pos"); pos {
 	case "":
-		return 0, false, nil
+		return nil, nil
 	case "start":
-		return 0, true, nil
+		return func(from board.Lane, i int, now time.Time) { b.MoveAt(from, i, to, 0, now) }, nil
 	case "before", "after":
-		anchor := f.Get("anchor")
-		if anchor == "" {
-			return 0, false, &httpError{http.StatusBadRequest, "a position needs an anchor card"}
+		id := f.Get("anchor")
+		if id == "" {
+			return nil, &httpError{http.StatusBadRequest, "a position needs an anchor card"}
 		}
 		// A card dropped against itself resolves to a position it already
-		// holds, which MoveAt treats as the no-op it is.
-		for i, c := range b.Lanes[to] {
-			if c.ID == anchor {
-				if pos == "after" {
-					return i + 1, true, nil
-				}
-				return i, true, nil
+		// holds, which MoveBefore and MoveAfter treat as the no-op it is.
+		for anchor, c := range b.Lanes[to] {
+			if c.ID != id {
+				continue
 			}
+			if pos == "after" {
+				return func(from board.Lane, i int, now time.Time) { b.MoveAfter(from, i, to, anchor, now) }, nil
+			}
+			return func(from board.Lane, i int, now time.Time) { b.MoveBefore(from, i, to, anchor, now) }, nil
 		}
-		return 0, false, &httpError{http.StatusConflict, "that card moved — reload and try again"}
+		return nil, &httpError{http.StatusConflict, "that card moved — reload and try again"}
 	default:
-		return 0, false, &httpError{http.StatusBadRequest, "invalid position"}
+		return nil, &httpError{http.StatusBadRequest, "invalid position"}
 	}
 }
 

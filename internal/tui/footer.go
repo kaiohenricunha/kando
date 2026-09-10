@@ -44,14 +44,27 @@ func (m Model) groups(gs []keyGroup) string {
 	return strings.Join(parts, "  ")
 }
 
-// boardFooter applies the fallback chain: full+count, reduced+count, reduced, truncated.
+// boardFooter applies the fallback chain: full+count, reduced+count, reduced,
+// truncated. With something to report — an error, or a refused key's notice —
+// the message takes the count's place and is never the part dropped for lack
+// of room: the hints give way instead, as they do on the archive and detail
+// footers.
 func (m Model) boardFooter(cw int) string {
-	count := m.styles.Muted.Render(fmt.Sprintf("%d cards", m.visibleCount()))
-	if m.err != nil { // a failed save or watcher takes the count's place until the next success
-		count = m.styles.Accent2.Render(trunc("⊘ "+sanitize(m.err.Error()), cw/2))
-	}
 	full := m.groups(boardFooterFull)
 	reduced := m.groups(boardFooterReduced)
+	if m.hasReport() {
+		// A failed save or the watcher until the next successful write; a
+		// refused key until the next key. The old chain dropped a message that
+		// did not fit beside the reduced hints — at 120 wide, any refusal naming
+		// a card with a title much over twenty characters.
+		e := m.reportPart(cw)
+		left := full
+		if width(full)+2+width(e) > cw {
+			left = reduced
+		}
+		return hsplit(left, e, cw)
+	}
+	count := m.styles.Muted.Render(fmt.Sprintf("%d cards", m.visibleCount()))
 	switch {
 	case width(full)+2+width(count) <= cw:
 		return hsplit(full, count, cw)
@@ -60,6 +73,35 @@ func (m Model) boardFooter(cw int) string {
 	default:
 		return fit(reduced, cw)
 	}
+}
+
+// hasReport says whether the footer's report slot has anything to show.
+func (m Model) hasReport() bool { return m.notice != "" || m.err != nil }
+
+// reportPart is the footer's report slot: "⊘ message" in accent2, held to half
+// the row so the hints beside it keep at least the other half. A refused key's
+// notice goes ahead of err. It lasts only until the next key, after which a
+// standing condition in err is shown again rather than lost.
+func (m Model) reportPart(cw int) string {
+	msg := m.notice
+	if msg == "" {
+		msg = m.err.Error()
+	}
+	return m.styles.Accent2.Render(trunc("⊘ "+sanitize(msg), cw/2))
+}
+
+// footerWithReport is the archive and detail footers: the key hints, and at the
+// right end the report slot whenever a save, the watcher or a refused key has
+// something to say — the slot boardFooter gives the card count. The message
+// wins over the hints (hsplit shrinks the left part, never the right), so a
+// refused key can say so at every size. With nothing to report it is
+// fit(left, cw), byte for byte what these footers rendered before, so no golden
+// moves.
+func (m Model) footerWithReport(left string, cw int) string {
+	if !m.hasReport() {
+		return fit(left, cw)
+	}
+	return hsplit(left, m.reportPart(cw), cw)
 }
 
 // footerWithRight draws groups on the left and an optional right part that is

@@ -243,6 +243,23 @@ func (b *Board) MoveAt(from Lane, i int, to Lane, at int, now time.Time) int {
 	return dst
 }
 
+// MoveBefore places the card at from[i] immediately above the card at index
+// anchor of lane to, where anchor indexes that lane as it stood before the
+// move. It is MoveAt named for what it does: the TUI's K and the web's
+// pos=before both mean it.
+func (b *Board) MoveBefore(from Lane, i int, to Lane, anchor int, now time.Time) int {
+	return b.MoveAt(from, i, to, anchor, now)
+}
+
+// MoveAfter places the card at from[i] immediately below the card at index
+// anchor of lane to. Below a card is in front of whatever follows it, so this is
+// MoveAt at anchor+1 — the step both surfaces used to re-derive, and the one
+// that reads wrong at a glance: moving a card one slot down is anchor+1, not
+// i+1, because i+1 names the position the card already holds.
+func (b *Board) MoveAfter(from Lane, i int, to Lane, anchor int, now time.Time) int {
+	return b.MoveAt(from, i, to, anchor+1, now)
+}
+
 // stamp records a card's arrival in lane to at now: the one rule for what a
 // lane change does to the dates, shared by Move and Unarchive.
 func stamp(c *Card, to Lane, now time.Time) {

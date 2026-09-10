@@ -38,11 +38,12 @@ footnotes), not because it is missing; `—` means it is not built yet⁵.
 | Help | X⁴ | V | V |
 
 ¹ The web drags a card to a position; the TUI steps it there with `J`/`K`,
-one slot per press. Both call the same `board.MoveAt`. `kando move` takes a
-lane and no position, and that is deliberate rather than pending: placing a
-card is an interactive act — you put it *there*, relative to what you can see
-— and a headless verb would have to name the anchor by id, which is the one
-thing neither of the other two surfaces makes you do
+one slot per press. Both go through `board.MoveAt`, by way of `MoveBefore`
+and `MoveAfter`. `kando move` takes a lane and no position, and that is
+deliberate rather than pending: placing a card is an interactive act — you
+put it *there*, relative to what you can see — and a headless verb would
+have to name the anchor by id, which is the one thing neither of the other
+two surfaces makes you do
 (`docs/specs/kando-web/spec/2-scope.md`, BOUND-1b). ² Not in this effort's scope — `Card.SetTitle` already exists, so a
 `kando title` verb is a one-file follow-up on the same pattern as `kando tag`.
 ³ A CLI verb is a one-shot process — there is nothing running for it to
@@ -249,9 +250,10 @@ untouched by this filter."
 
 `kando archive restore <card> [board]` brings an archived card back to the
 top of Doing — the TUI's `u` and the web's restore button, going through the
-exact same `board.Restore` call. Refused if a card with that id is already
-on the board (a previous restore or archive half failed; one copy has to be
-deleted by hand first) or if the board has nothing archived at all.
+exact same `board.Restore` call. Refused if a card with that id is already on
+the board, as the TUI's `u` and the web's button are too (a previous restore or
+archive half failed; one copy has to be deleted by hand first), or if the board
+has nothing archived at all.
 
 ## Exit codes
 
@@ -322,7 +324,11 @@ keeps the same id until the file is saved with the id in it. When cards share
 an `id`, every one but the card kando looks up first — lanes in their fixed
 order, archived cards newest first — is given a new one the same way. Opening
 the board in the TUI, or any command or web action that changes it, writes the
-repaired ids; a read such as `kando list` leaves the file as it is until then.
+repaired ids; a read such as `kando list` leaves the file as it is until then. Text
+outside any card — anything before the first `## ` heading, or between a
+heading and its first `### ` card — belongs to no card and is dropped the next
+time kando writes the file: any edit does that, and so does opening a board
+whose ids need repairing.
 
 Text you type into a card through any surface has its control characters and
 bidirectional overrides removed before it is stored, so a note pasted from an

@@ -105,7 +105,10 @@ func (m Model) detailCard() *board.Card {
 	return c
 }
 
-// detailList is the navigation list in the left pane and the cursor position in it.
+// detailList is the navigation list in the left pane and the cursor position in
+// it. The cursor is the FIRST card carrying the open id, the same card
+// detailCard shows through Board.Find: with two cards sharing an id, taking the
+// last put the cursor on one card and the pane on the other.
 func (m Model) detailList() (cards []*board.Card, cur int) {
 	if m.detail.archived {
 		cards = m.visibleArchive()
@@ -115,6 +118,7 @@ func (m Model) detailList() (cards []*board.Card, cur int) {
 	for i, c := range cards {
 		if c.ID == m.detail.id {
 			cur = i
+			break
 		}
 	}
 	return cards, cur
@@ -185,7 +189,7 @@ func (m Model) renderDetail() []string {
 		picks := []keyGroup{{"1", "Backlog"}, {"2", "Todo"}, {"3", "Doing"}, {"4", "Done"}}
 		footer = fit(s.Muted.Render("move to:")+"  "+m.groups(picks), cw)
 	} else {
-		footer = fit(m.groups(detailFooterGroups), cw)
+		footer = m.footerWithReport(m.groups(detailFooterGroups), cw)
 	}
 	return m.screenRows(header, body, footer)
 }
@@ -515,6 +519,8 @@ func (m Model) updateLanePick(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // moveDetailCard moves the open card to lane `to` (out of the archive if needed)
 // and follows it: the destination lane becomes active with the card selected.
+// Moving an archived card out is a restore, so it takes u's guard: refused, with
+// nothing written and the card left open, when its id is already on the board.
 func (m *Model) moveDetailCard(to board.Lane) {
 	c := m.detailCard()
 	if c == nil {
@@ -522,6 +528,9 @@ func (m *Model) moveDetailCard(to board.Lane) {
 	}
 	now := m.now()
 	if m.detail.archived {
+		if m.restoreRefused(c) {
+			return
+		}
 		for i, x := range m.archive.Cards {
 			if x == c {
 				m.b.Unarchive(m.archive, i, to, now)
@@ -540,21 +549,26 @@ func (m *Model) moveDetailCard(to board.Lane) {
 	m.ensureVisible()
 }
 
-// archiveDetailCard is A on an open board card: archive it and return to the
-// board. A no-op when the card is already archived (nothing to archive
-// twice) or is not in Done (the same guard the board screen's A applies).
+// archiveDetailCard is A on an open card: archive it and return to the board,
+// where the card's own page no longer exists — what the web's button does too.
+// The screen changes only when the archive happened. A refusal (the card is
+// already archived, is not in Done, or archive.md cannot be read) stays on the
+// card with the reason in the footer, so a key that did nothing does not look
+// like one that did.
 func (m *Model) archiveDetailCard() {
-	if m.detail.archived {
-		return
-	}
 	c := m.detailCard()
 	if c == nil {
 		return
 	}
-	if l, _, _ := m.b.Find(c.ID); l != board.Done {
+	if m.detail.archived {
+		// An archived card is in no lane, so archiveDone's lane check would miss
+		// it and find no lane to name in its refusal.
+		m.notice = fmt.Sprintf("%q is already archived", c.Title)
 		return
 	}
-	m.archiveDone(c)
+	if !m.archiveDone(c) {
+		return
+	}
 	m.scr = screenBoard
 	m.mode = modeNormal
 	m.clampSel()

@@ -405,3 +405,39 @@ func TestNotePreviewIsBounded(t *testing.T) {
 		t.Errorf("NotePreview = %q, want %q", got, "first line")
 	}
 }
+
+// MoveBefore and MoveAfter name the slot, so neither surface has to decode
+// MoveAt's insert-before convention itself. Same-lane cases include both ways of
+// naming the position a card already holds, which must stay no-ops.
+func TestMoveBeforeAndMoveAfter(t *testing.T) {
+	cases := []struct {
+		name    string
+		move    func(*Board) int
+		wantIdx int
+		want    string
+	}{
+		{"a after c", func(b *Board) int { return b.MoveAfter(Todo, 0, Todo, 2, now) }, 2, "b c a"},
+		{"c before a", func(b *Board) int { return b.MoveBefore(Todo, 2, Todo, 0, now) }, 0, "c a b"},
+		{"a after b, one slot down", func(b *Board) int { return b.MoveAfter(Todo, 0, Todo, 1, now) }, 1, "b a c"},
+		{"b after a, where it already is", func(b *Board) int { return b.MoveAfter(Todo, 1, Todo, 0, now) }, 1, "a b c"},
+		{"b before c, where it already is", func(b *Board) int { return b.MoveBefore(Todo, 1, Todo, 2, now) }, 1, "a b c"},
+		{"b after itself", func(b *Board) int { return b.MoveAfter(Todo, 1, Todo, 1, now) }, 1, "a b c"},
+		{"b before itself", func(b *Board) int { return b.MoveBefore(Todo, 1, Todo, 1, now) }, 1, "a b c"},
+	}
+	for _, tc := range cases {
+		b := &Board{}
+		for _, id := range []string{"a", "b", "c"} {
+			b.Lanes[Todo] = append(b.Lanes[Todo], &Card{ID: id})
+		}
+		if idx := tc.move(b); idx != tc.wantIdx || laneIDs(b, Todo) != tc.want {
+			t.Errorf("%s: got %d %q, want %d %q", tc.name, idx, laneIDs(b, Todo), tc.wantIdx, tc.want)
+		}
+	}
+	// Across lanes the anchor indexes the destination lane.
+	b := &Board{}
+	b.Lanes[Todo] = []*Card{{ID: "a"}}
+	b.Lanes[Doing] = []*Card{{ID: "x"}, {ID: "y"}}
+	if idx := b.MoveAfter(Todo, 0, Doing, 0, now); idx != 1 || laneIDs(b, Doing) != "x a y" {
+		t.Errorf("MoveAfter across lanes: got %d %q, want 1 %q", idx, laneIDs(b, Doing), "x a y")
+	}
+}
