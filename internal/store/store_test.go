@@ -705,8 +705,18 @@ func TestLoadDoesNotRepairADuplicateOnDisk(t *testing.T) {
 // No store test runs in parallel, so package state is safe here.
 func interleave(t *testing.T, f func()) {
 	t.Helper()
-	beforeRepair = f
-	t.Cleanup(func() { beforeRepair = nil })
+	interleaveAt(t, "repair", f)
+}
+
+// interleaveAt runs f each time the store reaches the named hook point.
+func interleaveAt(t *testing.T, point string, f func()) {
+	t.Helper()
+	testHook = func(p string) {
+		if p == point {
+			f()
+		}
+	}
+	t.Cleanup(func() { testHook = nil })
 }
 
 func TestOpenRepairDoesNotClobberAConcurrentWrite(t *testing.T) {
@@ -854,5 +864,161 @@ func TestLoadArchiveRepairDoesNotClobberAConcurrentWrite(t *testing.T) {
 	}
 	if err := st.SaveArchivalIfUnchanged(b, a); err != nil {
 		t.Errorf("our own archive repair must not read as a conflict: %v", err)
+	}
+}
+
+// A baseline pairs a file's hash with its stat, and changedContent trusts the
+// stat when it matches. These tests land a write inside the gap between reading
+// a file and recording its baseline: taken after the read, the stat belongs to
+// the new file while the hash belongs to the old bytes, the fast path calls the
+// file unchanged, and the next checked write overwrites the edit it was built to
+// refuse.
+
+func TestOpenSeesAWriteBetweenItsReadAndItsBaseline(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "life")
+	os.MkdirAll(dir, 0o755)
+	path := filepath.Join(dir, "board.md")
+	dup := "## Todo\n\n### Original\nid: dup\n\n### Copy\nid: dup\n"
+	os.WriteFile(path, []byte(dup), 0o644)
+	fired := false
+	interleaveAt(t, "read", func() {
+		if !fired {
+			fired = true
+			if err := os.WriteFile(path, []byte(dup+"\n### Theirs\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	if _, _, err := Open(root, "life"); err != nil {
+		t.Fatal(err)
+	}
+	if data := string(mustRead(t, path)); !strings.Contains(data, "### Theirs\n") {
+		t.Fatalf("a write between Open's read and its baseline was overwritten by the repair:\n%s", data)
+	}
+}
+
+func TestLoadArchiveSeesAWriteBetweenItsReadAndItsBaseline(t *testing.T) {
+	root := t.TempDir()
+	st, _, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	one := "## undated\n\n### One\n"
+	os.WriteFile(st.ArchivePath(), []byte(one), 0o644)
+	fired := false
+	interleaveAt(t, "read", func() {
+		if !fired {
+			fired = true
+			if err := os.WriteFile(st.ArchivePath(), []byte(one+"\n### Two\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	if _, err := st.LoadArchive(); err != nil {
+		t.Fatal(err)
+	}
+	if data := string(mustRead(t, st.ArchivePath())); !strings.Contains(data, "### Two\n") {
+		t.Fatalf("a write between LoadArchive's read and its baseline was overwritten by the repair:\n%s", data)
+	}
+}
+
+func TestCheckReloadSeesAWriteBetweenItsReadAndItsBaseline(t *testing.T) {
+	root := t.TempDir()
+	st, _, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := st.BoardPath()
+	// Same size on purpose, with mtimes set apart explicitly: a size change
+	// would be caught by stateOf's own guard, and this test is about the stat
+	// taken for bytes that were read, not written. Explicit mtimes keep it
+	// deterministic on a filesystem with a coarse clock.
+	a := "## Todo\n\n### A\nid: aaaaaaaa\n"
+	b := "## Todo\n\n### B\nid: bbbbbbbb\n"
+	t0 := time.Unix(1_700_000_000, 0)
+	os.WriteFile(path, []byte(a), 0o644)
+	os.Chtimes(path, t0, t0)
+	fired := false
+	interleaveAt(t, "reload", func() {
+		if !fired {
+			fired = true
+			os.WriteFile(path, []byte(b), 0o644)
+			os.Chtimes(path, t0.Add(2*time.Second), t0.Add(2*time.Second))
+		}
+	})
+	if r, err := st.CheckReload(); err != nil || r.Board == nil {
+		t.Fatalf("the first reload must see the external edit: board=%v err=%v", r.Board, err)
+	}
+	r, err := st.CheckReload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Board == nil || len(r.Board.Lanes[board.Todo]) != 1 || r.Board.Lanes[board.Todo][0].Title != "B" {
+		t.Errorf("a write between CheckReload's read and its baseline must be reported by the next reload; got %v", r.Board)
+	}
+}
+
+func TestSaveBoardBaselineSeesAConcurrentWriteOfADifferentSize(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := st.BoardPath()
+	theirs := "## Todo\n\n### Theirs\nid: bbbbbbbb\n"
+	fired := false
+	interleaveAt(t, "wrote", func() {
+		if fired {
+			return
+		}
+		fired = true
+		// stateOf can only compare sizes here, so the fixture must change the size.
+		if fi, err := os.Stat(path); err != nil || fi.Size() == int64(len(theirs)) {
+			t.Fatalf("setup: the concurrent write must change the file size (stat err %v)", err)
+		}
+		if err := os.WriteFile(path, []byte(theirs), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	})
+	b.Insert(board.Todo, 0, &board.Card{ID: "aaaaaaaa", Title: "mine"})
+	if err := st.SaveBoard(b); err != nil {
+		t.Fatal(err)
+	}
+	b.Insert(board.Todo, 0, &board.Card{ID: "cccccccc", Title: "mine too"})
+	if err := st.SaveBoardIfUnchanged(b); !errors.Is(err, ErrConflict) {
+		t.Fatalf("a write landing right after our own save must make the next checked save refuse, got %v", err)
+	}
+	if data := string(mustRead(t, path)); !strings.Contains(data, "### Theirs\n") {
+		t.Errorf("the concurrent write must survive:\n%s", data)
+	}
+}
+
+func TestLoadArchiveGivesUpAfterRepeatedConflicts(t *testing.T) {
+	root := t.TempDir()
+	st, _, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := st.ArchivePath()
+	os.WriteFile(path, []byte("## undated\n\n### One\n"), 0o644)
+	calls := 0
+	interleave(t, func() {
+		calls++
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.WriteString("\n### Theirs " + string(rune('0'+calls)) + "\n")
+		f.Close()
+	})
+	if _, err := st.LoadArchive(); !errors.Is(err, ErrConflict) {
+		t.Fatalf("losing the race every time must end in ErrConflict, got %v", err)
+	}
+	if calls != 3 {
+		t.Errorf("LoadArchive must give up after 3 attempts rather than spin: hook ran %d times", calls)
+	}
+	if data := string(mustRead(t, path)); !strings.Contains(data, "### Theirs 3\n") {
+		t.Errorf("giving up must still lose nothing:\n%s", data)
 	}
 }
