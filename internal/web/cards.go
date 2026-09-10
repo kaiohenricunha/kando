@@ -190,18 +190,23 @@ func (s *server) moveCard() http.HandlerFunc {
 		if !ok {
 			return &httpError{http.StatusBadRequest, "invalid lane"}
 		}
-		at, positioned, err := movePos(b, to, f)
+		anchor, pos, err := movePos(b, to, f)
 		if err != nil {
 			return err
 		}
-		if !positioned {
+		switch pos {
+		case "":
 			// No position asked for: the lane picker's move, unchanged —
 			// including its same-lane no-op, which MoveAt would otherwise
 			// turn into a jump to the top of the lane the card is in.
 			b.Move(from, i, to, s.now())
-			return nil
+		case "start":
+			b.MoveAt(from, i, to, 0, s.now())
+		case "after":
+			b.MoveAfter(from, i, to, anchor, s.now())
+		default: // "before"
+			b.MoveBefore(from, i, to, anchor, s.now())
 		}
-		b.MoveAt(from, i, to, at, s.now())
 		return nil
 	})
 }
@@ -226,30 +231,29 @@ func (s *server) moveCard() http.HandlerFunc {
 //
 // pos and anchor are separate fields so no id-shaped value is ever reserved;
 // a hand-edited board.md may give a card any id at all, "start" included.
-func movePos(b *board.Board, to board.Lane, f url.Values) (at int, positioned bool, err error) {
-	switch pos := f.Get("pos"); pos {
-	case "":
-		return 0, false, nil
-	case "start":
-		return 0, true, nil
+//
+// It returns the position word and, for before and after, the anchor's index in
+// the destination lane; moveCard picks MoveBefore or MoveAfter from the word, so
+// the insert-before arithmetic lives in one place, internal/board.
+func movePos(b *board.Board, to board.Lane, f url.Values) (anchor int, pos string, err error) {
+	switch pos = f.Get("pos"); pos {
+	case "", "start":
+		return 0, pos, nil
 	case "before", "after":
-		anchor := f.Get("anchor")
-		if anchor == "" {
-			return 0, false, &httpError{http.StatusBadRequest, "a position needs an anchor card"}
+		id := f.Get("anchor")
+		if id == "" {
+			return 0, "", &httpError{http.StatusBadRequest, "a position needs an anchor card"}
 		}
 		// A card dropped against itself resolves to a position it already
-		// holds, which MoveAt treats as the no-op it is.
+		// holds, which MoveBefore and MoveAfter treat as the no-op it is.
 		for i, c := range b.Lanes[to] {
-			if c.ID == anchor {
-				if pos == "after" {
-					return i + 1, true, nil
-				}
-				return i, true, nil
+			if c.ID == id {
+				return i, pos, nil
 			}
 		}
-		return 0, false, &httpError{http.StatusConflict, "that card moved — reload and try again"}
+		return 0, "", &httpError{http.StatusConflict, "that card moved — reload and try again"}
 	default:
-		return 0, false, &httpError{http.StatusBadRequest, "invalid position"}
+		return 0, "", &httpError{http.StatusBadRequest, "invalid position"}
 	}
 }
 
