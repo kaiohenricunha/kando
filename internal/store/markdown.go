@@ -32,23 +32,32 @@ type section struct {
 }
 
 // parseSections reads "## heading" sections containing "### title" card blocks.
-// Once the whole file is read, assignIDs gives every card an id no other card
-// holds; needsRewrite reports whether it had to change any.
-func parseSections(data []byte) (secs []section, needsRewrite bool, err error) {
+// It assigns no ids. It records each card's derivation seed in FILE order, and
+// the caller assigns ids with assignIDs in LOOKUP order, which only the caller
+// knows: lane order for a board, newest DoneAt first for an archive.
+func parseSections(data []byte) (secs []section, seeds map[*board.Card]string, err error) {
 	var (
 		cur      *section
 		card     *board.Card
 		inKeys   bool
 		notes    []string
 		lineNo   int
+		ordinal  int
 		checkist []board.Item
 	)
+	seeds = make(map[*board.Card]string)
 	flush := func() {
 		if card == nil {
 			return
 		}
 		card.Notes = strings.Join(trimBlank(notes), "\n")
 		card.Checklist = checkist
+		// The seed is fixed here, in file order, so every id derived before
+		// shared ids were repaired stays byte-identical. The ordinal keeps two
+		// identical card blocks apart.
+		seeds[card] = fmt.Sprintf("%d\x00%s\x00%s\x00%s\x00%s",
+			ordinal, cur.heading, card.Title, formatTime(card.CreatedAt), card.Notes)
+		ordinal++
 		cur.cards = append(cur.cards, card)
 		card, notes, checkist = nil, nil, nil
 	}
@@ -63,7 +72,7 @@ func parseSections(data []byte) (secs []section, needsRewrite bool, err error) {
 		case strings.HasPrefix(line, "### "):
 			flush()
 			if cur == nil {
-				return nil, false, fmt.Errorf("line %d: card before any \"## \" section", lineNo)
+				return nil, nil, fmt.Errorf("line %d: card before any \"## \" section", lineNo)
 			}
 			card = &board.Card{Title: strings.TrimSpace(line[4:])}
 			inKeys = true
@@ -74,7 +83,7 @@ func parseSections(data []byte) (secs []section, needsRewrite bool, err error) {
 		case inKeys && keyRe.MatchString(line):
 			m := keyRe.FindStringSubmatch(line)
 			if err := setKey(card, m[1], strings.TrimSpace(m[2])); err != nil {
-				return nil, false, fmt.Errorf("line %d: %w", lineNo, err)
+				return nil, nil, fmt.Errorf("line %d: %w", lineNo, err)
 			}
 		default:
 			inKeys = false
@@ -86,56 +95,41 @@ func parseSections(data []byte) (secs []section, needsRewrite bool, err error) {
 		}
 	}
 	flush()
-	return secs, assignIDs(secs), nil
+	return secs, seeds, nil
 }
 
-// assignIDs gives every card an id no other card in the file holds, and reports
-// whether it changed any: a card with no id, or a later duplicate of one.
+// assignIDs gives every card an id no other card holds, and reports whether it
+// changed any: a card with no id, or one sharing an id with a card before it.
 //
-// It runs after the whole file is read, in two passes, because order matters.
-// Written ids claim their values first; only then are ids derived for the cards
-// that need one. Deciding card by card in file order would let an id-less card
-// near the top derive the very value a card further down wrote by hand, and the
-// written one would then be reassigned — changing an id the user typed, which
-// is what keeping the first occurrence exists to avoid.
+// order must be the order the lookups walk, not file order: Board.Find goes
+// Backlog, Todo, Doing, Done, and Archive.Find goes newest DoneAt first. The
+// card that keeps a shared id has to be the one those lookups already reached,
+// or a saved script, a bookmark or an open tab would start acting on a
+// different card. A hand-edited file can list its lanes in any order, so the
+// two orders genuinely differ.
 //
-// A duplicate is reassigned rather than refused. This is the one value parsing
+// Written ids claim their values in a first pass, before anything is derived.
+// Deciding card by card would let an id-less card derive the very value a later
+// card wrote by hand, and the written id would be the one replaced.
+//
+// A shared id is reassigned rather than refused. This is the one value parsing
 // changes instead of preserving (see the policy note in internal/board/ops.go):
-// an id naming two cards identifies neither, and Board.Find only ever reaches
-// the first, so the later twin was already unreachable. Keeping the first
-// occurrence means anything that resolved before still resolves to the same card.
-//
-// Derived, not random: the same file parsed twice yields the same ids, so a link
-// or form rendered from a read-only load still resolves on the request it
-// produces. The ordinal keeps two identical card blocks apart; the salt matters
-// only when a derived id is already taken.
-func assignIDs(secs []section) (changed bool) {
-	type pending struct {
-		card *board.Card
-		seed string
-	}
-	seen := make(map[string]bool)
-	var need []pending
-	ordinal := 0
-	for _, sec := range secs {
-		for _, c := range sec.cards {
-			seed := fmt.Sprintf("%d\x00%s\x00%s\x00%s\x00%s",
-				ordinal, sec.heading, c.Title, formatTime(c.CreatedAt), c.Notes)
-			ordinal++
-			if c.ID != "" && !seen[c.ID] {
-				seen[c.ID] = true
-				continue
-			}
-			need = append(need, pending{c, seed})
+// an id naming two cards identifies neither, and the lookups only ever reached
+// one of them, so the other was already unreachable.
+func assignIDs(order []*board.Card, seeds map[*board.Card]string) (changed bool) {
+	seen := make(map[string]bool, len(order))
+	var need []*board.Card
+	for _, c := range order {
+		if c.ID != "" && !seen[c.ID] {
+			seen[c.ID] = true
+			continue
 		}
+		need = append(need, c)
 	}
-	for _, p := range need {
-		id := board.DeriveID(p.seed)
-		for salt := 1; seen[id]; salt++ {
-			id = board.DeriveID(fmt.Sprintf("%s\x00%d", p.seed, salt))
-		}
-		p.card.ID = id
-		seen[id] = true
+	taken := func(id string) bool { return seen[id] }
+	for _, c := range need {
+		c.ID = board.DeriveFreeID(seeds[c], taken)
+		seen[c.ID] = true
 	}
 	return len(need) > 0
 }
@@ -198,9 +192,10 @@ func trimBlank(lines []string) []string {
 	return lines
 }
 
-// Parse reads a board.md. Cards without an id get one; needsRewrite reports that.
+// Parse reads a board.md. A card without an id, or sharing one, gets one;
+// needsRewrite reports that.
 func Parse(data []byte) (b *board.Board, needsRewrite bool, err error) {
-	secs, needsRewrite, err := parseSections(data)
+	secs, seeds, err := parseSections(data)
 	if err != nil {
 		return nil, false, err
 	}
@@ -212,12 +207,17 @@ func Parse(data []byte) (b *board.Board, needsRewrite bool, err error) {
 		}
 		b.Lanes[l] = append(b.Lanes[l], s.cards...)
 	}
-	return b, needsRewrite, nil
+	// The order Board.Find walks, whatever order the file listed its lanes in.
+	var order []*board.Card
+	for _, l := range board.Lanes {
+		order = append(order, b.Lanes[l]...)
+	}
+	return b, assignIDs(order, seeds), nil
 }
 
 // ParseArchive reads an archive.md; cards are ordered newest DoneAt first.
 func ParseArchive(data []byte) (a *board.Archive, needsRewrite bool, err error) {
-	secs, needsRewrite, err := parseSections(data)
+	secs, seeds, err := parseSections(data)
 	if err != nil {
 		return nil, false, err
 	}
@@ -226,7 +226,8 @@ func ParseArchive(data []byte) (a *board.Archive, needsRewrite bool, err error) 
 		a.Cards = append(a.Cards, s.cards...)
 	}
 	sort.SliceStable(a.Cards, func(i, j int) bool { return a.Cards[i].DoneAt.After(a.Cards[j].DoneAt) })
-	return a, needsRewrite, nil
+	// After the sort: the order Archive.Find walks.
+	return a, assignIDs(a.Cards, seeds), nil
 }
 
 // structuralNote matches a note line that would otherwise be read back as

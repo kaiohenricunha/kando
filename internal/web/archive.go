@@ -99,8 +99,11 @@ func (s *server) restoreCard(w http.ResponseWriter, r *http.Request) {
 	}
 	// The board already holding this id means a previous restore half
 	// failed, or archive.md keeps a copy of a live card. Restoring anyway
-	// would put two cards with one id on the board, and Board.Find only ever
-	// reaches the first: the second would be uneditable from both surfaces.
+	// would put two cards with one id on the board, and the next open resolves
+	// that by keeping the id on the card Board.Find reaches first and giving
+	// the other a new one (store.assignIDs). A restored card lands in Doing,
+	// ahead of a live twin in Done — so there, the card that silently lost its
+	// id would be the live one that links and scripts point at.
 	if _, _, c := b.Find(id); c != nil {
 		s.fail(w, &httpError{http.StatusConflict, "that card is already on the board"})
 		return

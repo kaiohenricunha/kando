@@ -73,7 +73,7 @@ func ValidBoardName(name string) bool {
 }
 
 // Load reads root/name read-only: no directory is created, nothing is
-// written, and cards missing an id get one in memory only (the next writer
+// written, and cards missing or sharing an id get one in memory only (the next writer
 // persists them). A missing board is fs.ErrNotExist. This is the read path
 // for GET handlers; Open is the create-or-repair path for writers.
 func Load(root, name string) (*board.Board, error) {
@@ -126,8 +126,8 @@ func Version(root, name string) string {
 	return hex.EncodeToString(h.Sum(nil)[:8])
 }
 
-// Open loads (or creates) the board under root/name. Cards missing an id are
-// assigned one and the file is rewritten once.
+// Open loads (or creates) the board under root/name. Cards missing an id, or
+// sharing one, are assigned one and the file is rewritten once.
 func Open(root, name string) (*Store, *board.Board, error) {
 	if !ValidBoardName(name) {
 		return nil, nil, fmt.Errorf("invalid board name %q", name)
@@ -367,7 +367,8 @@ func (s *Store) saveBoard(b *board.Board) error {
 	return nil
 }
 
-// LoadArchive reads archive.md (empty if missing).
+// LoadArchive reads archive.md (empty if missing). Cards missing or sharing an
+// id are assigned one, and archive.md is rewritten with them.
 func (s *Store) LoadArchive() (*board.Archive, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

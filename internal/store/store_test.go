@@ -649,8 +649,14 @@ func TestOpenRepairsADuplicateIDOnDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if b.Lanes[board.Todo][0].ID != "dup" {
+		t.Errorf("the card Find reaches must keep its id, got %q", b.Lanes[board.Todo][0].ID)
+	}
 	second := b.Lanes[board.Todo][1].ID
 	data := mustRead(t, path)
+	if !strings.Contains(string(data), "### Original\nid: dup\n") {
+		t.Errorf("the id must stay on Original in the file:\n%s", data)
+	}
 	if !strings.Contains(string(data), "id: dup\n") || !strings.Contains(string(data), "id: "+second+"\n") {
 		t.Fatalf("Open must write both distinct ids to disk:\n%s", data)
 	}
@@ -658,12 +664,19 @@ func TestOpenRepairsADuplicateIDOnDisk(t *testing.T) {
 		t.Errorf("the duplicate must be gone from the file:\n%s", data)
 	}
 
-	// Idempotent: the repaired file is clean, so a second open changes nothing.
+	// Idempotent: the repaired file is clean, so a second open must not write.
+	// Comparing bytes cannot show that — the file came from Marshal, so a
+	// rewrite would produce the same bytes. A rewrite always replaces the file
+	// and moves its mtime, so pin the mtime in the past and check it stayed.
+	past := time.Unix(1_000_000_000, 0)
+	if err := os.Chtimes(path, past, past); err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := Open(root, "life"); err != nil {
 		t.Fatal(err)
 	}
-	if again := mustRead(t, path); !bytes.Equal(again, data) {
-		t.Errorf("a repaired board must not be rewritten again:\n%s", again)
+	if fi, err := os.Stat(path); err != nil || !fi.ModTime().Equal(past) {
+		t.Errorf("a repaired board must not be rewritten on the next open (stat err %v)", err)
 	}
 }
 

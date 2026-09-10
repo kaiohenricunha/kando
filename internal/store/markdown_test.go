@@ -444,10 +444,45 @@ func TestParseArchiveReassignsADuplicateID(t *testing.T) {
 	if len(a.Cards) != 2 {
 		t.Fatalf("cards = %d", len(a.Cards))
 	}
+	if a.Cards[0].Title != "Original" || a.Cards[0].ID != "dup" {
+		t.Errorf("the card Archive.Find reaches must keep the id: %q holds %q", a.Cards[0].Title, a.Cards[0].ID)
+	}
 	if a.Cards[0].ID == a.Cards[1].ID {
 		t.Errorf("archive ids must be distinct: %q %q", a.Cards[0].ID, a.Cards[1].ID)
 	}
 	if !rewrite {
 		t.Errorf("rewrite should be true")
+	}
+}
+
+// First occurrence means first in LOOKUP order, not file order. Board.Find
+// walks Backlog, Todo, Doing, Done, and Archive.Find walks the archive after
+// ParseArchive sorts it newest DoneAt first. A hand-edited file can place the
+// twins in either order, and the card that keeps the id must be the one those
+// lookups already returned — otherwise a saved script or an open tab starts
+// acting on a different card, the one thing reassignment promises not to do.
+
+func TestTheCardThatKeepsADuplicateIDIsTheOneFindReached(t *testing.T) {
+	src := "## Done\n\n### X in Done\ndone: 2026-09-01\nid: dup\n\n## Todo\n\n### Y in Todo\nid: dup\n"
+	b, _, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, c := b.Find("dup"); c == nil || c.Title != "Y in Todo" {
+		t.Errorf("Find(dup) must still reach the Todo card, as it did before any reassignment; got %v", c)
+	}
+	if x := b.Lanes[board.Done][0]; x.ID == "dup" {
+		t.Errorf("the Done card comes later in lookup order and is the one to reassign")
+	}
+}
+
+func TestTheArchivedCardThatKeepsADuplicateIDIsTheOneFindReached(t *testing.T) {
+	src := "## 2026-W30\n\n### Older\ndone: 2026-07-20\nid: arc\n\n## 2026-W36\n\n### Newer\ndone: 2026-09-01\nid: arc\n"
+	a, _, err := ParseArchive([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, c := a.Find("arc"); c == nil || c.Title != "Newer" {
+		t.Errorf("Find(arc) must still reach the newest card, as it did before; got %v", c)
 	}
 }
