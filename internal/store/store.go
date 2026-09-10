@@ -134,6 +134,13 @@ func Version(root, name string) string {
 // new file's stat, and changedContent's fast path would wave the clobber through.
 var beforeRepair func()
 
+// callBeforeRepair fires the test hook, if one is set.
+func callBeforeRepair() {
+	if f := beforeRepair; f != nil {
+		f()
+	}
+}
+
 // maxOpenAttempts bounds how many times Open and (*Store).LoadArchive re-read a
 // file whose repair was refused. A refusal means another writer landed between
 // the read and the repair, and the next read sees that write, so one retry
@@ -183,9 +190,7 @@ func (s *Store) openBoard() (*board.Board, error) {
 		// the board only if nobody else has in the meantime.
 		s.board = fileState{}
 		b := &board.Board{Name: s.name}
-		if beforeRepair != nil {
-			beforeRepair()
-		}
+		callBeforeRepair()
 		if err := s.SaveBoardIfUnchanged(b); err != nil {
 			return nil, err
 		}
@@ -203,9 +208,7 @@ func (s *Store) openBoard() (*board.Board, error) {
 	if !rewrite {
 		return b, nil
 	}
-	if beforeRepair != nil {
-		beforeRepair()
-	}
+	callBeforeRepair()
 	if err := s.SaveBoardIfUnchanged(b); err != nil {
 		return nil, err
 	}
@@ -452,9 +455,7 @@ func (s *Store) loadArchive() (*board.Archive, error) {
 	if !rewrite {
 		return a, nil
 	}
-	if beforeRepair != nil {
-		beforeRepair()
-	}
+	callBeforeRepair()
 	if _, changed, err := changedContent(s.ArchivePath(), &s.archive); err != nil {
 		return nil, err
 	} else if changed {
