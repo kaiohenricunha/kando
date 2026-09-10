@@ -38,7 +38,7 @@ footnotes), not because it is missing; `—` means it is not built yet⁵.
 | Help | X⁴ | V | V |
 
 ¹ The web drags a card to a position; the TUI steps it there with `J`/`K`,
-one slot per press. Both call the same `board.MoveAt`. `kando move` takes a
+one slot per press. Both go through `board.MoveAt`, by way of `MoveBefore` and `MoveAfter`. `kando move` takes a
 lane and no position, and that is deliberate rather than pending: placing a
 card is an interactive act — you put it *there*, relative to what you can see
 — and a headless verb would have to name the anchor by id, which is the one

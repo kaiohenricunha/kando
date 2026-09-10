@@ -40,7 +40,7 @@ Vertical structure, 40 rows:
 2. Row 2 blank.
 3. Rows 3–37 lanes.
 4. Row 38 blank.
-5. Row 39 footer key hints; right-aligned card count `11 cards`. When a save or the file watcher fails, or a key is refused, `⊘ message` in `accent2` takes the count's place until the next successful write — at most half the row, with the hints giving way rather than the message. The detail and archive footers gain the same slot at their right end.
+5. Row 39 footer key hints; right-aligned card count `11 cards`. When a save or the file watcher fails, `⊘ message` in `accent2` takes the count's place until the next successful write. When a key is refused, its reason takes that slot until the next key, and a standing failure shows again after it. Either way the message gets at most half the row, and the hints give way rather than the message. The detail and archive footers gain the same slot at their right end.
 
 Lanes: horizontal layout, gap 2 columns. Widths: three collapsed lanes fixed at **22 columns** each (including border); the active lane takes the remainder (`120 - 2 (padding) - 3×22 - 3×2 = 46` cols at 120 wide). Lane order is always Backlog, Todo, Doing, Done; the *active* one expands in place (it is not moved to the center).
 

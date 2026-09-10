@@ -17,7 +17,7 @@ surface can do" table is that audit at capability granularity.
 | `a` quick add | `GET /b/{board}/cards/new` → `POST /b/{board}/cards` | |
 | `enter` open card | `GET /b/{board}/cards/{id}` | |
 | `H`/`L` move card ±lane | `POST /b/{board}/cards/{id}/move` | The web picks the lane from a select; the TUI steps one lane at a time. Same `board.Move`. |
-| `J`/`K` reorder in lane | drag a card onto a lane | **BOUND-1b (§2) is closed for the TUI.** Dragging also picks the *position* in the lane; `J`/`K` step the card one slot at a time to reach the same placements. Same `board.MoveAt`, and both name the position against a card the user can see rather than an index, so a filtered lane behaves the same on both. The CLI still has no position argument, which is what remains of the exception. |
+| `J`/`K` reorder in lane | drag a card onto a lane | **BOUND-1b (§2) is closed for the TUI.** Dragging also picks the *position* in the lane; `J`/`K` step the card one slot at a time to reach the same placements. Same `board.MoveAt`, by way of `MoveBefore`/`MoveAfter`, and both name the position against a card the user can see rather than an index, so a filtered lane behaves the same on both. The CLI still has no position argument, which is what remains of the exception. |
 | `d` move to Done | `POST …/move` (`lane=done`) | |
 | `u` undo (Done → Doing) | `POST …/move` (`lane=doing`) | |
 | `x` delete card | `POST /b/{board}/cards/{id}/delete` | Immediate on both, no confirmation (§2). |
@@ -69,7 +69,7 @@ surface can do" table is that audit at capability granularity.
 No capability is web-only. **Where in a lane a card lands** was the last one,
 and `J`/`K` closed it — see BOUND-1b (§2) and the board row above. What differs
 now is only the gesture: a drag names a position in one motion, `J`/`K` step
-toward it one slot at a time. Both call the same `board.MoveAt`, so the rules
+toward it one slot at a time. Both go through `board.MoveAt` (by way of `MoveBefore`/`MoveAfter`), so the rules
 for what a placement does are shared rather than reimplemented, and every
 other route exists to serve something the TUI already does.
 
