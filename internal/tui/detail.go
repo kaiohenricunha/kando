@@ -105,7 +105,10 @@ func (m Model) detailCard() *board.Card {
 	return c
 }
 
-// detailList is the navigation list in the left pane and the cursor position in it.
+// detailList is the navigation list in the left pane and the cursor position in
+// it. The cursor is the FIRST card carrying the open id, the same card
+// detailCard shows through Board.Find: with two cards sharing an id, taking the
+// last put the cursor on one card and the pane on the other.
 func (m Model) detailList() (cards []*board.Card, cur int) {
 	if m.detail.archived {
 		cards = m.visibleArchive()
@@ -115,6 +118,7 @@ func (m Model) detailList() (cards []*board.Card, cur int) {
 	for i, c := range cards {
 		if c.ID == m.detail.id {
 			cur = i
+			break
 		}
 	}
 	return cards, cur

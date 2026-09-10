@@ -462,3 +462,25 @@ func TestDetailMoveRefusesAnArchivedTwin(t *testing.T) {
 		t.Errorf("the detail footer must show the refusal: %q", footer)
 	}
 }
+
+func TestDetailListCursorAgreesWithTheCardShown(t *testing.T) {
+	// Parsing keeps ids unique within a file, but a Board built in memory can
+	// still hold two cards sharing one — the unguarded restore this branch
+	// closed was one way in. detailCard resolves the open card through
+	// Board.Find, which takes the first match; detailList has to take the same
+	// one, or the left pane's cursor sits on one card while the right pane shows
+	// another, and J/K step from the wrong place.
+	m := newTestModel(t, 120, 40)
+	todo := m.b.Lanes[board.Todo]
+	todo[1].ID = todo[0].ID
+	m = press(m, "enter")
+	if c := m.detailCard(); c == nil || c.Title != "Renew passport" {
+		t.Fatalf("detailCard = %v, want Renew passport", c)
+	}
+	if _, cur := m.detailList(); cur != 0 {
+		t.Errorf("detailList cursor = %d, want 0 — the card detailCard shows", cur)
+	}
+	if left := leftPane(plainLines(m)); left[3] != "▸ Renew passport" {
+		t.Errorf("the left pane's cursor must be on the card shown: %v", left[3:6])
+	}
+}
