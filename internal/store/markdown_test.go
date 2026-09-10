@@ -336,3 +336,118 @@ func TestLineSeparatorsRoundTripAsOneCard(t *testing.T) {
 		}
 	}
 }
+
+// Duplicate ids. A copy-pasted card block keeps its id: line, so two cards
+// arrive sharing one. Board.Find returns the first match, which made the second
+// card unreachable from every id-keyed path — and on the web, deleting the
+// second deleted the first. The first occurrence keeps its id, so any link or
+// script that already resolved keeps resolving to the same card; only the
+// unreachable twin changes.
+
+func TestParseReassignsALaterDuplicateID(t *testing.T) {
+	src := "## Todo\n\n### Original\nid: dup\n\n### Copy\nid: dup\n"
+	b, rewrite, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, second := b.Lanes[board.Todo][0], b.Lanes[board.Todo][1]
+	if first.ID != "dup" {
+		t.Errorf("the first occurrence must keep its written id, got %q", first.ID)
+	}
+	if second.ID == "dup" || len(second.ID) != 8 {
+		t.Errorf("the later duplicate must get its own 8-char id, got %q", second.ID)
+	}
+	if !rewrite {
+		t.Errorf("a reassigned id must be persisted: rewrite should be true")
+	}
+}
+
+func TestParseGivesEveryLaterDuplicateItsOwnID(t *testing.T) {
+	src := "## Backlog\n\n### A\nid: dup\n\n## Todo\n\n### B\nid: dup\n\n## Doing\n\n### C\nid: dup\n"
+	b, _, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{b.Lanes[board.Backlog][0].ID, b.Lanes[board.Todo][0].ID, b.Lanes[board.Doing][0].ID}
+	if ids[0] != "dup" {
+		t.Errorf("first occurrence keeps its id: %v", ids)
+	}
+	if ids[0] == ids[1] || ids[0] == ids[2] || ids[1] == ids[2] {
+		t.Errorf("all three must be distinct: %v", ids)
+	}
+}
+
+func TestParseKeepsAWrittenIDOverACollidingDerivedOne(t *testing.T) {
+	// An id-less card earlier in the file can derive exactly the value a card
+	// further down wrote by hand. Assigning ids card-by-card in file order would
+	// hand that value to the id-less card and then reassign the WRITTEN one —
+	// changing an id the user typed, the one thing first-wins promises not to
+	// do. Written ids must claim their values before any id is derived.
+	probe, _, err := Parse([]byte("## Todo\n\n### Alpha\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	derived := probe.Lanes[board.Todo][0].ID
+
+	src := "## Todo\n\n### Alpha\n\n### Beta\nid: " + derived + "\n"
+	b, _, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	alpha, beta := b.Lanes[board.Todo][0], b.Lanes[board.Todo][1]
+	if beta.ID != derived {
+		t.Errorf("the written id must survive: got %q, want %q", beta.ID, derived)
+	}
+	if alpha.ID == derived || len(alpha.ID) != 8 {
+		t.Errorf("the id-less card must derive something unused: got %q", alpha.ID)
+	}
+}
+
+func TestParseLeavesUniqueWrittenIDsAlone(t *testing.T) {
+	// Dedupe, never validate shape: a hand-edited board may give a card any id
+	// at all (internal/web/cards_test.go pins "start"; cmd/kando/move_test.go a
+	// card whose id is "Buy milk"). A clean file must also not ask for a rewrite,
+	// or store.Open would rewrite every board on every open.
+	src := "## Todo\n\n### A\nid: start\n\n### B\nid: Buy milk\n\n### C\nid: k7q2m9ab\n"
+	b, rewrite, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []string{"start", "Buy milk", "k7q2m9ab"} {
+		if got := b.Lanes[board.Todo][i].ID; got != want {
+			t.Errorf("card %d: id %q, want %q verbatim", i, got, want)
+		}
+	}
+	if rewrite {
+		t.Errorf("a file with unique ids needs no rewrite")
+	}
+}
+
+func TestReassignedIDsAreStableAcrossReads(t *testing.T) {
+	// The read-only path (store.Load) never persists a reassignment, so a GET
+	// page renders the in-memory id and the POST it produces re-parses the same
+	// bytes. The two must agree or the link would not resolve.
+	src := []byte("## Todo\n\n### Original\nid: dup\n\n### Copy\nid: dup\n")
+	one, _, _ := Parse(src)
+	two, _, _ := Parse(src)
+	if a, b := one.Lanes[board.Todo][1].ID, two.Lanes[board.Todo][1].ID; a != b {
+		t.Errorf("reassigned id changed between reads: %q then %q", a, b)
+	}
+}
+
+func TestParseArchiveReassignsADuplicateID(t *testing.T) {
+	src := "## undated\n\n### Original\nid: dup\n\n### Copy\nid: dup\n"
+	a, rewrite, err := ParseArchive([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Cards) != 2 {
+		t.Fatalf("cards = %d", len(a.Cards))
+	}
+	if a.Cards[0].ID == a.Cards[1].ID {
+		t.Errorf("archive ids must be distinct: %q %q", a.Cards[0].ID, a.Cards[1].ID)
+	}
+	if !rewrite {
+		t.Errorf("rewrite should be true")
+	}
+}

@@ -97,6 +97,15 @@ func UnsafeRune(r rune) bool {
 // hand-edited file on the next open, before they touched anything. That is why
 // every guard in this package is either a write-time helper the surfaces call
 // deliberately, or a read-time one applied on the way to a screen.
+//
+// One value is the exception, and it is an id, never content. The store fills
+// in an id a card lacks, and it also reassigns the later of two cards sharing
+// one (store.assignIDs) — a copy-pasted card block keeps its id: line. That is
+// a parse-time change to a line the user may have typed, taken on purpose: an
+// id naming two cards identifies neither, and Board.Find only ever reaches the
+// first, so the second was already unreachable — on the web, deleting it
+// deleted the first. Keeping the first occurrence means nothing that resolved
+// before resolves differently after.
 
 // SafeForDisplay drops every unsafe rune from s, keeping newlines and tabs so
 // multi-line text still lays out. It is the read-side counterpart to the

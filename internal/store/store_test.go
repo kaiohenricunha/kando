@@ -637,3 +637,52 @@ func titlesOf(cards []*board.Card) []string {
 	}
 	return out
 }
+
+func TestOpenRepairsADuplicateIDOnDisk(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "life")
+	os.MkdirAll(dir, 0o755)
+	path := filepath.Join(dir, "board.md")
+	os.WriteFile(path, []byte("## Todo\n\n### Original\nid: dup\n\n### Copy\nid: dup\n"), 0o644)
+
+	_, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := b.Lanes[board.Todo][1].ID
+	data := mustRead(t, path)
+	if !strings.Contains(string(data), "id: dup\n") || !strings.Contains(string(data), "id: "+second+"\n") {
+		t.Fatalf("Open must write both distinct ids to disk:\n%s", data)
+	}
+	if strings.Count(string(data), "id: dup\n") != 1 {
+		t.Errorf("the duplicate must be gone from the file:\n%s", data)
+	}
+
+	// Idempotent: the repaired file is clean, so a second open changes nothing.
+	if _, _, err := Open(root, "life"); err != nil {
+		t.Fatal(err)
+	}
+	if again := mustRead(t, path); !bytes.Equal(again, data) {
+		t.Errorf("a repaired board must not be rewritten again:\n%s", again)
+	}
+}
+
+func TestLoadDoesNotRepairADuplicateOnDisk(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "life")
+	os.MkdirAll(dir, 0o755)
+	path := filepath.Join(dir, "board.md")
+	dup := []byte("## Todo\n\n### Original\nid: dup\n\n### Copy\nid: dup\n")
+	os.WriteFile(path, dup, 0o644)
+
+	b, err := Load(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Lanes[board.Todo][0].ID == b.Lanes[board.Todo][1].ID {
+		t.Errorf("Load must still give the twins distinct ids in memory")
+	}
+	if got := mustRead(t, path); !bytes.Equal(got, dup) {
+		t.Errorf("Load must not rewrite board.md:\n%s", got)
+	}
+}

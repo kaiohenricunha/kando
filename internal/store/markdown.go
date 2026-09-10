@@ -32,7 +32,8 @@ type section struct {
 }
 
 // parseSections reads "## heading" sections containing "### title" card blocks.
-// It assigns ids to cards that lack one and reports that in needsRewrite.
+// Once the whole file is read, assignIDs gives every card an id no other card
+// holds; needsRewrite reports whether it had to change any.
 func parseSections(data []byte) (secs []section, needsRewrite bool, err error) {
 	var (
 		cur      *section
@@ -40,7 +41,6 @@ func parseSections(data []byte) (secs []section, needsRewrite bool, err error) {
 		inKeys   bool
 		notes    []string
 		lineNo   int
-		ordinal  int
 		checkist []board.Item
 	)
 	flush := func() {
@@ -49,16 +49,6 @@ func parseSections(data []byte) (secs []section, needsRewrite bool, err error) {
 		}
 		card.Notes = strings.Join(trimBlank(notes), "\n")
 		card.Checklist = checkist
-		if card.ID == "" {
-			// Derived, not random: the same file parsed twice yields the same
-			// ids, so a link or form rendered from a read-only load still
-			// resolves on the request it produces. The ordinal keeps two
-			// identical card blocks apart.
-			card.ID = board.DeriveID(fmt.Sprintf("%d\x00%s\x00%s\x00%s\x00%s",
-				ordinal, cur.heading, card.Title, formatTime(card.CreatedAt), card.Notes))
-			needsRewrite = true
-		}
-		ordinal++
 		cur.cards = append(cur.cards, card)
 		card, notes, checkist = nil, nil, nil
 	}
@@ -96,7 +86,58 @@ func parseSections(data []byte) (secs []section, needsRewrite bool, err error) {
 		}
 	}
 	flush()
-	return secs, needsRewrite, nil
+	return secs, assignIDs(secs), nil
+}
+
+// assignIDs gives every card an id no other card in the file holds, and reports
+// whether it changed any: a card with no id, or a later duplicate of one.
+//
+// It runs after the whole file is read, in two passes, because order matters.
+// Written ids claim their values first; only then are ids derived for the cards
+// that need one. Deciding card by card in file order would let an id-less card
+// near the top derive the very value a card further down wrote by hand, and the
+// written one would then be reassigned — changing an id the user typed, which
+// is what keeping the first occurrence exists to avoid.
+//
+// A duplicate is reassigned rather than refused. This is the one value parsing
+// changes instead of preserving (see the policy note in internal/board/ops.go):
+// an id naming two cards identifies neither, and Board.Find only ever reaches
+// the first, so the later twin was already unreachable. Keeping the first
+// occurrence means anything that resolved before still resolves to the same card.
+//
+// Derived, not random: the same file parsed twice yields the same ids, so a link
+// or form rendered from a read-only load still resolves on the request it
+// produces. The ordinal keeps two identical card blocks apart; the salt matters
+// only when a derived id is already taken.
+func assignIDs(secs []section) (changed bool) {
+	type pending struct {
+		card *board.Card
+		seed string
+	}
+	seen := make(map[string]bool)
+	var need []pending
+	ordinal := 0
+	for _, sec := range secs {
+		for _, c := range sec.cards {
+			seed := fmt.Sprintf("%d\x00%s\x00%s\x00%s\x00%s",
+				ordinal, sec.heading, c.Title, formatTime(c.CreatedAt), c.Notes)
+			ordinal++
+			if c.ID != "" && !seen[c.ID] {
+				seen[c.ID] = true
+				continue
+			}
+			need = append(need, pending{c, seed})
+		}
+	}
+	for _, p := range need {
+		id := board.DeriveID(p.seed)
+		for salt := 1; seen[id]; salt++ {
+			id = board.DeriveID(fmt.Sprintf("%s\x00%d", p.seed, salt))
+		}
+		p.card.ID = id
+		seen[id] = true
+	}
+	return len(need) > 0
 }
 
 func setKey(c *board.Card, key, val string) error {
