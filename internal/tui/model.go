@@ -106,7 +106,23 @@ type Model struct {
 	// while err holds standing conditions — a failed save, a watcher that could
 	// not start — that nothing reports twice and a refusal must not erase.
 	notice string
+	// errFrom records what set err, and so which success may clear it.
+	errFrom errOrigin
 }
+
+// errOrigin says which later success may clear Model.err. A successful save
+// clears any error, as it always has. A successful reload clears only an error
+// that reading the files fixes: a reload that failed, or an archive.md that
+// could not be read, once a reload reads a good one. A reload never clears a
+// failed save, because reading the files again does not put the lost edit on
+// disk.
+type errOrigin int
+
+const (
+	errFromAction      errOrigin = iota // a save, or the watcher failing to start
+	errFromReload                       // CheckReload failed
+	errFromArchiveRead                  // (*Store).LoadArchive failed
+)
 
 // New builds a Model. The Todo lane starts active with its first card selected.
 func New(o Options) Model {
@@ -192,7 +208,7 @@ func (m Model) dispatch(msg tea.Msg) (Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.err != nil {
-			m.err = fmt.Errorf("file watching disabled: %w", msg.err)
+			m.err, m.errFrom = fmt.Errorf("file watching disabled: %w", msg.err), errFromAction
 			return m, nil
 		}
 		m.changes, m.stopWatch = msg.ch, msg.stop
@@ -403,7 +419,7 @@ func (m *Model) save() {
 		return
 	}
 	if err := m.st.SaveBoard(m.b); err != nil {
-		m.err = err
+		m.err, m.errFrom = err, errFromAction
 		return
 	}
 	m.err = nil
@@ -418,7 +434,7 @@ func (m *Model) saveRestore() {
 		return
 	}
 	if err := m.st.SaveRestore(m.b, m.archive); err != nil {
-		m.err = err
+		m.err, m.errFrom = err, errFromAction
 		return
 	}
 	m.err = nil
@@ -432,7 +448,7 @@ func (m *Model) saveArchival() {
 		return
 	}
 	if err := m.st.SaveArchival(m.b, m.archive); err != nil {
-		m.err = err
+		m.err, m.errFrom = err, errFromAction
 		return
 	}
 	m.err = nil
@@ -443,7 +459,7 @@ func (m *Model) saveArchive() {
 		return
 	}
 	if err := m.st.SaveArchive(m.archive); err != nil {
-		m.err = err
+		m.err, m.errFrom = err, errFromAction
 		return
 	}
 	m.err = nil
@@ -456,8 +472,11 @@ func (m *Model) reload() {
 	}
 	r, err := m.st.CheckReload()
 	if err != nil {
-		m.err = err
+		m.err, m.errFrom = err, errFromReload
 		return
+	}
+	if m.errFrom == errFromReload {
+		m.err = nil
 	}
 	if r.Board != nil {
 		var selID, detailID string
@@ -487,6 +506,9 @@ func (m *Model) reload() {
 	if r.Archive != nil {
 		m.archive = r.Archive
 		m.clampArchive()
+		if m.errFrom == errFromArchiveRead {
+			m.err = nil
+		}
 	}
 }
 

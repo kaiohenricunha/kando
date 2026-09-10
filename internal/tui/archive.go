@@ -37,7 +37,7 @@ func (m *Model) ensureArchive() bool {
 	}
 	a, err := m.st.LoadArchive()
 	if err != nil {
-		m.err = err
+		m.err, m.errFrom = err, errFromArchiveRead
 		return false
 	}
 	m.archive = a
