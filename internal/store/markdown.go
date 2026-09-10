@@ -24,6 +24,13 @@ const cardKeys = `tag|created|moved|done|blocked|id`
 var (
 	keyRe  = regexp.MustCompile(`^(` + cardKeys + `):[ \t]?(.*)$`)
 	itemRe = regexp.MustCompile(`^- \[( |x|X)\] ?(.*)$`)
+	// unknownKeyRe matches a line shaped like a key that kando does not write:
+	// a lowercase name, a colon, then a space or the end of the line, such as
+	// "priority: high". parseSections keeps it as a note but does not let it end
+	// the key block, so the keys written after it still count. The shape is
+	// narrow on purpose: "Note: ..." and "https://..." stay prose. The writer
+	// has no need to escape such a line, since it reads back as the note it was.
+	unknownKeyRe = regexp.MustCompile(`^[a-z][a-z0-9_-]*:([ \t]|$)`)
 )
 
 type section struct {
@@ -79,12 +86,20 @@ func parseSections(data []byte) (secs []section, seeds map[*board.Card]string, e
 		case card == nil:
 			// Text outside a card (preamble, stray lines): ignored.
 		case inKeys && strings.TrimSpace(line) == "":
-			// Blank lines between the heading and the keys are tolerated.
+			// Blank lines between the heading and the keys are tolerated. Once an
+			// unknown key has started the notes, a blank line is part of them.
+			if len(notes) > 0 {
+				notes = append(notes, line)
+			}
 		case inKeys && keyRe.MatchString(line):
 			m := keyRe.FindStringSubmatch(line)
 			if err := setKey(card, m[1], strings.TrimSpace(m[2])); err != nil {
 				return nil, nil, fmt.Errorf("line %d: %w", lineNo, err)
 			}
+		case inKeys && unknownKeyRe.MatchString(line):
+			// A key kando does not know is kept, as a note, without ending the
+			// key block: see unknownKeyRe.
+			notes = append(notes, line)
 		default:
 			inKeys = false
 			if m := itemRe.FindStringSubmatch(line); m != nil {
