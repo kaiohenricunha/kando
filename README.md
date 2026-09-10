@@ -282,6 +282,7 @@ Filter: type to match titles; `#tag` matches tags; `!blocked`, `age>7d`, `age<3d
 `esc` clears it.
 
 Archive: `j/k` move · `u` back to Doing · `enter` open · `/` filter · `esc` board.
+`?` on any screen lists the keys of that screen.
 
 ## Files
 
