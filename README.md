@@ -38,11 +38,12 @@ footnotes), not because it is missing; `—` means it is not built yet⁵.
 | Help | X⁴ | V | V |
 
 ¹ The web drags a card to a position; the TUI steps it there with `J`/`K`,
-one slot per press. Both go through `board.MoveAt`, by way of `MoveBefore` and `MoveAfter`. `kando move` takes a
-lane and no position, and that is deliberate rather than pending: placing a
-card is an interactive act — you put it *there*, relative to what you can see
-— and a headless verb would have to name the anchor by id, which is the one
-thing neither of the other two surfaces makes you do
+one slot per press. Both go through `board.MoveAt`, by way of `MoveBefore`
+and `MoveAfter`. `kando move` takes a lane and no position, and that is
+deliberate rather than pending: placing a card is an interactive act — you
+put it *there*, relative to what you can see — and a headless verb would
+have to name the anchor by id, which is the one thing neither of the other
+two surfaces makes you do
 (`docs/specs/kando-web/spec/2-scope.md`, BOUND-1b). ² Not in this effort's scope — `Card.SetTitle` already exists, so a
 `kando title` verb is a one-file follow-up on the same pattern as `kando tag`.
 ³ A CLI verb is a one-shot process — there is nothing running for it to

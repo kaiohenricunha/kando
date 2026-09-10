@@ -562,7 +562,7 @@ func (m *Model) archiveDetailCard() {
 	}
 	if m.detail.archived {
 		// An archived card is in no lane, so archiveDone's lane check would miss
-		// it and Board.Find could name a live twin instead.
+		// it and find no lane to name in its refusal.
 		m.notice = fmt.Sprintf("%q is already archived", c.Title)
 		return
 	}

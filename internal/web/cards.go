@@ -240,8 +240,9 @@ func (s *server) moveCard() http.HandlerFunc {
 // a hand-edited board.md may give a card any id at all, "start" included.
 //
 // It returns how to place the card, or nil when no position was asked for — the
-// lane picker's move. Only this function names the positions, so moveCard cannot
-// drift from it, and the insert-before arithmetic stays in internal/board.
+// lane picker's move. moveCard calls what it gets rather than switching on the
+// position words a second time, so the two cannot disagree about what a word
+// means, and the insert-before arithmetic stays in internal/board.
 func movePos(b *board.Board, to board.Lane, f url.Values) (place func(from board.Lane, i int, now time.Time), err error) {
 	switch pos := f.Get("pos"); pos {
 	case "":

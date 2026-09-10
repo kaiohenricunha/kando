@@ -69,9 +69,10 @@ surface can do" table is that audit at capability granularity.
 No capability is web-only. **Where in a lane a card lands** was the last one,
 and `J`/`K` closed it — see BOUND-1b (§2) and the board row above. What differs
 now is only the gesture: a drag names a position in one motion, `J`/`K` step
-toward it one slot at a time. Both go through `board.MoveAt` (by way of `MoveBefore`/`MoveAfter`), so the rules
-for what a placement does are shared rather than reimplemented, and every
-other route exists to serve something the TUI already does.
+toward it one slot at a time. Both go through `board.MoveAt`, by way of
+`MoveBefore`/`MoveAfter`, so the rules for what a placement does are shared
+rather than reimplemented, and every other route exists to serve something
+the TUI already does.
 
 The CLI is the remaining gap: `kando move` takes a lane and no position. It is
 tracked in `README.md`'s capability table, which audits all three surfaces.

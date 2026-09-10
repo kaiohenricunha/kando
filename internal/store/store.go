@@ -162,8 +162,9 @@ const maxOpenAttempts = 3
 // Two gaps remain, shared by every checked write in this package rather than
 // introduced here: the check and the rename are separate steps, so a write
 // landing between them is overwritten; and a same-size write within one mtime
-// tick passes the fast path. This narrows the window for the repair. It does not
-// close REL-3, which concerns the TUI's deliberately unchecked saves.
+// tick passes the fast path. So this narrows the repair's window without making
+// REL-3 hold on its own — the TUI and the web never silently losing an edit —
+// and the TUI's own saves stay unchecked on purpose (see SaveArchival).
 func Open(root, name string) (*Store, *board.Board, error) {
 	if !ValidBoardName(name) {
 		return nil, nil, fmt.Errorf("invalid board name %q", name)
