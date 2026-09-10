@@ -126,8 +126,27 @@ func Version(root, name string) string {
 	return hex.EncodeToString(h.Sum(nil)[:8])
 }
 
+// beforeRepair, when non-nil, runs after a file has been read and its state
+// recorded as the Store's baseline, and before the checked write that repairs
+// it — inside the window a concurrent writer can land in. Only tests set it, to
+// interleave that writer. Its place is part of the contract: run before the
+// baseline is recorded, the baseline would pair the old bytes' hash with the
+// new file's stat, and changedContent's fast path would wave the clobber through.
+var beforeRepair func()
+
+// maxOpenAttempts bounds how many times Open and (*Store).LoadArchive re-read a
+// file whose repair was refused. A refusal means another writer landed between
+// the read and the repair, and the next read sees that write, so one retry
+// normally settles it; past the bound the ErrConflict is returned rather than
+// spun on.
+const maxOpenAttempts = 3
+
 // Open loads (or creates) the board under root/name. Cards missing an id, or
-// sharing one, are assigned one and the file is rewritten once.
+// sharing one, are assigned one and the file is rewritten — through the checked
+// writer, so a write landing between Open's read and its repair is never
+// overwritten. Open then re-reads and repairs what it finds, up to
+// maxOpenAttempts times, and returns ErrConflict past that. The repair is a pure
+// function of the bytes on disk, so repairing the winner's bytes loses nothing.
 func Open(root, name string) (*Store, *board.Board, error) {
 	if !ValidBoardName(name) {
 		return nil, nil, fmt.Errorf("invalid board name %q", name)
@@ -136,32 +155,61 @@ func Open(root, name string) (*Store, *board.Board, error) {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return nil, nil, err
 	}
-	data, err := os.ReadFile(s.BoardPath())
-	if errors.Is(err, fs.ErrNotExist) {
-		b := &board.Board{Name: name}
-		if err := s.SaveBoard(b); err != nil {
+	for attempt := 1; ; attempt++ {
+		// b is rebound on every attempt. After a lost race the board to return is
+		// the one repaired from the winner's bytes: handing back the first read
+		// would leave the caller holding a board older than the Store's baseline,
+		// and its next checked save would overwrite the winner without noticing.
+		b, err := s.openBoard()
+		if err == nil {
+			s.noteArchive()
+			return s, b, nil
+		}
+		if !errors.Is(err, ErrConflict) || attempt == maxOpenAttempts {
 			return nil, nil, err
 		}
-		s.noteArchive()
-		return s, b, nil
+	}
+}
+
+// openBoard is one attempt at Open's read-and-repair. It records what it read as
+// the Store's baseline before deciding whether to write, so the checked writer
+// has something to compare against: a fresh Store's zero fileState would
+// otherwise make every repair look like a conflict.
+func (s *Store) openBoard() (*board.Board, error) {
+	data, err := os.ReadFile(s.BoardPath())
+	if errors.Is(err, fs.ErrNotExist) {
+		// The baseline is "no file". changedContent reports a still-missing file
+		// as unchanged and one that has since appeared as changed, so this creates
+		// the board only if nobody else has in the meantime.
+		s.board = fileState{}
+		b := &board.Board{Name: s.name}
+		if beforeRepair != nil {
+			beforeRepair()
+		}
+		if err := s.SaveBoardIfUnchanged(b); err != nil {
+			return nil, err
+		}
+		return b, nil
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	b, rewrite, err := Parse(data)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	b.Name = name
-	if rewrite {
-		if err := s.SaveBoard(b); err != nil {
-			return nil, nil, err
-		}
-	} else {
-		s.board = stateOf(s.BoardPath(), data)
+	b.Name = s.name
+	s.board = stateOf(s.BoardPath(), data)
+	if !rewrite {
+		return b, nil
 	}
-	s.noteArchive()
-	return s, b, nil
+	if beforeRepair != nil {
+		beforeRepair()
+	}
+	if err := s.SaveBoardIfUnchanged(b); err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 // Exists reports whether root/name is an openable board: a valid name whose
@@ -368,10 +416,26 @@ func (s *Store) saveBoard(b *board.Board) error {
 }
 
 // LoadArchive reads archive.md (empty if missing). Cards missing or sharing an
-// id are assigned one, and archive.md is rewritten with them.
+// id are assigned one and archive.md is rewritten with them — through the same
+// checked, retried path as Open's repair, with ErrConflict past maxOpenAttempts.
 func (s *Store) LoadArchive() (*board.Archive, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for attempt := 1; ; attempt++ {
+		a, err := s.loadArchive()
+		if err == nil {
+			return a, nil
+		}
+		if !errors.Is(err, ErrConflict) || attempt == maxOpenAttempts {
+			return nil, err
+		}
+	}
+}
+
+// loadArchive is one attempt at LoadArchive, openBoard's archive twin. The caller
+// holds s.mu, so it checks and writes inline rather than through the locking
+// SaveArchivalIfUnchanged.
+func (s *Store) loadArchive() (*board.Archive, error) {
 	data, err := os.ReadFile(s.ArchivePath())
 	if errors.Is(err, fs.ErrNotExist) {
 		s.archive = fileState{}
@@ -384,13 +448,21 @@ func (s *Store) LoadArchive() (*board.Archive, error) {
 	if err != nil {
 		return nil, err
 	}
-	if rewrite {
-		data = MarshalArchive(a)
-		if err := writeAtomic(s.ArchivePath(), data); err != nil {
-			return nil, err
-		}
-	}
 	s.archive = stateOf(s.ArchivePath(), data)
+	if !rewrite {
+		return a, nil
+	}
+	if beforeRepair != nil {
+		beforeRepair()
+	}
+	if _, changed, err := changedContent(s.ArchivePath(), &s.archive); err != nil {
+		return nil, err
+	} else if changed {
+		return nil, ErrConflict
+	}
+	if err := s.saveArchive(a); err != nil {
+		return nil, err
+	}
 	return a, nil
 }
 

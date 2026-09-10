@@ -699,3 +699,160 @@ func TestLoadDoesNotRepairADuplicateOnDisk(t *testing.T) {
 		t.Errorf("Load must not rewrite board.md:\n%s", got)
 	}
 }
+
+// interleave runs f inside the window between Open's (or LoadArchive's) read
+// and the write that repairs what it read — where a concurrent writer lands.
+// No store test runs in parallel, so package state is safe here.
+func interleave(t *testing.T, f func()) {
+	t.Helper()
+	beforeRepair = f
+	t.Cleanup(func() { beforeRepair = nil })
+}
+
+func TestOpenRepairDoesNotClobberAConcurrentWrite(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "life")
+	os.MkdirAll(dir, 0o755)
+	path := filepath.Join(dir, "board.md")
+	dup := "## Todo\n\n### Original\nid: dup\n\n### Copy\nid: dup\n"
+	os.WriteFile(path, []byte(dup), 0o644)
+
+	calls := 0
+	interleave(t, func() {
+		calls++
+		if calls == 1 {
+			// Another process lands an edit in the window. It adds a card, so
+			// the file changes size (a same-size edit inside one mtime tick is a
+			// pre-existing blind spot of every checked write, not this one) and
+			// the retry still has a repair to do.
+			if err := os.WriteFile(path, []byte(dup+"\n### Theirs\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := string(mustRead(t, path))
+	if !strings.Contains(data, "### Theirs\n") {
+		t.Fatalf("the repair overwrote a write that landed after Open's read:\n%s", data)
+	}
+	if calls != 2 {
+		t.Errorf("a refused repair must re-read and retry: hook ran %d times, want 2", calls)
+	}
+	if got := titlesOf(b.Lanes[board.Todo]); !reflect.DeepEqual(got, []string{"Original", "Copy", "Theirs"}) {
+		t.Errorf("Open must return the board it repaired on the retry, not the one it first read: %v", got)
+	}
+	if strings.Count(data, "\nid: ") != 3 || strings.Count(data, "id: dup\n") != 1 {
+		t.Errorf("every card must carry its own id on disk:\n%s", data)
+	}
+	// The Store's baseline is the repaired file, so the caller's own next checked
+	// save still goes through — TestMoveOnAnIdLessBoard's guarantee, on the retry.
+	b.Insert(board.Todo, 0, &board.Card{ID: "aaaaaaaa", Title: "mine"})
+	if err := st.SaveBoardIfUnchanged(b); err != nil {
+		t.Errorf("our own repair must not read as a conflict: %v", err)
+	}
+}
+
+func TestOpenGivesUpAfterRepeatedConflicts(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "life")
+	os.MkdirAll(dir, 0o755)
+	path := filepath.Join(dir, "board.md")
+	os.WriteFile(path, []byte("## Todo\n\n### Original\nid: dup\n\n### Copy\nid: dup\n"), 0o644)
+
+	calls := 0
+	interleave(t, func() {
+		calls++
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.WriteString("\n### Theirs " + string(rune('0'+calls)) + "\n")
+		f.Close()
+	})
+
+	_, _, err := Open(root, "life")
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("losing the race every time must end in ErrConflict, got %v", err)
+	}
+	// A literal, not the constant the loop counts to: asserting against the
+	// constant under test would pass at any value of it.
+	if calls != 3 {
+		t.Errorf("Open must give up after 3 attempts rather than spin: hook ran %d times", calls)
+	}
+	if data := string(mustRead(t, path)); !strings.Contains(data, "### Theirs 3\n") {
+		t.Errorf("giving up must still lose nothing:\n%s", data)
+	}
+}
+
+func TestOpenCreateDoesNotClobberAConcurrentCreate(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "life", "board.md")
+	calls := 0
+	interleave(t, func() {
+		calls++
+		if calls == 1 {
+			if err := os.WriteFile(path, []byte("## Todo\n\n### Theirs\nid: bbbbbbbb\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+
+	_, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data := string(mustRead(t, path)); !strings.Contains(data, "### Theirs\n") {
+		t.Fatalf("creating the board overwrote one created in the meantime:\n%s", data)
+	}
+	if got := titlesOf(b.Lanes[board.Todo]); len(got) != 1 || got[0] != "Theirs" {
+		t.Errorf("Open must return the board that won, got %v", got)
+	}
+	if calls != 1 {
+		t.Errorf("the retry reads a clean file with nothing left to repair: hook ran %d times, want 1", calls)
+	}
+}
+
+func TestLoadArchiveRepairDoesNotClobberAConcurrentWrite(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	one := "## undated\n\n### One\n"
+	os.WriteFile(st.ArchivePath(), []byte(one), 0o644)
+
+	calls := 0
+	interleave(t, func() {
+		calls++
+		if calls == 1 {
+			if err := os.WriteFile(st.ArchivePath(), []byte(one+"\n### Two\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+
+	a, err := st.LoadArchive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := string(mustRead(t, st.ArchivePath()))
+	if !strings.Contains(data, "### Two\n") {
+		t.Fatalf("the archive repair overwrote a write that landed after its read:\n%s", data)
+	}
+	if calls != 2 {
+		t.Errorf("a refused archive repair must re-read and retry: hook ran %d times, want 2", calls)
+	}
+	if got := titlesOf(a.Cards); len(got) != 2 {
+		t.Errorf("LoadArchive must return the archive it repaired on the retry: %v", got)
+	}
+	if strings.Count(data, "\nid: ") != 2 {
+		t.Errorf("both archived cards must carry an id on disk:\n%s", data)
+	}
+	if err := st.SaveArchivalIfUnchanged(b, a); err != nil {
+		t.Errorf("our own archive repair must not read as a conflict: %v", err)
+	}
+}
