@@ -711,16 +711,17 @@ func TestCLIArchiveReservedWordsNeedAnID(t *testing.T) {
 }
 
 // TestCapabilityMatrixHasNoUnbuiltCLICells guards README's "What each surface
-// can do" table, which footnote 5 makes a per-PR obligation: every `—` in the
-// CLI column becomes a `V` in the pull request that adds its verb, so the
-// column says what the CLI can do at that merge point.
+// can do" table. Its legend has only V (the surface has it) and X (it does not,
+// on purpose), so a `—` in the CLI column is a capability the table leaves
+// pending without saying so.
 //
-// That obligation was missed in five consecutive pull requests, because
-// nothing enforced it — TestUsageTextIsUnchanged pins the usage text, but the
-// table had no equivalent. The CLI column is now complete apart from the three
-// deliberate X rows, so the invariant is simply that no `—` remains: a future
-// row added as `—` has to be flipped by the unit that ships its verb, or this
-// fails.
+// The table once used `—` for verbs not built yet, and flipping each one in
+// the pull request that shipped its verb was missed in five consecutive pull
+// requests, because nothing enforced it — TestUsageTextIsUnchanged pins the
+// usage text, but the table had no equivalent. The CLI column is complete
+// apart from the deliberate X rows, so the invariant is simply that no `—`
+// remains: a row added as `—` has to be marked V or X by the change that adds
+// it, or this fails.
 func TestCapabilityMatrixHasNoUnbuiltCLICells(t *testing.T) {
 	data, err := os.ReadFile("../../README.md")
 	if err != nil {
@@ -728,17 +729,17 @@ func TestCapabilityMatrixHasNoUnbuiltCLICells(t *testing.T) {
 	}
 	var rows int
 	for _, line := range strings.Split(string(data), "\n") {
-		// Capability rows only: four columns, and the header/separator skipped.
-		if !strings.HasPrefix(line, "| ") || strings.HasPrefix(line, "|---") || strings.Contains(line, "| Web | TUI | CLI |") {
+		// Capability rows only: four columns, the separator and header skipped.
+		if !strings.HasPrefix(line, "| ") || strings.HasPrefix(line, "|---") {
 			continue
 		}
 		cells := strings.Split(strings.Trim(line, "| "), " | ")
-		if len(cells) != 4 {
+		if len(cells) != 4 || cells[0] == "Capability" {
 			continue
 		}
 		rows++
 		if cli := strings.TrimSpace(cells[3]); strings.HasPrefix(cli, "—") {
-			t.Errorf("capability %q still reads %q in the CLI column; the PR that ships its verb must flip it (README footnote 5)", cells[0], cli)
+			t.Errorf("capability %q reads %q in the CLI column; mark it V or X (README legend)", cells[0], cli)
 		}
 	}
 	if rows < 15 {
