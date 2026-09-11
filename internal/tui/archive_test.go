@@ -180,6 +180,62 @@ func TestArchiveFilter(t *testing.T) {
 	}
 }
 
+// The archive list depends on the clock through the age operator. A later
+// frame can shrink it under a cursor no key touched, and u or enter then
+// indexed past the end.
+func TestArchiveCursorStaysOnTheListWhenTheClockShrinksIt(t *testing.T) {
+	clock := fixedNow
+	arch := &board.Archive{Cards: []*board.Card{
+		{ID: "aaaaaaaa", Title: "Fresh", DoneAt: fixedNow.Add(-10 * time.Minute)},
+		{ID: "bbbbbbbb", Title: "Older", DoneAt: fixedNow.Add(-2 * time.Hour)},
+	}}
+	m := New(Options{Board: sampleBoard(t), Archive: arch, Styles: testStyles, Now: func() time.Time { return clock }, Width: 120, Height: 40})
+	m = press(m, "D", "/")
+	m = typeText(m, "age<3h")
+	m = press(m, "enter", "j")
+	if n := len(m.visibleArchive()); n != 2 || m.arch.cursor != 1 {
+		t.Fatalf("setup: visible %d cursor %d", n, m.arch.cursor)
+	}
+
+	clock = clock.Add(2 * time.Hour)
+	m = press(m, "?") // any message: Update must clamp before this frame paints
+	if n := len(m.visibleArchive()); n != 1 || m.arch.cursor != 0 {
+		t.Fatalf("the cursor must move onto the last row left: visible %d cursor %d", n, m.arch.cursor)
+	}
+	m = press(m, "?")
+	if m2 := press(m, "enter"); m2.scr != screenDetail || m2.detail.id != "aaaaaaaa" {
+		t.Errorf("enter must open the card still on the list, got screen %v id %q", m2.scr, m2.detail.id)
+	}
+	m = press(m, "u")
+	if len(arch.Cards) != 1 || len(m.b.Lanes[board.Doing]) == 0 || m.b.Lanes[board.Doing][0].ID != "aaaaaaaa" {
+		t.Errorf("u must restore the card the clamped cursor points at: archive=%d doing=%v", len(arch.Cards), titles(m.b.Lanes[board.Doing]))
+	}
+
+	clock = fixedNow.Add(4 * time.Hour)
+	arch2 := &board.Archive{Cards: []*board.Card{
+		{ID: "cccccccc", Title: "Fresh", DoneAt: fixedNow.Add(-10 * time.Minute)},
+		{ID: "dddddddd", Title: "Older", DoneAt: fixedNow.Add(-2 * time.Hour)},
+	}}
+	m2 := New(Options{Board: sampleBoard(t), Archive: arch2, Styles: testStyles, Now: func() time.Time { return clock }, Width: 120, Height: 40})
+	m2 = press(m2, "D", "/")
+	m2 = typeText(m2, "age<3h")
+	m2 = press(m2, "enter", "?")
+	if n := len(m2.visibleArchive()); n != 0 || m2.arch.cursor != 0 {
+		t.Fatalf("setup: visible %d cursor %d", n, m2.arch.cursor)
+	}
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("a key on an empty filtered list must not panic: %v", r)
+			}
+		}()
+		m2 = press(m2, "enter", "u", "j", "k")
+	}()
+	if m2.scr != screenArchive || len(arch2.Cards) != 2 {
+		t.Errorf("every key on an empty list must be a no-op: screen %v archive %d", m2.scr, len(arch2.Cards))
+	}
+}
+
 var archiveStates = map[string][]string{
 	"archive":        {"D"},
 	"archive filter": {"D", "/", "#", "m"},
