@@ -46,7 +46,7 @@ const (
 
 // progressCells splits a bar of min(total, max) cells into done and remaining
 // cells. The glyphs differ (▰ ▱) as well as the colours, so the bar still reads
-// with KANDO_THEME=none. A started checklist shows at least one done cell and
+// with NO_COLOR. A started checklist shows at least one done cell and
 // an unfinished one at least one remaining cell: rounding must never make the
 // bar claim nothing or everything early.
 func progressCells(done, total, max int) (on, off int) {
