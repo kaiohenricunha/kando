@@ -18,7 +18,7 @@ var helpLeft = []keyGroup{
 }
 
 var helpRight = []keyGroup{
-	{"a", "quick add"}, {"enter", "open card"}, {"H/L", "move card ±lane"},
+	{"a", "quick add"}, {"enter", "open card"}, {"⇧tab", "previous lane"},
 	{"d", "move to Done"}, {"D", "archive view"}, {"A", "archive (Done)"},
 	{"B", "boards"}, {"?", "close help"},
 }
@@ -31,6 +31,8 @@ type helpTable struct{ left, right []keyGroup }
 // reorder the lane, when there x toggles an item and J/K open the next card.
 // Every left label stays within 19 cells: helpRows pads the left column to 29,
 // and the key takes 9 of them, so a longer label would touch the right column.
+// Every right label stays within 16, so the row fits the box.
+// TestHelpTablesCoverTheFooterAndFitTheBox checks both.
 var (
 	detailHelp = helpTable{
 		left: []keyGroup{
@@ -39,7 +41,7 @@ var (
 		},
 		right: []keyGroup{
 			{"T", "title"}, {"t", "tag"}, {"b", "block"}, {"m", "move to lane"},
-			{"esc", "back"}, {"?", "close help"},
+			{"esc", "back"}, {"ctrl+s", "save notes"}, {"?", "close help"},
 		},
 	}
 	archiveHelp = helpTable{

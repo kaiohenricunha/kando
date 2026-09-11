@@ -181,6 +181,25 @@ func TestGoldenBoards(t *testing.T) {
 	assertFrame(t, string(want), got, 120, 40)
 }
 
+// The boards overlay has its own golden: a content test cannot see a table that
+// gains a key, pairs its columns differently or runs a label into the next one.
+func TestGoldenBoardsHelp(t *testing.T) {
+	m, _ := newRootModel(t, 120, 40)
+	m = press(m, "B", "?")
+	got := plainView(m) + "\n"
+	path := "testdata/help_boards_120x40.txt"
+	if *update {
+		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("%v (run with -update to create it)", err)
+	}
+	assertFrame(t, string(want), got, 120, 40)
+}
+
 // runCmd executes a tea.Cmd with a timeout and returns its message.
 func runCmd(t *testing.T, cmd tea.Cmd) tea.Msg {
 	t.Helper()
@@ -224,8 +243,8 @@ func TestWatcherLifecycleAcrossBoardSwitch(t *testing.T) {
 		t.Fatalf("Init should yield watchStartedMsg, got %T", started)
 	}
 	m, listen := feed(m, started)
-	if m.changes == nil || m.stopWatch == nil || m.err != nil {
-		t.Fatalf("watcher not recorded: changes=%v stop=%v err=%v", m.changes != nil, m.stopWatch != nil, m.err)
+	if m.changes == nil || m.stopWatch == nil || m.errs.first() != nil {
+		t.Fatalf("watcher not recorded: changes=%v stop=%v err=%v", m.changes != nil, m.stopWatch != nil, m.errs.first())
 	}
 	// An external edit reaches the model through that listener.
 	edited := strings.Replace(string(store.Marshal(b)), "### Renew passport", "### Renew passport soon", 1)
@@ -292,8 +311,8 @@ func TestWatchFailureIsShownAndRetried(t *testing.T) {
 	m, _ := newRootModel(t, 120, 40)
 	m.watch = true
 	m, cmd := feed(m, watchStartedMsg{gen: 0, err: os.ErrPermission})
-	if cmd != nil || m.err == nil || !strings.Contains(plainLines(m)[39], "⊘ file watching disabled") {
-		t.Errorf("a watch failure should be surfaced in the footer: err=%v footer=%q", m.err, plainLines(m)[39])
+	if cmd != nil || m.errs.watch == nil || !strings.Contains(plainLines(m)[39], "⊘ file watching disabled") {
+		t.Errorf("a watch failure should be surfaced in the footer: err=%v footer=%q", m.errs.watch, plainLines(m)[39])
 	}
 	m = press(m, "B", "j")
 	m, cmd = feed(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -320,7 +339,7 @@ func TestDeleteActsOnThePaintedFilterSet(t *testing.T) {
 
 func TestFooterShowsSaveError(t *testing.T) {
 	m := newTestModel(t, 120, 40)
-	m.err = os.ErrPermission
+	m.errs.save = os.ErrPermission
 	if !strings.Contains(plainLines(m)[39], "⊘ permission denied") {
 		t.Errorf("footer = %q", plainLines(m)[39])
 	}

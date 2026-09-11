@@ -20,8 +20,8 @@
                                │ x        toggle item         b        block            │                               
                                │ enter    edit item           m        move to lane     │                               
                                │ o        new item            esc      back             │                               
-                               │ e        edit notes          ?        close help       │                               
-                               │ A        archive (Done)                                │                               
+                               │ e        edit notes          ctrl+s   save notes       │                               
+                               │ A        archive (Done)      ?        close help       │                               
                                ╰────────────────────────────────────────────────────────╯                               
                                    │                                                                                    
                                    │                                                                                    

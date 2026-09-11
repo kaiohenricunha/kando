@@ -109,8 +109,9 @@ func (m Model) detailCard() *board.Card {
 // it. The cursor is the FIRST card carrying the open id, the same card
 // detailCard shows through Board.Find: with two cards sharing an id, taking the
 // last put the cursor on one card and the pane on the other. It is -1 when no
-// row is the open card, because a filter hides it: the pane then highlights
-// nothing, and J and K start from the ends of the list.
+// row is the open card: a filter hides it, or newer archivals pushed an
+// archived card past archiveMaxItems. The pane then highlights nothing, and J
+// and K start from the ends of the list.
 func (m Model) detailList() (cards []*board.Card, cur int) {
 	if m.detail.archived {
 		cards = m.visibleArchive()
@@ -197,7 +198,8 @@ func (m Model) renderDetail() []string {
 	return m.screenRows(header, body, footer)
 }
 
-// detailLeft lists the cards of the current lane with a cursor on the open card.
+// detailLeft draws the navigation list, with the cursor on the open card when
+// the list shows it.
 func (m Model) detailLeft(rows int) []string {
 	s := m.styles
 	cards, cur := m.detailList()
@@ -382,7 +384,8 @@ func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// detailSwitch moves to the next/previous card of the navigation list (wrapping).
+// detailSwitch opens the next/previous card of the navigation list, wrapping.
+// With no cursor row, J starts from the top and K from the bottom.
 func (m *Model) detailSwitch(delta int) {
 	cards, cur := m.detailList()
 	if len(cards) == 0 {

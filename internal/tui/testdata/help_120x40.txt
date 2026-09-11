@@ -16,7 +16,7 @@
  │                    │  │ ╰───│                                                        │     │  │                    │ 
  │                    │  │     │ j/k ↓↑   select card         a        quick add        │     │  │                    │ 
  │                    │  │ ╭───│ h/l ←→   change lane         enter    open card        │     │  │                    │ 
- │                    │  │ │  B│ tab      next lane           H/L      move card ±lane  │     │  │                    │ 
+ │                    │  │ │  B│ tab      next lane           ⇧tab     previous lane    │     │  │                    │ 
  │                    │  │ │  T│ H/L      move card           d        move to Done     │     │  │                    │ 
  │                    │  │ │  #│ u        undo (Done → Doing) D        archive view     │     │  │                    │ 
  │                    │  │ ╰───│ x        delete card         A        archive (Done)   │     │  │                    │ 

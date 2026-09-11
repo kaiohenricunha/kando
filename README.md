@@ -275,13 +275,14 @@ open card · `d` move to Done · `u` undo (Done → Doing) · `x` delete card ·
 
 Card detail: `j/k` checklist item · `x` toggle · `o` new item · `enter` edit item
 · `T` title · `e` edit notes (`ctrl+s` saves, `esc` cancels) · `t` tag · `m` move (then `1`–`4`)
-· `b` block reason (empty clears) · `A` archive (Done only) · `J/K` previous/next card · `esc` back.
+· `b` block reason (empty clears) · `A` archive (Done only) · `J/K` next/previous card (when a filter hides the open card, `J` starts from the top of the list and `K` from the bottom) · `esc` back.
 
 Filter: type to match titles; `#tag` matches tags; `!blocked`, `age>7d`, `age<3d`
 (`h` also works) are operators; tokens are AND-ed. `enter` keeps the filter,
 `esc` clears it.
 
 Archive: `j/k` move · `u` back to Doing · `enter` open · `/` filter · `esc` board.
+
 `?` on any screen lists the keys of that screen.
 
 ## Files

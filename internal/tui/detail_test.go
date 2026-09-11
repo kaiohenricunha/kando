@@ -383,8 +383,8 @@ func TestArchiveRestoreWritesBothFiles(t *testing.T) {
 	m = press(m, "D") // archive screen
 	before := len(m.archive.Cards)
 	m = press(m, "u")
-	if len(m.archive.Cards) != before-1 || m.err != nil {
-		t.Fatalf("restore: archive=%d err=%v", len(m.archive.Cards), m.err)
+	if len(m.archive.Cards) != before-1 || m.errs.first() != nil {
+		t.Fatalf("restore: archive=%d err=%v", len(m.archive.Cards), m.errs.first())
 	}
 	b, err := store.Load(root, "life")
 	if err != nil {

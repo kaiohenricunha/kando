@@ -100,29 +100,40 @@ type Model struct {
 	arch   archiveState
 	boards boardsState
 
-	err error
+	// errs holds the conditions that outlast the key that caused them: see
+	// standing.
+	errs standing
 	// notice is a refused key's reason. It shows in the footer's report slot ahead
-	// of err and is cleared by the next key: a refusal is about one keypress,
-	// while err holds standing conditions — a failed save, a watcher that could
-	// not start — that nothing reports twice and a refusal must not erase.
+	// of errs and is cleared by the next key: a refusal is about one keypress,
+	// while errs holds conditions that nothing reports twice and a refusal must
+	// not erase.
 	notice string
-	// errFrom records what set err, and so which success may clear it.
-	errFrom errOrigin
 }
 
-// errOrigin says which later success may clear Model.err. A successful save
-// clears any error, as it always has. A successful reload clears only an error
-// that reading the files fixes: a reload that failed, or an archive.md that
-// could not be read, once a reload reads a good one. A reload never clears a
-// failed save, because reading the files again does not put the lost edit on
-// disk.
-type errOrigin int
+// standing is what the footer's report slot shows once no refused key's notice
+// is pending: conditions that outlast the key that caused them. Each kind has
+// its own field, so no failure overwrites another, and each is cleared only by
+// the success that fixes it. A single slot let a read failure replace a failed
+// save, and the next good read then cleared the footer while the edit was still
+// only in memory.
+type standing struct {
+	save    error // a write failed, so the edit is only in memory; a successful save clears it
+	reload  error // CheckReload failed; the next CheckReload that succeeds clears it
+	watch   error // the watcher could not start; a watcher that starts clears it
+	archive error // archive.md could not be read; a load or a reload that reads it clears it
+}
 
-const (
-	errFromAction      errOrigin = iota // a save, or the watcher failing to start
-	errFromReload                       // CheckReload failed
-	errFromArchiveRead                  // (*Store).LoadArchive failed
-)
+// first is the condition to report, most urgent first: an edit that is not on
+// disk, then a board that may be stale, then live reload being off, then an
+// archive that cannot be read.
+func (s standing) first() error {
+	for _, err := range []error{s.save, s.reload, s.watch, s.archive} {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // New builds a Model. The Todo lane starts active with its first card selected.
 func New(o Options) Model {
@@ -208,10 +219,11 @@ func (m Model) dispatch(msg tea.Msg) (Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.err != nil {
-			m.err, m.errFrom = fmt.Errorf("file watching disabled: %w", msg.err), errFromAction
+			m.errs.watch = fmt.Errorf("file watching disabled: %w", msg.err)
 			return m, nil
 		}
 		m.changes, m.stopWatch = msg.ch, msg.stop
+		m.errs.watch = nil
 		return m, waitChange(msg.ch, msg.gen)
 	case changeMsg:
 		if msg.gen != m.watchGen { // from a watcher we no longer own
@@ -419,10 +431,10 @@ func (m *Model) save() {
 		return
 	}
 	if err := m.st.SaveBoard(m.b); err != nil {
-		m.err, m.errFrom = err, errFromAction
+		m.errs.save = err
 		return
 	}
-	m.err = nil
+	m.errs.save = nil
 }
 
 // saveArchive persists the archive after a mutation.
@@ -434,10 +446,10 @@ func (m *Model) saveRestore() {
 		return
 	}
 	if err := m.st.SaveRestore(m.b, m.archive); err != nil {
-		m.err, m.errFrom = err, errFromAction
+		m.errs.save = err
 		return
 	}
-	m.err = nil
+	m.errs.save = nil
 }
 
 // saveArchival writes both files of an archive move through the store,
@@ -448,10 +460,10 @@ func (m *Model) saveArchival() {
 		return
 	}
 	if err := m.st.SaveArchival(m.b, m.archive); err != nil {
-		m.err, m.errFrom = err, errFromAction
+		m.errs.save = err
 		return
 	}
-	m.err = nil
+	m.errs.save = nil
 }
 
 func (m *Model) saveArchive() {
@@ -459,10 +471,10 @@ func (m *Model) saveArchive() {
 		return
 	}
 	if err := m.st.SaveArchive(m.archive); err != nil {
-		m.err, m.errFrom = err, errFromAction
+		m.errs.save = err
 		return
 	}
-	m.err = nil
+	m.errs.save = nil
 }
 
 // reload applies external file changes while keeping the UI state.
@@ -471,13 +483,9 @@ func (m *Model) reload() {
 		return
 	}
 	r, err := m.st.CheckReload()
-	if err != nil {
-		m.err, m.errFrom = err, errFromReload
-		return
-	}
-	if m.errFrom == errFromReload {
-		m.err = nil
-	}
+	// A failed check still returns what it read before it failed, so that is
+	// applied below too; the failure is reported until a check succeeds.
+	m.errs.reload = err
 	if r.Board != nil {
 		var selID, detailID string
 		if c := m.selectedCard(); c != nil {
@@ -506,9 +514,15 @@ func (m *Model) reload() {
 	if r.Archive != nil {
 		m.archive = r.Archive
 		m.clampArchive()
-		if m.errFrom == errFromArchiveRead {
-			m.err = nil
-		}
+		m.errs.archive = nil
+	} else if err == nil && m.errs.archive != nil && m.archive == nil {
+		// archive.md can read fine again with bytes the store has already seen,
+		// after an undo, and then the check reports no change: load it to see.
+		m.ensureArchive()
+	}
+	// A reload can shorten the open card's checklist under the cursor.
+	if c := m.detailCard(); m.scr == screenDetail && c != nil && m.detail.cursor >= len(c.Checklist) {
+		m.detail.cursor = max(len(c.Checklist)-1, 0)
 	}
 }
 
