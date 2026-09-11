@@ -16,17 +16,21 @@ type Page struct {
 	Board string
 	Title string
 	Date  string
+	// Kind names the page for the stylesheet's per-page rules ("board",
+	// "card"); LaneName and LaneAnchor add a lane to the breadcrumb.
+	Kind, LaneName, LaneAnchor string
 }
 
 type cardView struct {
-	ID, Title, Notes, Tag, Age, Progress, Blocked string
-	Done                                          bool
+	ID, Title, Tag, Age, Progress, Blocked string
+	Pct                                    int // checklist items done, 0-100
+	Done                                   bool
 }
 
 type laneView struct {
-	Key, Name string
-	Count     int
-	Cards     []cardView
+	Key, Name, Label string // Label is the lane as a word: "Todo"
+	Count            int
+	Cards            []cardView
 }
 
 type boardPage struct {
@@ -45,6 +49,14 @@ type cardPage struct {
 	Created, Since string
 	Notes, Reason  string
 	Checklist      []checklistItemView
+	Siblings       []siblingView // the card's lane in order, for the left pane
+}
+
+// siblingView is one row of the card page's lane list, which mirrors the TUI
+// detail screen's left pane.
+type siblingView struct {
+	ID, Title string
+	Current   bool
 }
 
 type newPage struct {
@@ -61,21 +73,25 @@ func (s *server) basePage(name, title string) Page {
 	return Page{Board: name, Title: board.SafeForDisplay(title), Date: board.DayLabel(s.now())}
 }
 
-// cardView projects a card the way the TUI's card_view.go does: the same
-// age, first notes line, progress and blocked labels, from the same helpers.
+// cardView projects a card the way the TUI's card_view.go does: the same age,
+// progress and blocked labels, from the same helpers. The notes preview the
+// TUI's active lane draws is not on the web board; notes live on the card page.
 func (s *server) cardView(c *board.Card, lane board.Lane) cardView {
 	// Every user-controlled field goes through SafeForDisplay. board.md is
 	// parsed verbatim, so these values may never have met a write-time
 	// sanitizer, and html/template escapes HTML metacharacters only — it does
 	// nothing about a bidi override, which would reorder what the page shows.
-	return cardView{
-		ID: c.ID, Title: board.SafeForDisplay(c.Title),
-		Notes: board.SafeForDisplay(c.NotePreview()), Tag: board.SafeForDisplay(c.Tag),
+	v := cardView{
+		ID: c.ID, Title: board.SafeForDisplay(c.Title), Tag: board.SafeForDisplay(c.Tag),
 		Age:      board.Age(s.now(), c.AgeSince()),
 		Progress: c.ProgressLabel(),
 		Blocked:  board.SafeForDisplay(c.BlockedLabel()),
 		Done:     lane == board.Done,
 	}
+	if done, total := c.ChecklistProgress(); total > 0 {
+		v.Pct = done * 100 / total
+	}
+	return v
 }
 
 // home redirects to the CLI-given board, or to the boards list.
@@ -103,8 +119,9 @@ func (s *server) board(w http.ResponseWriter, r *http.Request) {
 	f := board.Parse(q)
 	now := s.now()
 	p := boardPage{Page: s.basePage(name, name), Query: q, Total: b.Count()}
+	p.Kind = "board"
 	for _, l := range board.Lanes {
-		lv := laneView{Key: l.Key(), Name: strings.ToUpper(l.String())}
+		lv := laneView{Key: l.Key(), Name: strings.ToUpper(l.String()), Label: l.String()}
 		for _, c := range b.Lanes[l] {
 			if f.Empty() || f.Match(c, now) {
 				lv.Cards = append(lv.Cards, s.cardView(c, l))
@@ -125,7 +142,7 @@ func (s *server) card(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	lane, _, c := b.Find(r.PathValue("id"))
+	lane, at, c := b.Find(r.PathValue("id"))
 	if c == nil {
 		s.fail(w, &httpError{http.StatusNotFound, "no such card"})
 		return
@@ -135,6 +152,12 @@ func (s *server) card(w http.ResponseWriter, r *http.Request) {
 		Lane: lane.String(), LaneKey: lane.Key(), Lanes: board.Lanes,
 		Notes: board.SafeForDisplay(c.Notes), Reason: board.SafeForDisplay(c.BlockedReason),
 		Checklist: safeChecklist(c.Checklist),
+	}
+	p.Kind, p.LaneName, p.LaneAnchor = "card", p.Lane, p.LaneKey
+	// Current is by index, not id: with two cards sharing an id, Find returned
+	// the first, and that is the card this page shows.
+	for i, sib := range b.Lanes[lane] {
+		p.Siblings = append(p.Siblings, siblingView{ID: sib.ID, Title: board.SafeForDisplay(sib.Title), Current: i == at})
 	}
 	if !c.CreatedAt.IsZero() {
 		p.Created = board.DayLabel(c.CreatedAt)

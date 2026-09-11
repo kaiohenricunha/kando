@@ -1,11 +1,16 @@
 {{template "head" .Page}}
 <div class="bar">
-  <form method="get" action="/b/{{urlpath .Board}}/archive"><input type="text" name="q" value="{{.Query}}" placeholder="filter: title, #tag, age>7d"></form>
-  {{if .Query}}<span>{{.Matched}} of the newest {{.Scanned}} match{{if gt .Total .Scanned}} ({{.Total}} archived){{end}} · <a href="/b/{{urlpath .Board}}/archive">clear</a></span>{{else}}<span>{{.Total}} done</span>{{end}}
+  <form class="filter" method="get" action="/b/{{urlpath .Board}}/archive" role="search"><span class="slash" aria-hidden="true">/</span><input type="text" name="q" value="{{.Query}}" placeholder="filter title, #tag, age>7d" aria-label="filter"></form>
+  {{if .Query}}<span class="match">{{.Matched}} of the newest {{.Scanned}} match{{if gt .Total .Scanned}} ({{.Total}} archived){{end}} · <a href="/b/{{urlpath .Board}}/archive">clear</a></span>{{end}}
+  <span class="count">{{.Total}} done</span>
 </div>
-{{range .Groups}}<div class="section">{{.Label}} {{len .Items}}</div>
-<ul class="items">{{range .Items}}<li><span class="check">✓</span> <span class="t">{{.Title}}</span> {{if .Tag}}<span class="tag">#{{.Tag}}</span>{{end}} <span class="muted">{{.Date}}</span>
-  <form class="inline" method="post" action="/b/{{urlpath $.Board}}/archive/{{urlpath .ID}}/restore"><input type="hidden" name="q" value="{{$.Query}}"><button type="submit" class="small">restore</button></form></li>
-{{end}}</ul>{{else}}<div class="empty">— nothing archived</div>{{end}}
-<footer><a href="/b/{{urlpath .Board}}">← board</a><span>{{if gt .Total .Cap}}showing the {{.Cap}} most recent entries; the rest live in {{.Path}}{{end}}</span></footer>
+<div class="archive">
+{{range .Groups}}  <section class="week">
+    <h2>{{.Label}} {{len .Items}}</h2>
+    {{range .Items}}<div class="entry"><span class="check">✓</span><span class="t">{{.Title}}</span><span class="tag">{{if .Tag}}#{{.Tag}}{{end}}</span><span class="when">{{.Date}}</span><form method="post" action="/b/{{urlpath $.Board}}/archive/{{urlpath .ID}}/restore"><input type="hidden" name="q" value="{{$.Query}}"><button type="submit" class="restore">↺ restore</button></form></div>
+    {{end}}
+  </section>
+{{else}}  <div class="empty">— nothing archived</div>
+{{end}}</div>
+<footer>{{if gt .Total .Cap}}showing the {{.Cap}} most recent entries; the rest live in <span class="path">{{.Path}}</span>{{end}}</footer>
 {{template "foot"}}

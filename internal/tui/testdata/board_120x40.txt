@@ -1,40 +1,40 @@
  kando  life                                                                                                  Thu 3 Sep 
                                                                                                                         
- ╭────────────────────╮  ╭────────────────────────────────────────────╮  ╭────────────────────╮  ╭────────────────────╮ 
- │ BACKLOG          3 │  │ TODO                                     3 │  │ DOING            2 │  │ DONE             3 │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │ • Learn to make s… │  │ ╭────────────────────────────────────────╮ │  │ • Fix bike brake   │  │ ✓ Cancel gym memb… │ 
- │ • Replace kitchen… │  │ │  Renew passport                    3d  │ │  │ • Birthday card f… │  │ ✓ Return library … │ 
- │ • Read Piranesi    │  │ │  Expires 14 Nov. Two photos, old pas…  │ │  │                    │  │ ✓ Pay electric bi… │ 
- │                    │  │ │  #errand  1/4                          │ │  │                    │  │                    │ 
- │                    │  │ ╰────────────────────────────────────────╯ │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │ ╭────────────────────────────────────────╮ │  │                    │  │                    │ 
- │                    │  │ │  Tax docs to accountant            2d  │ │  │                    │  │                    │ 
- │                    │  │ │  P60, dividend statements, the sprea…  │ │  │                    │  │                    │ 
- │                    │  │ │  #money                                │ │  │                    │  │                    │ 
- │                    │  │ ╰────────────────────────────────────────╯ │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │ ╭────────────────────────────────────────╮ │  │                    │  │                    │ 
- │                    │  │ │  Book dentist                      1d  │ │  │                    │  │                    │ 
- │                    │  │ │  Try for a Saturday slot.              │ │  │                    │  │                    │ 
- │                    │  │ │  #health                               │ │  │                    │  │                    │ 
- │                    │  │ ╰────────────────────────────────────────╯ │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- │                    │  │                                            │  │                    │  │                    │ 
- ╰────────────────────╯  ╰────────────────────────────────────────────╯  ╰────────────────────╯  ╰────────────────────╯ 
+ │                       ╭────────────────────────────────────────────╮  │                       │                      
+ │ BACKLOG            3  │ TODO                                     3 │  │ DOING              2  │ DONE               3 
+ │                       │                                            │  │                       │                      
+ │ • Learn to make sou…  │ ╭────────────────────────────────────────╮ │  │ • Fix bike brake   ⊘  │ ✓ Cancel gym member… 
+ │ • Replace kitchen t…  │ │  Renew passport                    3d  │ │  │ • Birthday card for…  │ ✓ Return library bo… 
+ │ • Read Piranesi       │ │  Expires 14 Nov. Two photos, old pas…  │ │  │                       │ ✓ Pay electric bill  
+ │                       │ │  #errand  1/4                          │ │  │                       │                      
+ │                       │ ╰────────────────────────────────────────╯ │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │ ╭────────────────────────────────────────╮ │  │                       │                      
+ │                       │ │  Tax docs to accountant            2d  │ │  │                       │                      
+ │                       │ │  P60, dividend statements, the sprea…  │ │  │                       │                      
+ │                       │ │  #money                                │ │  │                       │                      
+ │                       │ ╰────────────────────────────────────────╯ │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │ ╭────────────────────────────────────────╮ │  │                       │                      
+ │                       │ │  Book dentist                      1d  │ │  │                       │                      
+ │                       │ │  Try for a Saturday slot.              │ │  │                       │                      
+ │                       │ │  #health                               │ │  │                       │                      
+ │                       │ ╰────────────────────────────────────────╯ │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       │                                            │  │                       │                      
+ │                       ╰────────────────────────────────────────────╯  │                       │                      
                                                                                                                         
- j/k move  h/l tab lane  a add  enter open  H/L move card  d done  / filter  ? help  q quit                    11 cards 
+ j/k move  h/l tab lane  a add  enter open   │   H/L move card  d done   │   / filter  ? help  q quit          11 cards 

@@ -76,9 +76,11 @@ server-rendered HTML there is one state (the Go `*board.Board`) and one
 renderer per surface (TUI frames, HTML pages). Edits, creates and deletes
 are plain HTTP requests (forms/links), one real request per action, the
 same "every mutation saves" discipline the TUI already follows. A small
-amount of vanilla JS is used only where a full page reload would be
-jarring (subscribing to the SSE stream, drag interactions) — no SPA
-framework, no client-side router, no build step.
+amount of vanilla JS is used, and it never holds board state or writes a
+card of its own: it listens (the SSE stream), turns a gesture into one of
+the page's own form posts (drag; the card page's autosave and keys), or
+arranges what the page already shows (the phone layout's lane tabs) — no
+SPA framework, no client-side router, no build step.
 
 **KD-2 — Server-Sent Events for cross-tab/cross-process live updates, not
 WebSocket or polling.** The update direction is one-way (server → browser:

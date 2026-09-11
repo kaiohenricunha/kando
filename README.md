@@ -274,7 +274,7 @@ open card · `d` move to Done · `u` undo (Done → Doing) · `x` delete card ·
 · `q` quit. Arrow keys work everywhere `j/k/h/l` do.
 
 Card detail: `j/k` checklist item · `x` toggle · `o` new item · `enter` edit item
-· `T` title · `e` edit notes (`ctrl+s` saves, `esc` cancels) · `t` tag · `m` move (then `1`–`4`)
+· `T` title · `e` edit notes (`ctrl+s` saves, `esc` cancels) · `t` tag · `m` move (then `1`–`4`) · `d` move to Done
 · `b` block reason (empty clears) · `A` archive (Done only) · `J/K` next/previous card (when a filter hides the open card, `J` starts from the top of the list and `K` from the bottom) · `esc` back.
 
 Filter: type to match titles; `#tag` matches tags; `!blocked`, `age>7d`, `age<3d`

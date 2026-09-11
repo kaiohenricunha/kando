@@ -7,7 +7,7 @@
  • Tax docs to accountant          │   Expires 14 Nov. Two photos, old passport, printed form.                          
  • Book dentist                    │   Appointment slots open on Mondays.                                               
                                    │                                                                                    
-                                   │   CHECKLIST 1/4                                                                    
+                                   │   CHECKLIST 1/4  ▰▱▱▱                                                              
                                    │   ▣ Photos from the pharmacy                                                       
                                    │   ▢ Fill in the form                                                               
                                    │   ▢ Book appointment                                                               
@@ -37,4 +37,4 @@
                                    │                                                                                    
                                    │                                                                                    
                                                                                                                         
- j/k item  x toggle  o new item  T title  e edit notes  t tag  m move  b block  esc back                                
+ j/k item  x toggle  o new item   │   T title  e edit notes  t tag  b block   │   m move  d done  esc back              

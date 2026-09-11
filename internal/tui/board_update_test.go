@@ -367,9 +367,9 @@ func TestHelpOverlayListsDeleteAndBoards(t *testing.T) {
 			t.Errorf("help overlay missing %q", want)
 		}
 	}
-	// The persistent footer is unchanged (the three spec goldens stay byte-identical).
+	// Keys added to the overlay leave the persistent footer as it was.
 	m = press(m, "esc")
-	if !strings.HasPrefix(plainLines(m)[39], " j/k move  h/l tab lane  a add  enter open  H/L move card  d done  / filter  ? help  q quit") {
+	if !strings.HasPrefix(plainLines(m)[39], " j/k move  h/l tab lane  a add  enter open   │   H/L move card  d done   │   / filter  ? help  q quit") {
 		t.Errorf("footer must not change: %q", plainLines(m)[39])
 	}
 }

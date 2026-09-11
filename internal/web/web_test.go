@@ -131,7 +131,7 @@ func TestBoardViewRendersAllLanes(t *testing.T) {
 		t.Fatalf("status %d type %q", rec.Code, rec.Header().Get("Content-Type"))
 	}
 	for _, want := range []string{"BACKLOG", "TODO", "DOING", "DONE", "Renew passport", "3d", "#errand", "1/4",
-		"⊘ waiting on pads", "Cancel gym membership", "11 cards", "Expires 14 Nov.", `href="/b/life/cards/k7q2m9ab"`,
+		"⊘ waiting on pads", "Cancel gym membership", "11 cards", `href="/b/life/cards/k7q2m9ab"`,
 		`href="/b/life/cards/new?lane=todo"`, `href="/b/life/archive"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("board page missing %q", want)

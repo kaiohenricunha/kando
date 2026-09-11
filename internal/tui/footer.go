@@ -21,8 +21,9 @@ var (
 		{"type", "to filter title or #tag"}, {"enter", "keep filter"}, {"esc", "clear"},
 	}
 	detailFooterGroups = []keyGroup{
-		{"j/k", "item"}, {"x", "toggle"}, {"o", "new item"}, {"T", "title"},
-		{"e", "edit notes"}, {"t", "tag"}, {"m", "move"}, {"b", "block"}, {"esc", "back"},
+		{"j/k", "item"}, {"x", "toggle"}, {"o", "new item"},
+		{"T", "title"}, {"e", "edit notes"}, {"t", "tag"}, {"b", "block"},
+		{"m", "move"}, {"d", "done"}, {"esc", "back"},
 	}
 	archiveFooterGroups = []keyGroup{
 		{"j/k", "move"}, {"u", "undo (back to Doing)"}, {"enter", "open"}, {"/", "filter"}, {"esc", "board"},
@@ -44,35 +45,70 @@ func (m Model) groups(gs []keyGroup) string {
 	return strings.Join(parts, "  ")
 }
 
-// boardFooter applies the fallback chain: full+count, reduced+count, reduced,
-// truncated. With something to report — an error, or a refused key's notice —
-// the message takes the count's place and is never the part dropped for lack
-// of room: the hints give way instead, as they do on the archive and detail
-// footers.
+// The board and detail footers are drawn in sections divided by a rule: moving
+// around, acting on the card, and the rest. Each list is the size of each
+// section in order. The footers stay flat lists because
+// TestHelpTablesCoverTheFooterAndFitTheBox checks them group by group against
+// the help tables; sections change only how they are drawn.
+var (
+	boardFullSections    = []int{4, 2, 3}
+	boardReducedSections = []int{4, 1, 3}
+	detailSections       = []int{3, 4, 3}
+)
+
+// sections renders gs in runs of the given sizes, each run as groups renders
+// it, joined by a border-coloured "│" with three spaces either side. The sizes
+// must add up to len(gs); TestFooterSectionsCoverTheirFooters checks that.
+func (m Model) sections(gs []keyGroup, sizes []int) string {
+	parts := make([]string, 0, len(sizes))
+	i := 0
+	for _, n := range sizes {
+		parts = append(parts, m.groups(gs[i:i+n]))
+		i += n
+	}
+	return strings.Join(parts, "   "+m.styles.Border.Render("│")+"   ")
+}
+
+// boardFooter shows the widest hint row that fits: the full keys, then the
+// reduced keys (without H/L), each tried with its section rules first and
+// without them second, so the rules always go before a key does. The count
+// sits beside the widest row that leaves room for it; when none does, the
+// widest row that fits goes alone, and the reduced row without rules is
+// truncated as a last resort. With something to report — an error, or a
+// refused key's notice — the message takes the count's place and is never
+// the part dropped for lack of room: the hints give way instead, as they do
+// on the archive and detail footers.
 func (m Model) boardFooter(cw int) string {
-	full := m.groups(boardFooterFull)
-	reduced := m.groups(boardFooterReduced)
+	// The rules cost ten cells: from 102 to 111 wide they are the difference
+	// between the row keeping H/L and losing it, and at 80 wide between it
+	// keeping "q quit" and losing that.
+	rows := []string{
+		m.sections(boardFooterFull, boardFullSections), m.groups(boardFooterFull),
+		m.sections(boardFooterReduced, boardReducedSections), m.groups(boardFooterReduced),
+	}
+	widest := func(room int) (string, bool) {
+		for _, r := range rows {
+			if width(r) <= room {
+				return r, true
+			}
+		}
+		return rows[len(rows)-1], false
+	}
 	if m.hasReport() {
 		// A standing condition until the success that fixes it (see standing);
 		// a refused key until the next key. The old chain dropped a message that
 		// did not fit beside the reduced hints — at 120 wide, any refusal naming
 		// a card with a title much over twenty characters.
 		e := m.reportPart(cw)
-		left := full
-		if width(full)+2+width(e) > cw {
-			left = reduced
-		}
+		left, _ := widest(cw - 2 - width(e))
 		return hsplit(left, e, cw)
 	}
 	count := m.styles.Muted.Render(fmt.Sprintf("%d cards", m.visibleCount()))
-	switch {
-	case width(full)+2+width(count) <= cw:
-		return hsplit(full, count, cw)
-	case width(reduced)+2+width(count) <= cw:
-		return hsplit(reduced, count, cw)
-	default:
-		return fit(reduced, cw)
+	if left, ok := widest(cw - 2 - width(count)); ok {
+		return hsplit(left, count, cw)
 	}
+	left, _ := widest(cw)
+	return fit(left, cw)
 }
 
 // hasReport says whether the footer's report slot has anything to show.

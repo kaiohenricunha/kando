@@ -38,6 +38,7 @@ var (
 		left: []keyGroup{
 			{"j/k ↓↑", "select item"}, {"J/K", "next/prev card"}, {"x", "toggle item"},
 			{"enter", "edit item"}, {"o", "new item"}, {"e", "edit notes"}, {"A", "archive (Done)"},
+			{"d", "move to Done"},
 		},
 		right: []keyGroup{
 			{"T", "title"}, {"t", "tag"}, {"b", "block"}, {"m", "move to lane"},

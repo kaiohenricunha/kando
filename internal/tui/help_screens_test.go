@@ -24,7 +24,7 @@ func TestHelpOverlayShowsTheCurrentScreensKeys(t *testing.T) {
 			[]string{"H/L      move card ±lane"}},
 		{"detail", sample, []string{"enter", "?"},
 			[]string{"KEYS", "j/k ↓↑   select item", "J/K      next/prev card", "x        toggle item", "enter    edit item",
-				"o        new item", "e        edit notes", "A        archive (Done)", "T        title", "t        tag",
+				"o        new item", "e        edit notes", "A        archive (Done)", "d        move to Done", "T        title", "t        tag",
 				"b        block", "m        move to lane", "esc      back", "ctrl+s   save notes", "?        close help"},
 			[]string{"x        delete card", "J/K      reorder in lane", "q        quit"}},
 		{"archive", sample, []string{"D", "?"},
