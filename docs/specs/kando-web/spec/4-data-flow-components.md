@@ -41,9 +41,13 @@ process and the web process; they are separate OS processes (even though
 they're the same binary), so nothing is shared in memory *between them*.
 Synchronization is entirely file-based, through the store package's
 existing atomic-write + hash-suppression + watch machinery — unchanged
-from what the TUI already does today. `SaveBoard` and `SaveArchive` refuse a
-change that no longer parses instead of overwriting it, and `CheckReload`
-reports that same condition instead of silently skipping it.
+from what the TUI already does today. The TUI's unchecked `SaveBoard` and
+`SaveArchive` win over a concurrent change that still parses, on purpose,
+but refuse one that does not, instead of overwriting a hand edit that broke
+it; the web's own writers (`SaveBoardIfUnchanged` and friends, §5) refuse
+any concurrent change at all, parseable or not, so they need no separate
+case for this. `CheckReload` reports an unparsable file's error instead of
+silently skipping it, for either process.
 
 **Within** the web process, that guarantee does not extend: `net/http`
 runs every request in its own goroutine, and `internal/board` is
@@ -93,11 +97,12 @@ process never updates the `/boards` page (§5) until it is next loaded.
 
 **KD-3 — Each request loads, mutates, and saves; nothing survives between
 requests.** No goroutine holds a `*board.Board` across requests, and no
-mutex guards one. A handler that renders reads the board fresh (via
-`Store.CheckReload`, which is stat-gated and returns early when nothing
-changed, `internal/store/store.go:197`); a handler that mutates reads,
-applies the change, and calls `Store.SaveBoard`/`SaveArchive`, all within
-one request. This sidesteps the alternative — one shared in-memory model
+mutex guards one. A handler that renders reads the board fresh with the
+package-level `store.Load` — no `*Store` handle is kept between requests,
+so `CheckReload`, which compares against one, does not apply here; a
+handler that mutates reads,
+applies the change, and calls `Store.SaveBoardIfUnchanged`/`SaveArchiveIfUnchanged`,
+all within one request. This sidesteps the alternative — one shared in-memory model
 behind a `sync.RWMutex` — at the cost of a parse per request, trivial at
 personal-board sizes, and keeps `internal/board` exactly as lock-free as
 it is today. It also closes the freshness gap KD-2 leaves: correctness

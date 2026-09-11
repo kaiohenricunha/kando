@@ -905,7 +905,7 @@ func TestArchiveRestoreRefusesAnOutsideWriteMidRestore(t *testing.T) {
 				}
 				return fixedNow
 			}})
-			boardBefore, archiveBefore := mustReadFile(t, filepath.Join(root, "life", "board.md")), mustReadFile(t, filepath.Join(root, "life", "archive.md"))
+			boardBefore, archiveBefore := mustReadWeb(t, filepath.Join(root, "life", "board.md")), mustReadWeb(t, filepath.Join(root, "life", "archive.md"))
 			a, _ := store.LoadArchive(root, "life")
 			id := a.Cards[0].ID
 
@@ -916,7 +916,7 @@ func TestArchiveRestoreRefusesAnOutsideWriteMidRestore(t *testing.T) {
 			if !fired {
 				t.Fatal("the outside write never happened")
 			}
-			boardAfter, archiveAfter := mustReadFile(t, filepath.Join(root, "life", "board.md")), mustReadFile(t, filepath.Join(root, "life", "archive.md"))
+			boardAfter, archiveAfter := mustReadWeb(t, filepath.Join(root, "life", "board.md")), mustReadWeb(t, filepath.Join(root, "life", "archive.md"))
 			switch which {
 			case "board.md":
 				if string(boardAfter) == string(boardBefore) {
@@ -944,13 +944,4 @@ func mustOpen(t *testing.T, root string) *store.Store {
 		t.Fatal(err)
 	}
 	return st
-}
-
-func mustReadFile(t *testing.T, path string) []byte {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
 }

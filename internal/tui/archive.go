@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/kaiohenricunha/kando/internal/board"
+	"github.com/kaiohenricunha/kando/internal/store"
 )
 
 // archiveMaxItems caps the list at the most recent entries; the footnote points
@@ -283,6 +285,7 @@ func (m *Model) snapshotBeforeMove(c *board.Card) moveSnapshot {
 	}
 	snap.archive = append([]*board.Card(nil), m.archive.Cards...)
 	snap.card = *c
+	snap.card.Checklist = append([]board.Item(nil), c.Checklist...)
 	return snap
 }
 
@@ -295,9 +298,12 @@ func (m *Model) undoMove(c *board.Card, snap moveSnapshot) {
 }
 
 // restoreArchived moves an archived card back to the top of Doing — u on the
-// archive screen. A refusal — the id is already on the board, or the save
-// fails — writes nothing, undoes the move in memory, and leaves the cursor
-// where it was, with the reason in the footer.
+// archive screen. A refusal that wrote nothing — the id is already on the
+// board, or the save fails before either file is touched — undoes the move
+// in memory and leaves the cursor where it was, with the reason in the
+// footer. A save that lands board.md but fails archive.md (ErrPartialWrite)
+// keeps the move: board.md, the file that succeeded, already agrees with it,
+// and undoing would only make memory disagree with the file on disk.
 func (m *Model) restoreArchived(c *board.Card) {
 	if m.restoreRefused(c) {
 		return
@@ -309,7 +315,7 @@ func (m *Model) restoreArchived(c *board.Card) {
 			break
 		}
 	}
-	if !m.saveRestore() {
+	if !m.saveRestore() && !errors.Is(m.errs.save, store.ErrPartialWrite) {
 		m.undoMove(c, snap)
 		return
 	}
@@ -329,6 +335,13 @@ func (m *Model) restoreArchived(c *board.Card) {
 // would replace an archive we never saw with a one-card file, which is the one
 // way this feature could lose a card rather than duplicate it. The web route
 // refuses that case with a 500.
+//
+// A save that lands archive.md but fails board.md (ErrPartialWrite) still
+// reports true: archive.md, the file that succeeded, already agrees with the
+// move, and undoing it in memory would only make memory disagree with the
+// file on disk. The stale board.md is a duplicate the next board save
+// replaces; the error itself still stands in m.errs.save until that save
+// clears it.
 func (m *Model) archiveDone(c *board.Card) bool {
 	i := m.laneIndex(board.Done, c)
 	if i < 0 {
@@ -350,7 +363,7 @@ func (m *Model) archiveDone(c *board.Card) bool {
 	}
 	snap := m.snapshotBeforeMove(c)
 	m.b.ArchiveDone(m.archive, i, m.now())
-	if !m.saveArchival() {
+	if !m.saveArchival() && !errors.Is(m.errs.save, store.ErrPartialWrite) {
 		m.undoMove(c, snap)
 		return false
 	}

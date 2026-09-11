@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -233,5 +234,154 @@ func TestAnUnparsableWriteRightAfterOurOwnSaveIsRefused(t *testing.T) {
 	}
 	if fi, err := os.Stat(st.BoardPath()); err != nil || fi.Size() != int64(len(bad)) {
 		t.Fatalf("setup: the interleaved write must change the file size (stat err %v)", err)
+	}
+}
+
+// A two-file write that lands its first file but fails its second must not be
+// mistaken for "nothing written": the store's own documented fail-safe puts
+// the card in both files rather than losing it, and a caller that rolled back
+// an in-memory move on any error would hide that duplicate. ErrPartialWrite
+// lets a caller tell the two apart.
+func TestSaveArchivalWrapsASecondWriteFailureInErrPartialWrite(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Insert(board.Todo, 0, &board.Card{ID: "aaaaaaaa", Title: "was in todo"})
+	if err := st.SaveBoard(b); err != nil {
+		t.Fatal(err)
+	}
+	a := &board.Archive{}
+	a.Insert(&board.Card{ID: "bbbbbbbb", Title: "already archived"})
+
+	away := filepath.Join(root, "life", "board.md.away")
+	if err := os.Rename(st.BoardPath(), away); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(st.BoardPath(), 0o755); err != nil { // board.md's write will fail
+		t.Fatal(err)
+	}
+	err = st.SaveArchival(b, a)
+	if !errors.Is(err, ErrPartialWrite) {
+		t.Fatalf("want ErrPartialWrite, got %v", err)
+	}
+	got, _, rerr := ParseArchive(mustRead(t, st.ArchivePath()))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if len(got.Cards) != 1 || got.Cards[0].ID != "bbbbbbbb" {
+		t.Errorf("archive.md must hold the write that landed: %v", got.Cards)
+	}
+	if err := os.RemoveAll(st.BoardPath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(away, st.BoardPath()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSaveRestoreWrapsASecondWriteFailureInErrPartialWrite(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &board.Archive{}
+	a.Insert(&board.Card{ID: "aaaaaaaa", Title: "to restore"})
+	if err := st.SaveArchive(a); err != nil {
+		t.Fatal(err)
+	}
+	c := a.Remove(0)
+	b.Insert(board.Doing, 0, c)
+
+	away := filepath.Join(root, "life", "archive.md.away")
+	if err := os.Rename(st.ArchivePath(), away); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(st.ArchivePath(), 0o755); err != nil { // archive.md's write will fail
+		t.Fatal(err)
+	}
+	err = st.SaveRestore(b, a)
+	if !errors.Is(err, ErrPartialWrite) {
+		t.Fatalf("want ErrPartialWrite, got %v", err)
+	}
+	got, _, rerr := Parse(mustRead(t, st.BoardPath()))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if len(got.Lanes[board.Doing]) != 1 || got.Lanes[board.Doing][0].ID != "aaaaaaaa" {
+		t.Errorf("board.md must hold the write that landed: %v", got.Lanes[board.Doing])
+	}
+	if err := os.RemoveAll(st.ArchivePath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(away, st.ArchivePath()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A refusal before either write (the unparsable guard) must NOT be wrapped in
+// ErrPartialWrite: nothing was written, so a caller's rollback is safe there.
+func TestAGuardRefusalIsNotAPartialWrite(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &board.Archive{}
+	os.WriteFile(st.BoardPath(), []byte("## Todo\n\n### A\ncreated: yesterday\n"), 0o644)
+	err = st.SaveArchival(b, a)
+	if !errors.Is(err, ErrUnparsable) || errors.Is(err, ErrPartialWrite) {
+		t.Fatalf("want ErrUnparsable and NOT ErrPartialWrite, got %v", err)
+	}
+}
+
+// The unparsable-hand-edit guards run before every unchecked write, including
+// ones the guard itself refuses, and must never mutate the Store's real
+// baseline: changedContentState marks a missing file's baseline invalid as a
+// side effect, and a read-only guard given the live baseline instead of a
+// copy would carry that mark forward, making every later check re-read and
+// re-hash board.md, and a checked writer like SaveBoardIfUnchanged see a
+// false ErrConflict, until the next successful save replaces it.
+func TestRefuseUnparsableBoardDoesNotCorruptTheLiveBaseline(t *testing.T) {
+	root := t.TempDir()
+	st, b, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveBoard(b); err != nil {
+		t.Fatal(err)
+	}
+	before := st.board
+	if err := os.Remove(st.BoardPath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.refuseUnparsableBoard(); err != nil {
+		t.Fatal(err)
+	}
+	if st.board != before {
+		t.Errorf("refuseUnparsableBoard must not mutate the live baseline: before=%+v after=%+v", before, st.board)
+	}
+}
+
+func TestRefuseUnparsableArchiveDoesNotCorruptTheLiveBaseline(t *testing.T) {
+	root := t.TempDir()
+	st, _, err := Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveArchive(&board.Archive{}); err != nil {
+		t.Fatal(err)
+	}
+	before := st.archive
+	if err := os.Remove(st.ArchivePath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.refuseUnparsableArchive(); err != nil {
+		t.Fatal(err)
+	}
+	if st.archive != before {
+		t.Errorf("refuseUnparsableArchive must not mutate the live baseline: before=%+v after=%+v", before, st.archive)
 	}
 }

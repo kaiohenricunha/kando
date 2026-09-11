@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/kaiohenricunha/kando/internal/board"
+	"github.com/kaiohenricunha/kando/internal/store"
 )
 
 type editKind int
@@ -534,6 +536,10 @@ func (m Model) updateLanePick(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // and follows it: the destination lane becomes active with the card selected.
 // Moving an archived card out is a restore, so it takes u's guard: refused, with
 // nothing written and the card left open, when its id is already on the board.
+// A save that lands board.md but fails archive.md (ErrPartialWrite) still
+// follows the card: board.md, the file that succeeded, already agrees with
+// the move, and undoing it in memory would leave the detail open on a card
+// this Store no longer has any record of as archived.
 func (m *Model) moveDetailCard(to board.Lane) {
 	c := m.detailCard()
 	if c == nil {
@@ -551,7 +557,7 @@ func (m *Model) moveDetailCard(to board.Lane) {
 				break
 			}
 		}
-		if !m.saveRestore() {
+		if !m.saveRestore() && !errors.Is(m.errs.save, store.ErrPartialWrite) {
 			m.undoMove(c, snap)
 			return
 		}
@@ -568,10 +574,12 @@ func (m *Model) moveDetailCard(to board.Lane) {
 
 // archiveDetailCard is A on an open card: archive it and return to the board,
 // where the card's own page no longer exists — what the web's button does too.
-// The screen changes only when the archive happened. A refusal (the card is
-// already archived, is not in Done, or archive.md cannot be read) stays on the
-// card with the reason in the footer, so a key that did nothing does not look
-// like one that did.
+// The screen changes only when the archive happened, which archiveDone
+// reports true for even when its board.md write lags behind (ErrPartialWrite):
+// archive.md already agrees with it. A refusal that wrote nothing (the card is
+// already archived, is not in Done, archive.md cannot be read, or the save
+// fails before either file is touched) stays on the card with the reason in
+// the footer, so a key that did nothing does not look like one that did.
 func (m *Model) archiveDetailCard() {
 	c := m.detailCard()
 	if c == nil {

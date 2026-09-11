@@ -117,7 +117,11 @@ type Model struct {
 // save, and the next good read then cleared the footer while the edit was still
 // only in memory.
 type standing struct {
-	save    error // a write failed, so the edit is only in memory; a successful save clears it
+	save error // a write failed, so the edit is only in memory; a successful save clears it.
+	// exception: ErrPartialWrite from a two-file save means the file that
+	// matters — the one a moveSnapshot-guarded move already agrees with — did
+	// write; only its stale sibling didn't, so the edit is not memory-only,
+	// but the error stands until the next save rewrites that sibling too.
 	reload  error // CheckReload failed; the next CheckReload that succeeds clears it
 	watch   error // the watcher could not start; a watcher that starts clears it
 	archive error // archive.md could not be read; a load or a reload that reads it clears it
@@ -517,7 +521,7 @@ func (m *Model) reload() {
 		m.archive = r.Archive
 		m.clampArchive()
 		m.errs.archive = nil
-	} else if err == nil && m.errs.archive != nil && m.archive == nil {
+	} else if m.errs.archive != nil && m.archive == nil {
 		// archive.md can read fine again with bytes the store has already seen,
 		// after an undo, and then the check reports no change: load it to see.
 		m.ensureArchive()

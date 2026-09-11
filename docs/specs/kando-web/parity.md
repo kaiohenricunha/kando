@@ -89,8 +89,11 @@ ends in a form `POST` to `/move` rather than a write of its own. Both are in
   active lane, a help overlay against labelled controls. KD-1 expects this.
 - **Selection.** The TUI has a cursor; the page does not need one.
 - **Concurrency.** Two browser tabs can post at once, so the web serialises
-  writers per board and refuses a save whose file changed underneath (409).
-  The TUI is one process with one goroutine and needs neither.
+  writers per board and refuses a save whose file changed underneath at all
+  (409). The TUI is one process with one goroutine and needs no serialising,
+  and its unchecked writers still win over a concurrent change that parses,
+  on purpose; they refuse only a changed file that does not parse, wrapping
+  `ErrUnparsable` instead of overwriting a hand edit that broke it.
 - **How unsafe runes are removed on screen (SEC-4).** All three surfaces drop
   the same set, `board.UnsafeRune`, but the TUI substitutes a space for a C0
   rune where the other two delete it. The TUI lays out in exact terminal

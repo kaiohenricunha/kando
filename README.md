@@ -289,10 +289,13 @@ Archive: `j/k` move · `u` back to Doing · `enter` open · `/` filter · `esc` 
 
 `~/.kando/<board>/board.md` and `archive.md`, rewritten canonically after every
 change and reloaded when edited elsewhere. A hand edit that stops one of them
-from parsing is not loaded, and the TUI will not save over it either: the
-footer names the file and the parse error, and a change made in the TUI
-meanwhile is refused rather than written. Fix the file and the next reload
-picks it up; make the change again.
+from parsing is not loaded, and none of `kando`'s writers will save over it:
+the TUI's footer names the file and the parse error and refuses a change made
+meanwhile rather than write it, a CLI command like `kando move` or `kando
+archive` prints the same error to stderr and exits 1, and `kando web` answers
+500 for the board it belongs to. The TUI footer holds the message to half the
+row and truncates a long one with `…`; the CLI's stderr line never is. Fix the
+file and the next reload (or command) picks it up; make the change again.
 
 ```markdown
 ## Todo
