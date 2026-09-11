@@ -18,12 +18,30 @@ import (
 // structuralNote knew about headings and checklist items but not keys, so a
 // note whose first line read "done: soon" was written unescaped, parsed back
 // as the done: key, and failed parseTime, which made the whole board
-// unopenable on every surface.
+// unopenable on every surface. unknownKeyRe raises the stakes: it keeps the
+// parser reading keys past a line kando does not write, so structuralNote has to
+// escape a key-shaped note line wherever it sits in the notes, not only on the
+// first line.
 const cardKeys = `tag|created|moved|done|blocked|id`
 
 var (
 	keyRe  = regexp.MustCompile(`^(` + cardKeys + `):[ \t]?(.*)$`)
 	itemRe = regexp.MustCompile(`^- \[( |x|X)\] ?(.*)$`)
+	// unknownKeyRe matches a line shaped like a key that kando does not write:
+	// a lowercase name, a colon, then a space, a tab or the end of the line,
+	// such as "priority: high". parseSections keeps it as a note but does not
+	// let it end the key block, so the keys written after it still count. The
+	// shape is narrow on purpose: "Note: ..." and "https://..." stay prose.
+	//
+	// Three things keep that safe. keyRe is tried first, because this shape
+	// also matches the known keys. The writer has no need to escape such a line,
+	// since it reads back as the note it was, but structuralNote must escape a
+	// key-shaped note line at every position, because the lines after one are
+	// read in the key block too. And after one, parseSections keeps a key line
+	// that repeats a key or does not parse as a note, as it was before unknown
+	// keys were kept: a board that opened then still opens, and a stray id:
+	// under a label cannot replace the card's id.
+	unknownKeyRe = regexp.MustCompile(`^[a-z][a-z0-9_-]*:([ \t]|$)`)
 )
 
 type section struct {
@@ -41,6 +59,8 @@ func parseSections(data []byte) (secs []section, seeds map[*board.Card]string, e
 		card     *board.Card
 		inKeys   bool
 		notes    []string
+		blanks   []string        // blank lines in the key block, held until the next line places them
+		keysSet  map[string]bool // the keys this card's key block has set
 		lineNo   int
 		ordinal  int
 		checkist []board.Item
@@ -59,7 +79,14 @@ func parseSections(data []byte) (secs []section, seeds map[*board.Card]string, e
 			ordinal, cur.heading, card.Title, formatTime(card.CreatedAt), card.Notes)
 		ordinal++
 		cur.cards = append(cur.cards, card)
-		card, notes, checkist = nil, nil, nil
+		card, notes, blanks, checkist = nil, nil, nil, nil
+	}
+	// keepAsNote ends the key block and adds line to the notes, after any blank
+	// lines held before it.
+	keepAsNote := func(line string) {
+		inKeys = false
+		notes = append(append(notes, blanks...), line)
+		blanks = nil
 	}
 	for _, raw := range strings.Split(string(data), "\n") {
 		lineNo++
@@ -76,16 +103,34 @@ func parseSections(data []byte) (secs []section, seeds map[*board.Card]string, e
 			}
 			card = &board.Card{Title: strings.TrimSpace(line[4:])}
 			inKeys = true
+			keysSet = map[string]bool{}
 		case card == nil:
 			// Text outside a card (preamble, stray lines): ignored.
 		case inKeys && strings.TrimSpace(line) == "":
-			// Blank lines between the heading and the keys are tolerated.
+			// A blank line in the key block is dropped if a key follows it and
+			// kept if a note does, so it waits for the next line to decide.
+			blanks = append(blanks, line)
 		case inKeys && keyRe.MatchString(line):
+			// notes is non-empty here only after an unknown key: see unknownKeyRe.
 			m := keyRe.FindStringSubmatch(line)
-			if err := setKey(card, m[1], strings.TrimSpace(m[2])); err != nil {
+			if len(notes) > 0 && keysSet[m[1]] {
+				keepAsNote(line)
+			} else if err := setKey(card, m[1], strings.TrimSpace(m[2])); err == nil {
+				keysSet[m[1]] = true
+				blanks = nil
+			} else if len(notes) > 0 {
+				keepAsNote(line)
+			} else {
 				return nil, nil, fmt.Errorf("line %d: %w", lineNo, err)
 			}
+		case inKeys && unknownKeyRe.MatchString(line):
+			// A key kando does not know is kept, as a note, without ending the
+			// key block: see unknownKeyRe.
+			notes = append(append(notes, blanks...), line)
+			blanks = nil
 		default:
+			notes = append(notes, blanks...)
+			blanks = nil
 			inKeys = false
 			if m := itemRe.FindStringSubmatch(line); m != nil {
 				checkist = append(checkist, board.Item{Text: m[2], Done: m[1] != " "})
@@ -234,11 +279,16 @@ func ParseArchive(data []byte) (a *board.Archive, needsRewrite bool, err error) 
 // structure: a heading, a checklist item, a card key, or an already-escaped
 // line.
 //
-// The key alternation matters only for a note's *first* line, since that is
-// where the parser is still in its inKeys state — but escaping every one of
-// them is both simpler and harmless, because unescapeNote strips the
-// backslash back off wherever it appears.
-var structuralNote = regexp.MustCompile(`^\\*(#{1,6} |- \[[ xX]\] |(` + cardKeys + `):)`)
+// The key alternation is load-bearing for every note line the parser can reach
+// while it is still in its inKeys state: the first line, and every line after
+// a leading run of unknown-key lines (see unknownKeyRe) and the blank lines
+// among them. Escaping every matching line covers all of those, and
+// unescapeNote strips the backslash back off wherever it appears.
+//
+// The item alternation matches whatever itemRe reads as an item, with or
+// without a space after the bracket: a note line "- [ ]" or "- [x]done" written
+// unescaped would come back as a checklist item.
+var structuralNote = regexp.MustCompile(`^\\*(#{1,6} |- \[[ xX]\]|(` + cardKeys + `):)`)
 
 // escapeNote prefixes a structural note line with a backslash so the parser
 // reads it back as prose. Without it a notes line of "## Nope" makes the
