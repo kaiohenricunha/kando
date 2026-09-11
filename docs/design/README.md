@@ -10,7 +10,7 @@ kando is a personal kanban CLI that replaces a notepad todo list. This package s
 **High-fidelity.** Colors, layout proportions, copy, and keybindings are final. Exact pixel geometry translates to character cells (1 line = 1 row, `1ch` = 1 column).
 
 ## Chosen direction
-- **Board layout: `2a` / `2b`** (focus lane with bordered columns). Everything else in the file is exploration: `1a`–`1c` were alternatives; `1d`–`1f` show the *content and behavior* of the secondary screens but were drawn in a discarded theme (Slate) and borderless style — implement them with the tokens and bordered style below.
+- **Board layout: `2a` / `2b`** (focus lane; the handoff drew every column bordered, and the Ember redesign below keeps the box on the active lane only). Everything else in the file is exploration: `1a`–`1c` were alternatives; `1d`–`1f` show the *content and behavior* of the secondary screens but were drawn in a discarded theme (Slate) and borderless style — implement them with the tokens and styles below.
 - **Adaptive theme:** `2a` Paper on light terminals, `2b` Ember on dark. Use `lipgloss.AdaptiveColor{Light, Dark}` for every token. Truecolor.
 - **Ember redesign:** only the active lane keeps its box; the other lanes are open columns behind a rule, each row with one meta glyph. Footers are drawn in sections. Ember's `muted` is lifted for contrast. The sections below describe the current rendering, and the web renderer follows the same redesign.
 - Target terminal: 120×40. Must degrade gracefully (see Responsive).

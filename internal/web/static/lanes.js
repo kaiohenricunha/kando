@@ -1,11 +1,12 @@
 // One lane at a time on a narrow screen. The stylesheet lays the lanes out
 // side by side in a strip that scrolls sideways and snaps to each lane; this
-// file keeps the tab strip and the add button in step with the lane in view,
-// scrolls the strip when a tab is tapped, and opens on the lane this tab last
-// showed — so a live reload does not throw the user back to the start — or
-// else on Todo, the TUI's starting lane. It never posts anything. On a wide
-// screen every lane is already on screen: the tabs are hidden and it only
-// tracks, never scrolls.
+// file keeps the tab strip, the add button and the URL's #lane fragment in
+// step with the lane in view, and scrolls the strip when a tab is tapped. It
+// opens on the fragment's lane, else the lane this tab last showed — so a
+// live reload does not throw the user back to the start — else Todo, the
+// TUI's starting lane. It never posts anything. On a wide screen every lane
+// is already on screen: the tabs are hidden and it only tracks, never scrolls
+// or rewrites the fragment.
 (function () {
   var strip = document.querySelector(".lanes");
   var tabs = document.querySelectorAll(".tabs a[data-tab]");
@@ -30,6 +31,12 @@
     if (!el) return;
     for (var i = 0; i < tabs.length; i++) {
       tabs[i].setAttribute("aria-current", tabs[i].dataset.tab === key ? "true" : "false");
+    }
+    // A reload keeps the fragment, and the fragment wins over the memory, so
+    // one left stale — by the card page's back link, say — would reopen the
+    // wrong lane. replaceState adds no history entry and scrolls nothing.
+    if (narrow.matches && location.hash !== "#lane-" + key) {
+      history.replaceState(null, "", "#lane-" + key);
     }
     var link = el.querySelector(".add");
     if (add && link) {

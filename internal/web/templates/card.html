@@ -17,7 +17,7 @@
       </div>
     </section>
     <div class="actions">
-      <form class="move" method="post" action="{{.URL}}/move" data-autosave><label for="lane">move to</label><select id="lane" name="lane" data-key-move>{{range .Lanes}}<option value="{{.Key}}"{{if eq .Key $.LaneKey}} selected{{end}}>{{.}}</option>{{end}}</select><button type="submit" class="save">move</button></form>
+      <form class="move" method="post" action="{{.URL}}/move"><label for="lane">move to</label><select id="lane" name="lane" data-key-move>{{range .Lanes}}<option value="{{.Key}}"{{if eq .Key $.LaneKey}} selected{{end}}>{{.}}</option>{{end}}</select><button type="submit" class="ghost">move</button></form>
       {{if eq .LaneKey "done"}}<form method="post" action="{{.URL}}/archive"><button type="submit" class="ghost">archive</button></form>{{else}}<form method="post" action="{{.URL}}/move" data-key-done><input type="hidden" name="lane" value="done"><button type="submit" class="ghost accent">✓ done</button></form>{{end}}
       <form class="end" method="post" action="{{.URL}}/delete"><button type="submit" class="ghost danger">delete</button></form>
     </div>

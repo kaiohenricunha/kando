@@ -18,7 +18,7 @@ their meaning, are identical by construction.
 | Method | Path | Purpose | Mirrors (TUI) |
 | ------ | ---- | ------- | -------------- |
 | GET | `/` | Redirect to `/b/{board}` if one was given on the CLI (`kando web [board]`), else `/boards` | `kando [board]` arg |
-| GET | `/boards` | List all boards; form to create one | new capability, §2 |
+| GET | `/boards` | List all boards, each with its card, Doing and blocked counts and a lane spread bar; form to create one. Reads every board.md on each request (`store.Load`, read-only); a board that cannot be read keeps its row without counts | new capability, §2 |
 | POST | `/boards` | Create a board (name) → redirect to `/b/{board}` | new capability, §2 |
 | GET | `/b/{board}` | Board view: all four lanes, every card, status/progress; optional `?q=` filter | board screen |
 | GET | `/b/{board}/cards/new?lane={lane}` | New-card form | `a` quick add |

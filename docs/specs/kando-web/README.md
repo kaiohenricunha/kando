@@ -98,6 +98,24 @@ documented in the `?` overlay only. R-1 (§8) freezes the three reference
 frames, which contain that footer line and have no regeneration path; `x`,
 `B` and `A` are help-only for the same reason.
 
+Finalization pass (2026-09-11, Ember redesign): a design change, not a unit,
+and it moves two recorded constraints on purpose. **R-1's frozen frames:**
+the redesign replaces the TUI spec's reference look — only the active lane
+keeps its box, and the footers are drawn in sections — so
+`board_120x40.txt` and `board_120x40_done.txt` were regenerated once and
+reviewed line by line. `board_80x24.txt` did not change, because the section
+rules go before any key does. R-1 now says the frames change only with a
+deliberate redesign. **KD-1's JavaScript:** two scripts join the SSE
+listener and the drag handler. `edit.js` decides when the card page's
+existing forms submit and binds the TUI detail screen's keys to them, and
+`lanes.js` keeps the phone layout's lane tabs in step with the scroll.
+Neither holds board state or writes a card of its own, which is the rule
+KD-1 now states in place of a list of cases. Their behaviour has no test in
+the Go suite; it was verified in a real browser for this change. §5 gains
+both `/static` rows and a fuller `GET /boards` row (the list now reads every
+board.md), and the parity audit gains the card page's `d`, `J`/`K` and `esc`
+rows.
+
 ## Parity audit
 
 [parity.md](parity.md) — every TUI key against the §5 route that does the

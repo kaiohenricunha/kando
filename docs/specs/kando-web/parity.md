@@ -40,8 +40,11 @@ surface can do" table is that audit at capability granularity.
 | `x` toggle item | `POST …/checklist/{i}/toggle` | The web form carries the item text it was rendered with, so a stale index is a 409 rather than an edit of the wrong item. |
 | `enter` edit item | `POST …/checklist/{i}` | |
 | `m` move (lane picker) | `POST …/move` | |
+| `d` move to Done | `POST …/move` (`lane=done`) | The card page's `✓ done` button, which `d` on that page also submits (`edit.js`). Both follow the card into Done, as `m` then `4` does in the TUI; the button does not render on a card already in Done. |
 | `A` archive (Done only) | `POST /b/{board}/cards/{id}/archive` | The same route and the same two guards as the board screen's `A` (`detail.go`'s `archiveDetailCard`); it returns to the board only when the archive happened, since only then is the card's own page gone — which is what the button does too. A refusal (already archived, not in Done, or an unreadable archive) stays on the card with the reason in the footer. |
-| `j/k`, `J/K`, `esc` | — | Navigation between items and cards. |
+| `J/K` next/previous card | the lane list's links on the card page | `edit.js` binds `J`/`K` to the same links, wrapping. Navigation, not a capability. |
+| `esc` back | the `← lane` link and the breadcrumb | `edit.js` binds `esc` to the back link. |
+| `j/k` checklist cursor | — | The page has no checklist cursor, so there is nothing to move. |
 
 ## Archive
 

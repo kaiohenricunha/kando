@@ -219,8 +219,14 @@ func (m Model) renderDetail() []string {
 		picks := []keyGroup{{"1", "Backlog"}, {"2", "Todo"}, {"3", "Doing"}, {"4", "Done"}}
 		footer = fit(s.Muted.Render("move to:")+"  "+m.groups(picks), cw)
 	} else {
+		// The rules go before a key does, as on the board: beside a report,
+		// hsplit would otherwise cut the keys to keep the rules.
 		hints := m.sections(detailFooterGroups, detailSections)
-		if width(hints) > cw {
+		need := width(hints)
+		if m.hasReport() {
+			need += 2 + width(m.reportPart(cw))
+		}
+		if need > cw {
 			hints = m.groups(detailFooterGroups)
 		}
 		footer = m.footerWithReport(hints, cw)

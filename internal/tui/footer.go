@@ -69,43 +69,46 @@ func (m Model) sections(gs []keyGroup, sizes []int) string {
 	return strings.Join(parts, "   "+m.styles.Border.Render("│")+"   ")
 }
 
-// boardFooter applies the fallback chain: full+count, reduced+count, reduced,
-// reduced without its section rules, then truncated. With something to
-// report — an error, or a refused key's notice — the message takes the
-// count's place and is never the part dropped for lack of room: the hints
-// give way instead, as they do on the archive and detail footers.
+// boardFooter shows the widest hint row that fits: the full keys, then the
+// reduced keys (without H/L), each tried with its section rules first and
+// without them second, so the rules always go before a key does. The count
+// sits beside the widest row that leaves room for it; when none does, the
+// widest row that fits goes alone, and the reduced row without rules is
+// truncated as a last resort. With something to report — an error, or a
+// refused key's notice — the message takes the count's place and is never
+// the part dropped for lack of room: the hints give way instead, as they do
+// on the archive and detail footers.
 func (m Model) boardFooter(cw int) string {
-	full := m.sections(boardFooterFull, boardFullSections)
-	reduced := m.sections(boardFooterReduced, boardReducedSections)
-	// The rules cost ten cells; at 80 wide that is the difference between the
-	// row keeping "q quit" and losing it.
-	flat := m.groups(boardFooterReduced)
+	// The rules cost ten cells: from 102 to 111 wide they are the difference
+	// between the row keeping H/L and losing it, and at 80 wide between it
+	// keeping "q quit" and losing that.
+	rows := []string{
+		m.sections(boardFooterFull, boardFullSections), m.groups(boardFooterFull),
+		m.sections(boardFooterReduced, boardReducedSections), m.groups(boardFooterReduced),
+	}
+	widest := func(room int) (string, bool) {
+		for _, r := range rows {
+			if width(r) <= room {
+				return r, true
+			}
+		}
+		return rows[len(rows)-1], false
+	}
 	if m.hasReport() {
 		// A standing condition until the success that fixes it (see standing);
 		// a refused key until the next key. The old chain dropped a message that
 		// did not fit beside the reduced hints — at 120 wide, any refusal naming
 		// a card with a title much over twenty characters.
 		e := m.reportPart(cw)
-		left := full
-		if width(left)+2+width(e) > cw {
-			left = reduced
-		}
-		if width(left)+2+width(e) > cw {
-			left = flat
-		}
+		left, _ := widest(cw - 2 - width(e))
 		return hsplit(left, e, cw)
 	}
 	count := m.styles.Muted.Render(fmt.Sprintf("%d cards", m.visibleCount()))
-	switch {
-	case width(full)+2+width(count) <= cw:
-		return hsplit(full, count, cw)
-	case width(reduced)+2+width(count) <= cw:
-		return hsplit(reduced, count, cw)
-	case width(reduced) <= cw:
-		return fit(reduced, cw)
-	default:
-		return fit(flat, cw)
+	if left, ok := widest(cw - 2 - width(count)); ok {
+		return hsplit(left, count, cw)
 	}
+	left, _ := widest(cw)
+	return fit(left, cw)
 }
 
 // hasReport says whether the footer's report slot has anything to show.

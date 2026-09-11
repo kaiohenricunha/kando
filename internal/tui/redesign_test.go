@@ -93,3 +93,47 @@ func TestOpenLaneHasNoBoxAndShowsProgress(t *testing.T) {
 		t.Errorf("the open Todo lane should show Renew passport's progress: %q", row)
 	}
 }
+
+// The section rules go before any key does. From 102 to 111 columns the full
+// row fits beside the count only without its rules; dropping H/L there instead
+// lost a key the row had room for.
+func TestBoardFooterDropsRulesBeforeKeys(t *testing.T) {
+	for _, c := range []struct {
+		w           int
+		keys, rules bool
+	}{
+		{80, false, false},
+		{100, false, true},
+		{101, false, true},
+		{102, true, false},
+		{111, true, false},
+		{112, true, true},
+		{120, true, true},
+	} {
+		lines := plainLines(newTestModel(t, c.w, 30))
+		footer := lines[len(lines)-1]
+		if got := strings.Contains(footer, "H/L move card"); got != c.keys {
+			t.Errorf("%d wide: H/L shown = %v, want %v: %q", c.w, got, c.keys, footer)
+		}
+		if got := strings.Contains(footer, "│"); got != c.rules {
+			t.Errorf("%d wide: rules shown = %v, want %v: %q", c.w, got, c.rules, footer)
+		}
+	}
+}
+
+// Beside a report the detail footer, too, drops its rules before its keys
+// lose a cell.
+func TestDetailFooterDropsRulesBeforeKeysBesideAReport(t *testing.T) {
+	m := press(newTestModel(t, 120, 40), "enter")
+	m.notice = "saved nothing yet"
+	lines := plainLines(m)
+	footer := lines[len(lines)-1]
+	for _, want := range []string{"esc back", "⊘ saved nothing yet"} {
+		if !strings.Contains(footer, want) {
+			t.Errorf("footer missing %q: %q", want, footer)
+		}
+	}
+	if strings.Contains(footer, "│") {
+		t.Errorf("the rules should go before a key is cut: %q", footer)
+	}
+}
