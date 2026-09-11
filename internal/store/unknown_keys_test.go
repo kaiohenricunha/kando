@@ -71,7 +71,7 @@ func TestOpenKeepsAWrittenIDAfterAnUnknownKey(t *testing.T) {
 // The key block still ends at the first line of prose. The unknown-key shape is
 // narrow on purpose — a lowercase word, a colon, then a space or the end of the
 // line — so a note that opens with a URL or a capitalised label stays prose, and
-// a key written after prose is still a note, as the README's format says.
+// a key written after prose is still a note, as docs/format.md says.
 func TestProseStillEndsTheKeyBlock(t *testing.T) {
 	for _, first := range []string{"https://example.com/form", "Note: bring photos", "call them first", "todo:tomorrow"} {
 		t.Run(first, func(t *testing.T) {
