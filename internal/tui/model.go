@@ -197,15 +197,28 @@ func (m *Model) teardown() {
 // Update routes messages, then freezes the clock the next frame is evaluated
 // at. Keys are handled against the instant of the frame the user is looking
 // at, so a time-dependent filter cannot shift the selection between a paint
-// and the key that acts on it. The new instant can still shrink the archive
-// list under its cursor with no key pressed, so the cursor is clamped against
-// it here, after the tick moves: the frame then highlights a row that exists,
-// and u and enter act on it. Clamping later, at the top of updateArchive,
-// would let a key act on a card the painted frame never highlighted.
+// and the key that acts on it. The new instant can still move the archive
+// list under its cursor with no key pressed — shrinking it, or (for an age>
+// filter) prepending a card that just crossed the threshold — so the cursor
+// is re-anchored here, after the tick moves and the key's own cursor change
+// (if any) has already happened: by the card's identity when it is still
+// listed, so an insertion ahead of it cannot silently swap in a different
+// card at the same index, and by clampArchive's index-only rule otherwise, so
+// a card that drops off the list lands the cursor on the last row left. Doing
+// this at the top of updateArchive instead would let a key act on a card the
+// painted frame never highlighted.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.dispatch(msg)
+	var onID string
+	if cards := next.visibleArchive(); next.arch.cursor >= 0 && next.arch.cursor < len(cards) {
+		onID = cards[next.arch.cursor].ID
+	}
 	next.tick = next.now()
-	next.clampArchive()
+	if onID != "" {
+		next.selectArchiveByID(onID)
+	} else {
+		next.clampArchive()
+	}
 	return next, cmd
 }
 

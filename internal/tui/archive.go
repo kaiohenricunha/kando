@@ -79,6 +79,17 @@ func (m *Model) selectArchiveByID(id string) {
 	m.clampArchive()
 }
 
+// selectedArchiveCard is the card under the archive cursor, or nil: the
+// bounds-checked counterpart to selectedCard, so a key handler never has to
+// trust that n > 0 also means the cursor is in range.
+func (m Model) selectedArchiveCard() *board.Card {
+	v := m.visibleArchive()
+	if m.arch.cursor >= 0 && m.arch.cursor < len(v) {
+		return v[m.arch.cursor]
+	}
+	return nil
+}
+
 // visibleArchive is the 50 most recent archived cards after the active filter.
 func (m Model) visibleArchive() []*board.Card {
 	if m.archive == nil {
@@ -227,12 +238,12 @@ func (m Model) updateArchive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.arch.cursor = (m.arch.cursor - 1 + n) % n
 		}
 	case "u":
-		if n > 0 {
-			m.restoreArchived(cards[m.arch.cursor])
+		if c := m.selectedArchiveCard(); c != nil {
+			m.restoreArchived(c)
 		}
 	case "enter":
-		if n > 0 {
-			m.openDetail(cards[m.arch.cursor].ID, true)
+		if c := m.selectedArchiveCard(); c != nil {
+			m.openDetail(c.ID, true)
 		}
 	case "/":
 		m.openFilter()
