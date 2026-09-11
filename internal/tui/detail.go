@@ -544,13 +544,17 @@ func (m *Model) moveDetailCard(to board.Lane) {
 		if m.restoreRefused(c) {
 			return
 		}
+		snap := m.snapshotBeforeMove(c)
 		for i, x := range m.archive.Cards {
 			if x == c {
 				m.b.Unarchive(m.archive, i, to, now)
 				break
 			}
 		}
-		m.saveRestore()
+		if !m.saveRestore() {
+			m.undoMove(c, snap)
+			return
+		}
 		m.detail.archived = false
 	} else {
 		l, i, _ := m.b.Find(c.ID)

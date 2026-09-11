@@ -441,29 +441,31 @@ func (m *Model) save() {
 // saveRestore writes both files of a restore through the store, which owns
 // the order that fails safely (board.md first): the same durability rule the
 // web's restore button gets.
-func (m *Model) saveRestore() {
+func (m *Model) saveRestore() bool {
 	if m.st == nil || m.archive == nil {
-		return
+		return true
 	}
 	if err := m.st.SaveRestore(m.b, m.archive); err != nil {
 		m.errs.save = err
-		return
+		return false
 	}
 	m.errs.save = nil
+	return true
 }
 
 // saveArchival writes both files of an archive move through the store,
 // which owns the order that fails safely (archive.md first) — A's
 // counterpart to saveRestore.
-func (m *Model) saveArchival() {
+func (m *Model) saveArchival() bool {
 	if m.st == nil || m.archive == nil {
-		return
+		return true
 	}
 	if err := m.st.SaveArchival(m.b, m.archive); err != nil {
 		m.errs.save = err
-		return
+		return false
 	}
 	m.errs.save = nil
+	return true
 }
 
 func (m *Model) saveArchive() {
