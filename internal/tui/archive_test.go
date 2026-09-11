@@ -211,26 +211,36 @@ func TestArchiveCursorStaysOnTheListWhenTheClockShrinksIt(t *testing.T) {
 		t.Errorf("u must restore the card the clamped cursor points at: archive=%d doing=%v", len(arch.Cards), titles(m.b.Lanes[board.Doing]))
 	}
 
-	clock = fixedNow.Add(4 * time.Hour)
+	// Scenario 2 must not retype the filter after the cursor is set: typing
+	// resets the cursor on its own (applyFilter), which would mask a broken
+	// reset in clampArchive's own n==0 branch. So the filter is kept once,
+	// while both cards are still visible, and the only later key is the one
+	// whose Update call has to see the list turn empty and react to it.
+	clock2 := fixedNow
 	arch2 := &board.Archive{Cards: []*board.Card{
 		{ID: "cccccccc", Title: "Fresh", DoneAt: fixedNow.Add(-10 * time.Minute)},
 		{ID: "dddddddd", Title: "Older", DoneAt: fixedNow.Add(-2 * time.Hour)},
 	}}
-	m2 := New(Options{Board: sampleBoard(t), Archive: arch2, Styles: testStyles, Now: func() time.Time { return clock }, Width: 120, Height: 40})
+	m2 := New(Options{Board: sampleBoard(t), Archive: arch2, Styles: testStyles, Now: func() time.Time { return clock2 }, Width: 120, Height: 40})
 	m2 = press(m2, "D", "/")
 	m2 = typeText(m2, "age<3h")
-	m2 = press(m2, "enter", "?")
-	if n := len(m2.visibleArchive()); n != 0 || m2.arch.cursor != 0 {
+	m2 = press(m2, "enter", "j")
+	if n := len(m2.visibleArchive()); n != 2 || m2.arch.cursor != 1 {
 		t.Fatalf("setup: visible %d cursor %d", n, m2.arch.cursor)
 	}
+
+	clock2 = clock2.Add(4 * time.Hour)
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Fatalf("a key on an empty filtered list must not panic: %v", r)
+				t.Fatalf("a key on a list that just went empty must not panic: %v", r)
 			}
 		}()
-		m2 = press(m2, "enter", "u", "j", "k")
+		m2 = press(m2, "?", "enter", "u", "j", "k")
 	}()
+	if n := len(m2.visibleArchive()); n != 0 || m2.arch.cursor != 0 {
+		t.Errorf("the cursor must reset when the list it was on goes empty: visible %d cursor %d", n, m2.arch.cursor)
+	}
 	if m2.scr != screenArchive || len(arch2.Cards) != 2 {
 		t.Errorf("every key on an empty list must be a no-op: screen %v archive %d", m2.scr, len(arch2.Cards))
 	}
