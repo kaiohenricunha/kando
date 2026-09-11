@@ -306,10 +306,57 @@ func displayPath(p string) string {
 // silently drop whoever wrote in between.
 var ErrConflict = errors.New("the board changed on disk since it was loaded")
 
-// SaveBoard writes board.md atomically.
+// ErrUnparsable says an unchecked write found board.md or archive.md changed
+// on disk into content that no longer parses. The unchecked writers refuse
+// rather than overwrite it, the same way the checked writers refuse with
+// ErrConflict a changed file that does parse.
+var ErrUnparsable = errors.New("does not parse")
+
+// unparsable names the file a parse error belongs to, so a message like
+// "board.md does not parse: line 7: ..." tells a hand editor where to look.
+func unparsable(file string, err error) error {
+	return fmt.Errorf("%s %w: %w", file, ErrUnparsable, err)
+}
+
+// refuseUnparsableBoard refuses an unchecked write to board.md when it changed
+// on disk since the last read or write and the new bytes do not parse. A
+// missing or unreadable file, or one that changed and still parses, is left to
+// the write: the caller wins over a valid concurrent edit on purpose (see
+// SaveBoard). The caller holds s.mu.
+func (s *Store) refuseUnparsableBoard() error {
+	data, changed, err := changedContent(s.BoardPath(), &s.board)
+	if err != nil || !changed {
+		return nil
+	}
+	if _, _, perr := Parse(data); perr != nil {
+		return unparsable(boardFile, perr)
+	}
+	return nil
+}
+
+// refuseUnparsableArchive is refuseUnparsableBoard for archive.md.
+func (s *Store) refuseUnparsableArchive() error {
+	data, changed, err := changedContent(s.ArchivePath(), &s.archive)
+	if err != nil || !changed {
+		return nil
+	}
+	if _, _, perr := ParseArchive(data); perr != nil {
+		return unparsable(archiveFile, perr)
+	}
+	return nil
+}
+
+// SaveBoard writes board.md atomically. A change on disk since the last read
+// or write wins over this write when it still parses (the TUI's saves are
+// deliberately unchecked, see REL-3); one that no longer parses is refused
+// instead, so a hand edit that broke the file is never silently replaced with
+// what this process had in memory.
 func (s *Store) SaveBoard(b *board.Board) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refuseUnparsableBoard(); err != nil {
+		return err
+	}
 	return s.saveBoard(b)
 }
 
@@ -332,14 +379,24 @@ func (s *Store) SaveBoardIfUnchanged(b *board.Board) error {
 
 // SaveRestore writes both files of a restore in the order that fails safely:
 // board.md first, so a failure leaves the card in both files (a duplicate
-// the user can see and delete) and never in neither. Both surfaces call it,
-// so the same action has the same failure mode in the terminal and the
-// browser.
+// the user can see and delete) and never in neither. Only the TUI calls it;
+// the web's restore route uses the checked SaveRestoreIfUnchanged, behind its
+// own per-board write lock. Both files are checked for an unparsable hand
+// edit before either is written, the same guard SaveBoard and SaveArchive
+// apply on their own.
 func (s *Store) SaveRestore(b *board.Board, a *board.Archive) error {
-	if err := s.SaveBoard(b); err != nil {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.refuseUnparsableBoard(); err != nil {
 		return err
 	}
-	return s.SaveArchive(a)
+	if err := s.refuseUnparsableArchive(); err != nil {
+		return err
+	}
+	if err := s.saveBoard(b); err != nil {
+		return err
+	}
+	return s.saveArchive(a)
 }
 
 // SaveRestoreIfUnchanged is SaveRestore for a caller that loaded, edited and
@@ -376,10 +433,17 @@ func (s *Store) SaveRestoreIfUnchanged(b *board.Board, a *board.Archive) error {
 // safely — the inverse of SaveRestore: archive.md first, so a failure leaves
 // the card in both files (a duplicate the restore and archive guards both
 // refuse until one copy is deleted) and never in neither. The TUI calls it:
-// the unchecked writer that wins on purpose.
+// the unchecked writer that wins on purpose over a change that still parses,
+// refusing one that does not, the same as SaveBoard.
 func (s *Store) SaveArchival(b *board.Board, a *board.Archive) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refuseUnparsableBoard(); err != nil {
+		return err
+	}
+	if err := s.refuseUnparsableArchive(); err != nil {
+		return err
+	}
 	return s.saveArchival(b, a)
 }
 
@@ -480,10 +544,14 @@ func (s *Store) loadArchive() (*board.Archive, error) {
 	return a, nil
 }
 
-// SaveArchive writes archive.md atomically.
+// SaveArchive writes archive.md atomically, refusing an unparsable hand edit
+// as SaveBoard does.
 func (s *Store) SaveArchive(a *board.Archive) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refuseUnparsableArchive(); err != nil {
+		return err
+	}
 	return s.saveArchive(a)
 }
 
@@ -498,19 +566,25 @@ func (s *Store) saveArchive(a *board.Archive) error {
 }
 
 // CheckReload re-reads any file whose stat changed and returns freshly parsed
-// content when the bytes differ from what we last wrote or read. Unparsable
-// content (a partial write) is skipped and retried on the next call.
+// content when the bytes differ from what we last wrote or read. A changed
+// file that does not parse is reported, wrapping ErrUnparsable, instead of
+// applied; its baseline is left alone, so the next call reads it again. What
+// did parse is still applied beside that error, so an unparsable board.md does
+// not hide a valid archive.md change, or the reverse.
 func (s *Store) CheckReload() (Reload, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var r Reload
+	var errs []error
 	data, seen, changed, err := changedContentState(s.BoardPath(), &s.board)
 	if err != nil {
 		return r, err
 	}
 	if changed {
 		hook("reload")
-		if b, _, perr := Parse(data); perr == nil {
+		if b, _, perr := Parse(data); perr != nil {
+			errs = append(errs, unparsable(boardFile, perr))
+		} else {
 			b.Name = s.name
 			r.Board = b
 			s.board = seen
@@ -518,15 +592,17 @@ func (s *Store) CheckReload() (Reload, error) {
 	}
 	data, seen, changed, err = changedContentState(s.ArchivePath(), &s.archive)
 	if err != nil {
-		return r, err
+		return r, errors.Join(append(errs, err)...)
 	}
 	if changed {
-		if a, _, perr := ParseArchive(data); perr == nil {
+		if a, _, perr := ParseArchive(data); perr != nil {
+			errs = append(errs, unparsable(archiveFile, perr))
+		} else {
 			r.Archive = a
 			s.archive = seen
 		}
 	}
-	return r, nil
+	return r, errors.Join(errs...)
 }
 
 // changedContent returns the file's bytes when they differ from the recorded state.
