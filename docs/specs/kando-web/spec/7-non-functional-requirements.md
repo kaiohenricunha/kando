@@ -37,7 +37,10 @@ concurrently never silently lose an edit outright. The existing
 self-write-suppression and watch/reload machinery (already exercised by the
 TUI) is reused verbatim by the web server — both surfaces converge on the
 same per-mutation behavior the TUI already has today; this spec does not
-introduce a new conflict-resolution scheme.
+introduce a new conflict-resolution scheme. That includes a hand edit that
+breaks a file's Markdown: the TUI's unchecked saves refuse to overwrite one
+that changed on disk into content that no longer parses, the same way they
+already refuse nothing when it still parses.
 
 **REL-4 (invariant).** If the SSE connection drops (network blip, server
 restart), the browser's native `EventSource` auto-reconnects, and the

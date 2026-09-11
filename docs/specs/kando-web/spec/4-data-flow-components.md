@@ -41,7 +41,9 @@ process and the web process; they are separate OS processes (even though
 they're the same binary), so nothing is shared in memory *between them*.
 Synchronization is entirely file-based, through the store package's
 existing atomic-write + hash-suppression + watch machinery — unchanged
-from what the TUI already does today.
+from what the TUI already does today. `SaveBoard` and `SaveArchive` refuse a
+change that no longer parses instead of overwriting it, and `CheckReload`
+reports that same condition instead of silently skipping it.
 
 **Within** the web process, that guarantee does not extend: `net/http`
 runs every request in its own goroutine, and `internal/board` is

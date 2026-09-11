@@ -288,7 +288,11 @@ Archive: `j/k` move · `u` back to Doing · `enter` open · `/` filter · `esc` 
 ## Files
 
 `~/.kando/<board>/board.md` and `archive.md`, rewritten canonically after every
-change and reloaded when edited elsewhere:
+change and reloaded when edited elsewhere. A hand edit that stops one of them
+from parsing is not loaded, and the TUI will not save over it either: the
+footer names the file and the parse error, and a change made in the TUI
+meanwhile is refused rather than written. Fix the file and the next reload
+picks it up; make the change again.
 
 ```markdown
 ## Todo
