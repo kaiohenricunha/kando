@@ -22,6 +22,8 @@ var authoredGoldens = []struct {
 	{"help overlay", "help_120x40.txt", []string{"?"}},
 	{"detail renew passport", "detail_120x40.txt", []string{"enter"}},
 	{"archive", "archive_120x40.txt", []string{"D"}},
+	{"help over detail", "help_detail_120x40.txt", []string{"enter", "?"}},
+	{"help over archive", "help_archive_120x40.txt", []string{"D", "?"}},
 }
 
 func TestGoldenScreens(t *testing.T) {

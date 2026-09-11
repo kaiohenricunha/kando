@@ -53,8 +53,8 @@ func (m Model) boardFooter(cw int) string {
 	full := m.groups(boardFooterFull)
 	reduced := m.groups(boardFooterReduced)
 	if m.hasReport() {
-		// A failed save or the watcher until the next successful write; a
-		// refused key until the next key. The old chain dropped a message that
+		// A standing condition until the success that fixes it (see standing);
+		// a refused key until the next key. The old chain dropped a message that
 		// did not fit beside the reduced hints — at 120 wide, any refusal naming
 		// a card with a title much over twenty characters.
 		e := m.reportPart(cw)
@@ -76,22 +76,22 @@ func (m Model) boardFooter(cw int) string {
 }
 
 // hasReport says whether the footer's report slot has anything to show.
-func (m Model) hasReport() bool { return m.notice != "" || m.err != nil }
+func (m Model) hasReport() bool { return m.notice != "" || m.errs.first() != nil }
 
 // reportPart is the footer's report slot: "⊘ message" in accent2, held to half
 // the row so the hints beside it keep at least the other half. A refused key's
-// notice goes ahead of err. It lasts only until the next key, after which a
-// standing condition in err is shown again rather than lost.
+// notice goes ahead of the most urgent standing condition. It lasts only until
+// the next key, after which that condition is shown again rather than lost.
 func (m Model) reportPart(cw int) string {
 	msg := m.notice
 	if msg == "" {
-		msg = m.err.Error()
+		msg = m.errs.first().Error()
 	}
 	return m.styles.Accent2.Render(trunc("⊘ "+sanitize(msg), cw/2))
 }
 
 // footerWithReport is the archive and detail footers: the key hints, and at the
-// right end the report slot whenever a save, the watcher or a refused key has
+// right end the report slot whenever a standing condition or a refused key has
 // something to say — the slot boardFooter gives the card count. The message
 // wins over the hints (hsplit shrinks the left part, never the right), so a
 // refused key can say so at every size. With nothing to report it is

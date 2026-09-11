@@ -328,8 +328,8 @@ func TestArchiveKeyRefusesToWriteAnUnreadableArchive(t *testing.T) {
 	if got := len(m.b.Lanes[board.Done]); got != done {
 		t.Errorf("Done went from %d to %d cards: A must not touch the board when the archive cannot be read", done, got)
 	}
-	if m.err == nil {
-		t.Error("the load failure should reach m.err")
+	if m.errs.archive == nil {
+		t.Error("the load failure should be reported as the archive condition")
 	}
 	archiveAfter, err := os.ReadFile(st.ArchivePath())
 	if err != nil {
@@ -509,21 +509,21 @@ func TestArchiveAndDetailFootersShowError(t *testing.T) {
 	}
 	for _, c := range cases {
 		// A save failure on the archive screen was invisible before: only the
-		// board footer ever read m.err.
+		// board footer ever read the error slot.
 		m := press(newTestModel(t, 120, 40), c.keys...)
-		m.err = os.ErrPermission
+		m.errs.save = os.ErrPermission
 		if footer := plainLines(m)[39]; !strings.HasPrefix(footer, c.prefix) || !strings.Contains(footer, "⊘ permission denied") {
 			t.Errorf("%s at 120x40: footer = %q", c.name, footer)
 		}
 		// A refusal names its card, so it is longer than a save error. The board
 		// footer used to drop any message that did not fit beside its hints.
-		m.err, m.notice = nil, `"Tax docs to accountant before the end of the month" is already archived`
+		m.errs.save, m.notice = nil, `"Tax docs to accountant before the end of the month" is already archived`
 		if footer := plainLines(m)[39]; !strings.Contains(footer, `⊘ "Tax docs to accountant before`) {
 			t.Errorf("%s at 120x40 with a refusal: footer = %q", c.name, footer)
 		}
 
 		m = press(newTestModel(t, 60, 16), c.keys...)
-		m.err = errors.New(strings.Repeat("x", 200))
+		m.errs.save = errors.New(strings.Repeat("x", 200))
 		checkInvariants(t, c.name+" error at 60x16", m, 60, 16)
 		if footer := plainLines(m)[15]; !strings.Contains(footer, "⊘ xxx") {
 			t.Errorf("%s at 60x16: a refused key must be able to say so at every size: %q", c.name, footer)

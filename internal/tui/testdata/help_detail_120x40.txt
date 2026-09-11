@@ -1,0 +1,40 @@
+ kando  life › Todo › Renew passport                                                                          Thu 3 Sep 
+                                                                                                                        
+ Todo 3                            │   Renew passport                                                                   
+ ──────────────────────────────    │   #errand  created Mon 31 Aug  in Todo since Tue 1 Sep                             
+                                   │                                                                                    
+ ▸ Renew passport                  │   NOTES                                                                            
+ • Tax docs to accountant          │   Expires 14 Nov. Two photos, old passport, printed form.                          
+ • Book dentist                    │   Appointment slots open on Mondays.                                               
+                                   │                                                                                    
+                                   │   CHECKLIST 1/4                                                                    
+                                   │   ▣ Photos from the pharmacy                                                       
+                                   │   ▢ Fill in the form                                                               
+                                   │   ▢ Book appointment                                                               
+                                   │   ▢ Post the old one back                                                          
+                               ╭────────────────────────────────────────────────────────╮                               
+                               │ KEYS                                                   │                               
+                               │                                                        │                               
+                               │ j/k ↓↑   select item         T        title            │                               
+                               │ J/K      next/prev card      t        tag              │                               
+                               │ x        toggle item         b        block            │                               
+                               │ enter    edit item           m        move to lane     │                               
+                               │ o        new item            esc      back             │                               
+                               │ e        edit notes          ctrl+s   save notes       │                               
+                               │ A        archive (Done)      ?        close help       │                               
+                               ╰────────────────────────────────────────────────────────╯                               
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                   │                                                                                    
+                                                                                                                        
+ j/k item  x toggle  o new item  T title  e edit notes  t tag  m move  b block  esc back                                

@@ -1,0 +1,40 @@
+ kando  life › boards                                                                                          2 boards 
+                                                                                                                        
+ ▸ life                                                                                                                 
+ • work                                                                                                                 
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                               ╭────────────────────────────────────────────────────────╮                               
+                               │ KEYS                                                   │                               
+                               │                                                        │                               
+                               │ j/k ↓↑   select board        esc      back             │                               
+                               │ enter    open board          ?        close help       │                               
+                               │ n        new board                                     │                               
+                               ╰────────────────────────────────────────────────────────╯                               
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+ j/k move  enter open  n new board  esc back                                                                            

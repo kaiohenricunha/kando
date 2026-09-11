@@ -25,7 +25,7 @@ surface can do" table is that audit at capability granularity.
 | `/` filter | `?q=` on the board and the archive | Same `board.Parse`, so the operators are identical by construction. |
 | `D` archive view | `GET /b/{board}/archive` | |
 | `B` boards | `GET /boards` | |
-| `?` help | — | Bound on every TUI screen (board, detail, archive, boards). The web page labels its own controls, so there is no hidden key to explain. |
+| `?` help | — | Bound on every TUI screen (board, detail, archive, boards), and each screen lists its own keys. The web page labels its own controls, so there is no hidden key to explain. |
 | `q` quit | — | Closing a tab is not a server action. |
 
 ## Card detail
