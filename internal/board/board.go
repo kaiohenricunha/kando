@@ -76,11 +76,11 @@ type Card struct {
 // c.Notes rather than this.
 //
 // It is a preview — the TUI puts it in one card row — so it is bounded to the
-// single-line budget every other one-line value already uses. Without that bound it would return the whole
-// body — and the real ceiling is not maxNotesBytes but nothing at all, since
-// store.parseSections assigns Notes verbatim with no cap, so a hand-edited
-// board.md can hold any size. That went into a row that renders a few dozen
-// cells, on every frame.
+// single-line budget every other one-line value already uses. Without that
+// bound it would return the whole body — and the real ceiling is not
+// maxNotesBytes but nothing at all, since store.parseSections assigns Notes
+// verbatim with no cap, so a hand-edited board.md can hold any size. That
+// went into a row that renders a few dozen cells, on every frame.
 func (c *Card) NotePreview() string {
 	if i := strings.IndexByte(c.Notes, '\n'); i >= 0 {
 		return clip(c.Notes[:i], maxFieldBytes)
