@@ -70,10 +70,10 @@ func (m Model) sections(gs []keyGroup, sizes []int) string {
 }
 
 // boardFooter applies the fallback chain: full+count, reduced+count, reduced,
-// reduced without its section rules, truncated. With something to report — an error, or a refused key's notice —
-// the message takes the count's place and is never the part dropped for lack
-// of room: the hints give way instead, as they do on the archive and detail
-// footers.
+// reduced without its section rules, then truncated. With something to
+// report — an error, or a refused key's notice — the message takes the
+// count's place and is never the part dropped for lack of room: the hints
+// give way instead, as they do on the archive and detail footers.
 func (m Model) boardFooter(cw int) string {
 	full := m.sections(boardFooterFull, boardFullSections)
 	reduced := m.sections(boardFooterReduced, boardReducedSections)
@@ -87,11 +87,11 @@ func (m Model) boardFooter(cw int) string {
 		// a card with a title much over twenty characters.
 		e := m.reportPart(cw)
 		left := full
-		for _, next := range []string{reduced, flat} {
-			if width(left)+2+width(e) <= cw {
-				break
-			}
-			left = next
+		if width(left)+2+width(e) > cw {
+			left = reduced
+		}
+		if width(left)+2+width(e) > cw {
+			left = flat
 		}
 		return hsplit(left, e, cw)
 	}
