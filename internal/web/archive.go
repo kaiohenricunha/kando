@@ -72,7 +72,10 @@ func (s *server) archive(w http.ResponseWriter, r *http.Request) {
 
 // restoreCard mirrors `u` on the archive screen via board.Restore, and
 // returns to the archive with the filter the user was reading, as the TUI
-// stays on its archive screen. store.SaveRestore owns the write order.
+// stays on its archive screen. It saves through the checked
+// SaveRestoreIfUnchanged, unlike the TUI's own SaveRestore: each request
+// opens its own Store, so nothing but the check stops an edit that lands
+// between this handler's read and its write from being silently overwritten.
 func (s *server) restoreCard(w http.ResponseWriter, r *http.Request) {
 	name, id := r.PathValue("board"), r.PathValue("id")
 	f, err := form(w, r)
@@ -108,7 +111,11 @@ func (s *server) restoreCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b.Restore(a, at, s.now())
-	if err := st.SaveRestore(b, a); err != nil {
+	if err := st.SaveRestoreIfUnchanged(b, a); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			s.fail(w, &httpError{http.StatusConflict, "the board changed on disk — reload and try again"})
+			return
+		}
 		s.logf("restore %s: %v", name, err)
 		http.Error(w, "cannot save the restored card", http.StatusInternalServerError)
 		return
