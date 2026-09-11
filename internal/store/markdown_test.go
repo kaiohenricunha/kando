@@ -258,7 +258,8 @@ func TestSanitizedFieldsRoundTripAsOneCard(t *testing.T) {
 // first notes line, so an unescaped "done: soon" was read back as the done:
 // key rather than as prose. parseTime then rejected it and Parse failed, which
 // took the CLI, the TUI and kando web down together — a note the user typed
-// could brick their own board.
+// could brick their own board. Notes that open with unknown-key lines keep the
+// parser in that state for longer: see TestNotesStartingWithAnUnknownKeyRoundTrip.
 func TestNotesFirstLineLookingLikeAKeyRoundTrips(t *testing.T) {
 	for _, notes := range []string{
 		"done: soon",

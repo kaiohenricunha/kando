@@ -13,7 +13,8 @@ import (
 // A key line kando does not write, such as a priority: added by hand, used to
 // end the key block: every key line after it, id: included, was read as a
 // note. The card lost its written id to a derived one, and the next write
-// escaped the old id into its notes.
+// escaped the old id into its notes. The line is now kept as a note, and the
+// keys after it still count.
 func TestAnUnknownKeyLineDoesNotEndTheKeyBlock(t *testing.T) {
 	data := []byte("## Todo\n\n### Renew passport\ntag: errand\npriority: high\ncreated: 2026-08-31\nid: k7q2m9ab\nExpires 14 Nov.\n- [ ] Fill in the form\n")
 	b, rewrite, err := Parse(data)
@@ -43,6 +44,7 @@ func TestAnUnknownKeyLineDoesNotEndTheKeyBlock(t *testing.T) {
 	}
 }
 
+// The same bug through Open, which also wrote the derived id to disk.
 func TestOpenKeepsAWrittenIDAfterAnUnknownKey(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "life")
@@ -85,12 +87,90 @@ func TestProseStillEndsTheKeyBlock(t *testing.T) {
 	}
 }
 
-// The catch the unknown-key rule brings, pinned so it is a decision and not an
-// accident: a known key written after an unknown one is a key, so a bad date
-// there fails to parse exactly as it would directly under the heading.
-func TestABadDateAfterAnUnknownKeyIsStillAnError(t *testing.T) {
-	if _, _, err := Parse([]byte("## Todo\n\n### A\npriority: high\ncreated: not-a-date\n")); err == nil {
-		t.Errorf("a bad date after an unknown key should error")
+// A key line after an unknown key counts only when it sets a key the card does
+// not have yet, with a value that parses. Anything else was prose before
+// unknown keys were kept, and it stays prose. Failing the parse instead would
+// stop a board that opened before from opening on any surface, and a TUI that
+// already had it open would skip the unparsable reload without a word and
+// overwrite the hand edit on its next save.
+func TestAnUnparsableKeyAfterAnUnknownKeyStaysProse(t *testing.T) {
+	data := []byte("## Todo\n\n### Call the bank\nid: k7q2m9ab\nupdate: called on Monday\ndone: sent the form\ntag: late\n")
+	b, rewrite, err := Parse(data)
+	if err != nil {
+		t.Fatalf("a board that opened before unknown keys were kept must still open: %v", err)
+	}
+	c := b.Lanes[board.Todo][0]
+	if rewrite || c.ID != "k7q2m9ab" || !c.DoneAt.IsZero() || c.Tag != "" {
+		t.Errorf("the lines from done: on must stay prose: rewrite=%v id=%q done=%v tag=%q", rewrite, c.ID, c.DoneAt, c.Tag)
+	}
+	if c.Notes != "update: called on Monday\ndone: sent the form\ntag: late" {
+		t.Errorf("notes = %q", c.Notes)
+	}
+	out := Marshal(b)
+	if again, _, err := Parse(out); err != nil || !sameCard(again.Lanes[board.Todo][0], c) {
+		t.Errorf("the rewritten card must read back the same: %v\n%s", err, out)
+	}
+	// With no unknown key before it, a bad date is still an error.
+	if _, _, err := Parse([]byte("## Todo\n\n### A\ncreated: not-a-date\n")); err == nil {
+		t.Errorf("a bad date directly under the heading must still fail")
+	}
+}
+
+func TestARepeatedKeyAfterAnUnknownKeyStaysProse(t *testing.T) {
+	data := []byte("## Todo\n\n### Book appointment\nid: aaaaaaaa\nsee: the passport card\nid: k7q2m9ab\n\n### Renew passport\nid: k7q2m9ab\n")
+	b, rewrite, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, second := b.Lanes[board.Todo][0], b.Lanes[board.Todo][1]
+	if rewrite || first.ID != "aaaaaaaa" || second.ID != "k7q2m9ab" {
+		t.Errorf("a later id: under a label must not replace a written id or take another card's: rewrite=%v first=%q second=%q", rewrite, first.ID, second.ID)
+	}
+	if first.Notes != "see: the passport card\nid: k7q2m9ab" {
+		t.Errorf("notes = %q", first.Notes)
+	}
+}
+
+// The parser drops blank lines between keys. After an unknown key it has to
+// hold them until the next line shows whether they sit between keys, where they
+// are dropped, or between note lines, where they are kept.
+func TestBlankLinesBetweenKeysAfterAnUnknownKeyAreDropped(t *testing.T) {
+	data := []byte("## Todo\n\n### Renew passport\npriority: high\n\ncreated: 2026-08-31\n\nExpires 14 Nov.\n")
+	b, _, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := b.Lanes[board.Todo][0]
+	if formatTime(c.CreatedAt) != "2026-08-31" || c.Notes != "priority: high\n\nExpires 14 Nov." {
+		t.Errorf("created=%q notes=%q", formatTime(c.CreatedAt), c.Notes)
+	}
+}
+
+// Each edge of the shape is a branch of unknownKeyRe that no other test takes.
+func TestUnknownKeyShapeEdges(t *testing.T) {
+	for _, first := range []string{"due-date: 2026-09-10", "follow_up: call", "v2: yes", "priority:", "priority:\thigh", "priority: high\n"} {
+		t.Run(first, func(t *testing.T) {
+			b, _, err := Parse([]byte("## Todo\n\n### A\n" + first + "\nid: k7q2m9ab\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c := b.Lanes[board.Todo][0]; c.ID != "k7q2m9ab" || c.Notes != strings.TrimSpace(first) {
+				t.Errorf("id=%q notes=%q", c.ID, c.Notes)
+			}
+		})
+	}
+}
+
+// archive.md goes through the same parser, and there a done: line decides the
+// sort order and the week a card is filed under.
+func TestArchiveKeysAfterAnUnknownKeyStillCount(t *testing.T) {
+	data := []byte("## 2026-W31\n\n### Older\ndone: 2026-08-01\nid: aaaaaaaa\n\n## 2026-W36\n\n### Newer\npriority: high\ndone: 2026-09-01\nid: bbbbbbbb\n")
+	a, rewrite, err := ParseArchive(data)
+	if err != nil || rewrite {
+		t.Fatalf("err=%v rewrite=%v", err, rewrite)
+	}
+	if len(a.Cards) != 2 || a.Cards[0].ID != "bbbbbbbb" || formatTime(a.Cards[0].DoneAt) != "2026-09-01" {
+		t.Errorf("the done: after an unknown key must date the card and sort it first: %+v", a.Cards)
 	}
 }
 
