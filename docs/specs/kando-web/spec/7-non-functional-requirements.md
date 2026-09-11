@@ -12,9 +12,10 @@ SSE (KD-2, §4) — never by polling. On breach: the SSE test in §6 (U9) fails
 before this ships.
 
 **PERF-2 (invariant).** A freshly loaded or reloaded page always reflects
-current disk state, because every request re-checks via
-`Store.CheckReload` itself (KD-3, §4) rather than trusting a
-previously-watched value — no caching layer, no stale data. This is what
+current disk state, because every request re-reads the files itself via
+`store.Load` (KD-3, §4) rather than trusting a previously-watched value —
+no `*Store` handle, and so no baseline, survives between requests, no
+caching layer, no stale data. This is what
 makes "lazy refresh, possibly hours later" (§3) safe without a polling
 interval to tune, and it means correctness never depends on the file
 watcher: a watcher failure (already non-fatal, `cmd/kando/main.go:74-80`)
@@ -37,7 +38,11 @@ concurrently never silently lose an edit outright. The existing
 self-write-suppression and watch/reload machinery (already exercised by the
 TUI) is reused verbatim by the web server — both surfaces converge on the
 same per-mutation behavior the TUI already has today; this spec does not
-introduce a new conflict-resolution scheme.
+introduce a new conflict-resolution scheme. That includes a hand edit that
+breaks a file's Markdown: the TUI's unchecked saves refuse to overwrite one
+that changed on disk into content that no longer parses, while still
+overwriting one that changed and still parses, exactly as they already did
+before this guard existed.
 
 **REL-4 (invariant).** If the SSE connection drops (network blip, server
 restart), the browser's native `EventSource` auto-reconnects, and the

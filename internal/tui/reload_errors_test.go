@@ -386,3 +386,264 @@ func TestAWatcherThatStartsClearsItsWarning(t *testing.T) {
 		t.Errorf("a watcher that starts must clear the warning: %q", plainLines(m)[39])
 	}
 }
+
+// A refused u, A or archived-card move still changed memory before the save
+// that was refused: the card moved between the board's lanes and the archive
+// in RAM even though neither file was written. These pin that a failed save
+// puts the move back, so a later save cannot lose the card that stayed on the
+// side the disk never saw.
+
+func TestARefusedRestoreLeavesTheArchiveUnchangedInMemory(t *testing.T) {
+	m, root := newRootModel(t, 120, 40)
+	if err := m.st.SaveArchive(sampleArchive(t)); err != nil {
+		t.Fatal(err)
+	}
+	m, _ = feed(m, changeMsg{gen: m.watchGen}) // pick up the archive on disk
+	m = press(m, "D")
+	archived, doing := len(m.archive.Cards), len(m.b.Lanes[board.Doing])
+	target := m.visibleArchive()[0]
+	wantDoneAt, wantMovedAt := target.DoneAt, target.MovedAt
+	restore := breakBoardDir(t, root)
+	m = press(m, "u")
+	if !strings.Contains(plainLines(m)[39], "⊘") {
+		t.Fatalf("setup: the save must fail: %q", plainLines(m)[39])
+	}
+	if len(m.archive.Cards) != archived || len(m.b.Lanes[board.Doing]) != doing {
+		t.Errorf("a refused restore must leave the archive and the board as they were: archive %d -> %d, Doing %d -> %d",
+			archived, len(m.archive.Cards), doing, len(m.b.Lanes[board.Doing]))
+	}
+	if !target.DoneAt.Equal(wantDoneAt) || !target.MovedAt.Equal(wantMovedAt) {
+		t.Errorf("a refused restore must undo the card's own stamp too: done=%v moved=%v", target.DoneAt, target.MovedAt)
+	}
+	restore()
+	m = press(m, "u")
+	if len(m.archive.Cards) != archived-1 || len(m.b.Lanes[board.Doing]) != doing+1 {
+		t.Errorf("the retry must still be able to restore: archive %d doing %d", len(m.archive.Cards), len(m.b.Lanes[board.Doing]))
+	}
+}
+
+func TestARefusedArchiveLeavesTheCardInDoneInMemory(t *testing.T) {
+	m, root := newRootModel(t, 120, 40)
+	m = press(m, "D", "esc") // loads the (empty) archive into memory first
+	done := len(m.b.Lanes[board.Done])
+	c := m.b.Lanes[board.Done][0]
+	title := c.Title
+	restore := breakBoardDir(t, root)
+	m = press(m, "l", "l", "A")
+	if !strings.Contains(plainLines(m)[39], "⊘") {
+		t.Fatalf("setup: the save must fail: %q", plainLines(m)[39])
+	}
+	if len(m.b.Lanes[board.Done]) != done || m.b.Lanes[board.Done][0].Title != title {
+		t.Errorf("a refused archive must leave the card in Done: %d cards, first %q", len(m.b.Lanes[board.Done]), m.b.Lanes[board.Done][0].Title)
+	}
+	if m.archive != nil {
+		if _, dup := m.archive.Find(c.ID); dup != nil {
+			t.Errorf("the card must not appear in the in-memory archive")
+		}
+	}
+	restore()
+	m = press(m, "l", "l", "A")
+	if len(m.b.Lanes[board.Done]) != done-1 {
+		t.Errorf("archiving after the fix must still work: %d cards left", len(m.b.Lanes[board.Done]))
+	}
+}
+
+func TestARefusedArchiveFromDetailStaysOnTheCard(t *testing.T) {
+	m, root := newRootModel(t, 120, 40)
+	m = press(m, "D", "esc") // loads the (empty) archive into memory first
+	m = press(m, "l", "l", "enter")
+	if m.scr != screenDetail {
+		t.Fatalf("setup: expected the detail screen")
+	}
+	restore := breakBoardDir(t, root)
+	m = press(m, "A")
+	if !strings.Contains(plainLines(m)[39], "⊘") {
+		t.Fatalf("setup: the save must fail: %q", plainLines(m)[39])
+	}
+	if m.scr != screenDetail || m.detail.archived {
+		t.Errorf("a refused archive from the detail screen must stay on the live card: scr=%v archived=%v", m.scr, m.detail.archived)
+	}
+	restore()
+	m = press(m, "A")
+	if m.scr != screenBoard {
+		t.Errorf("archiving after the fix must still work: scr=%v", m.scr)
+	}
+}
+
+func TestARefusedMoveOfAnArchivedCardKeepsItArchived(t *testing.T) {
+	m, root := newRootModel(t, 120, 40)
+	if err := m.st.SaveArchive(sampleArchive(t)); err != nil {
+		t.Fatal(err)
+	}
+	m, _ = feed(m, changeMsg{gen: m.watchGen})
+	m = press(m, "D", "enter", "m")
+	if m.scr != screenDetail || !m.detail.archived || m.mode != modeLanePick {
+		t.Fatalf("setup: scr=%v archived=%v mode=%v", m.scr, m.detail.archived, m.mode)
+	}
+	id := m.detail.id
+	archived := len(m.archive.Cards)
+	_, target := m.archive.Find(id)
+	if target == nil {
+		t.Fatalf("setup: %q must still be in the archive", id)
+	}
+	wantDoneAt, wantMovedAt := target.DoneAt, target.MovedAt
+	restore := breakBoardDir(t, root)
+	m = press(m, "2")
+	if !strings.Contains(plainLines(m)[39], "⊘") {
+		t.Fatalf("setup: the save must fail: %q", plainLines(m)[39])
+	}
+	if !m.detail.archived || m.detail.id != id {
+		t.Errorf("a refused move must leave the detail archived and open: archived=%v id=%q", m.detail.archived, m.detail.id)
+	}
+	if len(m.archive.Cards) != archived {
+		t.Errorf("the card must still be in the in-memory archive: %d cards", len(m.archive.Cards))
+	}
+	if _, _, c := m.b.Find(id); c != nil {
+		t.Errorf("the card must not appear on the in-memory board")
+	}
+	if !target.DoneAt.Equal(wantDoneAt) || !target.MovedAt.Equal(wantMovedAt) {
+		t.Errorf("a refused move must undo the card's own stamp too: done=%v moved=%v", target.DoneAt, target.MovedAt)
+	}
+	restore()
+	// The failed "2" already reset the prompt to modeNormal (updateLanePick's
+	// job, not moveDetailCard's), so the retry has to reopen it with "m".
+	m = press(m, "m", "2")
+	if m.scr != screenDetail || m.detail.archived {
+		t.Errorf("the retry must still be able to move the card: scr=%v archived=%v", m.scr, m.detail.archived)
+	}
+	if _, _, c := m.b.Find(id); c == nil {
+		t.Errorf("the retry must land the card on the board")
+	}
+}
+
+// breakArchiveFile replaces archive.md with a directory, so a write to it
+// fails at the rename step (its own directory is untouched, so the write's
+// temp file is created fine) while board.md stays a normal, writable file —
+// the shape of a two-file save landing its first write and failing its
+// second, distinct from breakBoardDir, which fails both.
+func breakArchiveFile(t *testing.T, root string) func() {
+	t.Helper()
+	path := filepath.Join(root, "life", "archive.md")
+	data := mustReadFile(t, path)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		t.Helper()
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// breakBoardFile is breakArchiveFile for board.md.
+func breakBoardFile(t *testing.T, root string) func() {
+	t.Helper()
+	path := filepath.Join(root, "life", "board.md")
+	data := mustReadFile(t, path)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		t.Helper()
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A two-file save that lands its first file and fails its second must not be
+// rolled back: the file that landed already agrees with the mutation, and
+// undoing it would make memory disagree with a file that is actually on
+// disk. These pin store.ErrPartialWrite's effect at the three TUI call
+// sites that would otherwise call undoMove on any error.
+
+func TestARestoreThatLandsBoardButNotArchiveKeepsTheMoveInMemory(t *testing.T) {
+	m, root := newRootModel(t, 120, 40)
+	if err := m.st.SaveArchive(sampleArchive(t)); err != nil {
+		t.Fatal(err)
+	}
+	m, _ = feed(m, changeMsg{gen: m.watchGen}) // pick up the archive on disk
+	m = press(m, "D")
+	archived, doing := len(m.archive.Cards), len(m.b.Lanes[board.Doing])
+	restore := breakArchiveFile(t, root)
+	m = press(m, "u")
+	if !strings.Contains(plainLines(m)[39], "⊘") {
+		t.Fatalf("setup: the archive.md failure must still be reported: %q", plainLines(m)[39])
+	}
+	if len(m.archive.Cards) != archived-1 || len(m.b.Lanes[board.Doing]) != doing+1 {
+		t.Errorf("a partial write must keep the move in memory: archive %d -> %d, Doing %d -> %d",
+			archived, len(m.archive.Cards), doing, len(m.b.Lanes[board.Doing]))
+	}
+	got, _, err := store.Parse(mustReadFile(t, filepath.Join(root, "life", "board.md")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Lanes[board.Doing]) != doing+1 {
+		t.Errorf("board.md, the write that landed, must already have the card: %d cards", len(got.Lanes[board.Doing]))
+	}
+	restore()
+}
+
+func TestAnArchiveThatLandsArchiveButNotBoardKeepsTheMoveInMemory(t *testing.T) {
+	m, root := newRootModel(t, 120, 40)
+	m = press(m, "D", "esc") // loads the (empty) archive into memory first
+	done := len(m.b.Lanes[board.Done])
+	id := m.b.Lanes[board.Done][0].ID
+	restore := breakBoardFile(t, root)
+	m = press(m, "l", "l", "A")
+	if !strings.Contains(plainLines(m)[39], "⊘") {
+		t.Fatalf("setup: the board.md failure must still be reported: %q", plainLines(m)[39])
+	}
+	if len(m.b.Lanes[board.Done]) != done-1 {
+		t.Errorf("a partial write must keep the move in memory: %d cards left in Done", len(m.b.Lanes[board.Done]))
+	}
+	if _, dup := m.archive.Find(id); dup == nil {
+		t.Errorf("the card must be in the in-memory archive")
+	}
+	got, _, err := store.ParseArchive(mustReadFile(t, filepath.Join(root, "life", "archive.md")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, dup := got.Find(id); dup == nil {
+		t.Errorf("archive.md, the write that landed, must already have the card")
+	}
+	restore()
+}
+
+func TestAMoveOfAnArchivedCardThatLandsBoardButNotArchiveFollowsTheCard(t *testing.T) {
+	m, root := newRootModel(t, 120, 40)
+	if err := m.st.SaveArchive(sampleArchive(t)); err != nil {
+		t.Fatal(err)
+	}
+	m, _ = feed(m, changeMsg{gen: m.watchGen})
+	m = press(m, "D", "enter", "m")
+	id := m.detail.id
+	restore := breakArchiveFile(t, root)
+	m = press(m, "2")
+	if !strings.Contains(plainLines(m)[39], "⊘") {
+		t.Fatalf("setup: the archive.md failure must still be reported: %q", plainLines(m)[39])
+	}
+	if m.detail.archived {
+		t.Errorf("a partial write must follow the card onto the board, not leave the detail archived")
+	}
+	if m.scr != screenDetail || m.detail.id != id {
+		t.Errorf("the detail must stay open on the same card: scr=%v id=%q", m.scr, m.detail.id)
+	}
+	if _, _, c := m.b.Find(id); c == nil {
+		t.Errorf("the card must be on the in-memory board")
+	}
+	restore()
+}

@@ -872,3 +872,76 @@ func TestHandWrittenCardIdIsSafeInADragAttribute(t *testing.T) {
 		t.Errorf("a card named \"start\": doing=%q", got)
 	}
 }
+
+// TestArchiveRestoreRefusesAnOutsideWriteMidRestore stages a write between the
+// route's read (LoadArchive) and its write (SaveRestoreIfUnchanged): the Now
+// hook fires exactly once, at restoreCard's only clock read, right before
+// SaveRestoreIfUnchanged runs.
+func TestArchiveRestoreRefusesAnOutsideWriteMidRestore(t *testing.T) {
+	for _, which := range []string{"board.md", "archive.md"} {
+		t.Run(which, func(t *testing.T) {
+			root := archiveRoot(t)
+			var fired bool
+			h := New(Options{Root: root, Board: "life", Port: testPort, Now: func() time.Time {
+				if !fired {
+					fired = true
+					switch which {
+					case "board.md":
+						b := reload(t, root, "life")
+						b.Insert(board.Todo, 0, &board.Card{ID: "zzzzzzzz", Title: "Outside", CreatedAt: fixedNow})
+						if err := mustOpen(t, root).SaveBoard(b); err != nil {
+							t.Fatal(err)
+						}
+					case "archive.md":
+						a, err := store.LoadArchive(root, "life")
+						if err != nil {
+							t.Fatal(err)
+						}
+						a.Cards = append(a.Cards, &board.Card{ID: "zzzzzzzz", Title: "Outside", DoneAt: fixedNow})
+						if err := mustOpen(t, root).SaveArchive(a); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				return fixedNow
+			}})
+			boardBefore, archiveBefore := mustReadWeb(t, filepath.Join(root, "life", "board.md")), mustReadWeb(t, filepath.Join(root, "life", "archive.md"))
+			a, _ := store.LoadArchive(root, "life")
+			id := a.Cards[0].ID
+
+			rec := post(t, h, "/b/life/archive/"+id+"/restore", nil)
+			if rec.Code != http.StatusConflict {
+				t.Fatalf("want 409, got %d: %s", rec.Code, rec.Body.String())
+			}
+			if !fired {
+				t.Fatal("the outside write never happened")
+			}
+			boardAfter, archiveAfter := mustReadWeb(t, filepath.Join(root, "life", "board.md")), mustReadWeb(t, filepath.Join(root, "life", "archive.md"))
+			switch which {
+			case "board.md":
+				if string(boardAfter) == string(boardBefore) {
+					t.Errorf("board.md must hold the outside write")
+				}
+				if string(archiveAfter) != string(archiveBefore) {
+					t.Errorf("archive.md must be untouched, the card must still be archived")
+				}
+			case "archive.md":
+				if string(archiveAfter) == string(archiveBefore) {
+					t.Errorf("archive.md must hold the outside write")
+				}
+				if string(boardAfter) != string(boardBefore) {
+					t.Errorf("board.md must be untouched: the restore must not have landed")
+				}
+			}
+		})
+	}
+}
+
+func mustOpen(t *testing.T, root string) *store.Store {
+	t.Helper()
+	st, _, err := store.Open(root, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
+}

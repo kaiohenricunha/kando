@@ -47,7 +47,7 @@ surface can do" table is that audit at capability granularity.
 
 | TUI | Web | Notes |
 | --- | --- | --- |
-| `u` restore | `POST /b/{board}/archive/{id}/restore` | Both go through `board.Restore` and `store.SaveRestore`, so the dates and the write order match. Both return to the archive with the filter intact. Both refuse a card whose id is already on the board — a 409 on the web, the CLI's `"title" is already on the board` in the TUI footer — and `m` on an open archived card is the same restore, so it takes the same guard. |
+| `u` restore | `POST /b/{board}/archive/{id}/restore` | Both go through `board.Restore`, so the dates and the write order match; the TUI saves with the unchecked `store.SaveRestore`, the web with the checked `SaveRestoreIfUnchanged`, since each web request opens its own Store. Both return to the archive with the filter intact. Both refuse a card whose id is already on the board — a 409 on the web, the CLI's `"title" is already on the board` in the TUI footer — and `m` on an open archived card is the same restore, so it takes the same guard. |
 | `/` filter | `?q=` | |
 | `enter` open an archived card | — | **BOUND-1a (§2): accepted exception.** An archived card is finished work; undo is the action worth having on it. Reopening this means changing the decision and §5, not the audit. |
 
@@ -89,8 +89,11 @@ ends in a form `POST` to `/move` rather than a write of its own. Both are in
   active lane, a help overlay against labelled controls. KD-1 expects this.
 - **Selection.** The TUI has a cursor; the page does not need one.
 - **Concurrency.** Two browser tabs can post at once, so the web serialises
-  writers per board and refuses a save whose file changed underneath (409).
-  The TUI is one process with one goroutine and needs neither.
+  writers per board and refuses a save whose file changed underneath at all
+  (409). The TUI is one process with one goroutine and needs no serialising,
+  and its unchecked writers still win over a concurrent change that parses,
+  on purpose; they refuse only a changed file that does not parse, wrapping
+  `ErrUnparsable` instead of overwriting a hand edit that broke it.
 - **How unsafe runes are removed on screen (SEC-4).** All three surfaces drop
   the same set, `board.UnsafeRune`, but the TUI substitutes a space for a C0
   rune where the other two delete it. The TUI lays out in exact terminal

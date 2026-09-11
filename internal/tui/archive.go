@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/kaiohenricunha/kando/internal/board"
+	"github.com/kaiohenricunha/kando/internal/store"
 )
 
 // archiveMaxItems caps the list at the most recent entries; the footnote points
@@ -270,20 +272,64 @@ func (m *Model) restoreRefused(c *board.Card) bool {
 	return true
 }
 
+// moveSnapshot copies what a two-file move is about to change, so a save that
+// the store refuses can be undone in memory: the move already happened before
+// the save runs, and a refusal must not leave the card split between the
+// board and the archive in RAM while neither file was touched. Insert and
+// Remove shift a slice's backing array in place, so a copy of the slice
+// headers would not restore what they pointed at — the slices themselves have
+// to be copied, and c's own fields, which Unarchive and ArchiveDone stamp in
+// place, restored by value.
+type moveSnapshot struct {
+	lanes   [4][]*board.Card
+	archive []*board.Card
+	card    board.Card
+}
+
+// snapshotBeforeMove copies the board's four lanes, the archive list, and c's
+// own fields, all of which restoreArchived, archiveDone and moveDetailCard's
+// archived branch are about to change.
+func (m *Model) snapshotBeforeMove(c *board.Card) moveSnapshot {
+	var snap moveSnapshot
+	for l := range m.b.Lanes {
+		snap.lanes[l] = append([]*board.Card(nil), m.b.Lanes[l]...)
+	}
+	snap.archive = append([]*board.Card(nil), m.archive.Cards...)
+	snap.card = *c
+	snap.card.Checklist = append([]board.Item(nil), c.Checklist...)
+	return snap
+}
+
+// undoMove puts back what snapshotBeforeMove copied. c keeps its identity, so
+// the selection and any open detail still resolve to it afterward.
+func (m *Model) undoMove(c *board.Card, snap moveSnapshot) {
+	m.b.Lanes = snap.lanes
+	m.archive.Cards = snap.archive
+	*c = snap.card
+}
+
 // restoreArchived moves an archived card back to the top of Doing — u on the
-// archive screen. A refusal writes nothing and leaves the cursor where it was,
-// with the reason in the footer.
+// archive screen. A refusal that wrote nothing — the id is already on the
+// board, or the save fails before either file is touched — undoes the move
+// in memory and leaves the cursor where it was, with the reason in the
+// footer. A save that lands board.md but fails archive.md (ErrPartialWrite)
+// keeps the move: board.md, the file that succeeded, already agrees with it,
+// and undoing would only make memory disagree with the file on disk.
 func (m *Model) restoreArchived(c *board.Card) {
 	if m.restoreRefused(c) {
 		return
 	}
+	snap := m.snapshotBeforeMove(c)
 	for i, x := range m.archive.Cards {
 		if x == c {
 			m.b.Restore(m.archive, i, m.now())
 			break
 		}
 	}
-	m.saveRestore()
+	if !m.saveRestore() && !errors.Is(m.errs.save, store.ErrPartialWrite) {
+		m.undoMove(c, snap)
+		return
+	}
 	m.clampArchive()
 	if m.lane == board.Doing {
 		m.clampSel()
@@ -300,6 +346,13 @@ func (m *Model) restoreArchived(c *board.Card) {
 // would replace an archive we never saw with a one-card file, which is the one
 // way this feature could lose a card rather than duplicate it. The web route
 // refuses that case with a 500.
+//
+// A save that lands archive.md but fails board.md (ErrPartialWrite) still
+// reports true: archive.md, the file that succeeded, already agrees with the
+// move, and undoing it in memory would only make memory disagree with the
+// file on disk. The stale board.md is a duplicate the next board save
+// replaces; the error itself still stands in m.errs.save until that save
+// clears it.
 func (m *Model) archiveDone(c *board.Card) bool {
 	i := m.laneIndex(board.Done, c)
 	if i < 0 {
@@ -319,7 +372,11 @@ func (m *Model) archiveDone(c *board.Card) bool {
 		m.notice = fmt.Sprintf("%q is already archived", c.Title)
 		return false
 	}
+	snap := m.snapshotBeforeMove(c)
 	m.b.ArchiveDone(m.archive, i, m.now())
-	m.saveArchival()
+	if !m.saveArchival() && !errors.Is(m.errs.save, store.ErrPartialWrite) {
+		m.undoMove(c, snap)
+		return false
+	}
 	return true
 }
