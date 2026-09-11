@@ -65,7 +65,7 @@ func TestDetailLayout(t *testing.T) {
 		"Expires 14 Nov. Two photos, old passport, printed form.",
 		"Appointment slots open on Mondays.",
 		"",
-		"CHECKLIST 1/4",
+		"CHECKLIST 1/4  ▰▱▱▱",
 		"▣ Photos from the pharmacy",
 		"▢ Fill in the form",
 		"▢ Book appointment",
@@ -79,7 +79,7 @@ func TestDetailLayout(t *testing.T) {
 			t.Errorf("right row %d = %q, want %q", i, right[i], w)
 		}
 	}
-	if !strings.HasPrefix(lines[39], " j/k item  x toggle  o new item  T title  e edit notes  t tag  m move  b block  esc back") {
+	if !strings.HasPrefix(lines[39], " j/k item  x toggle  o new item   │   T title  e edit notes  t tag  b block   │   m move  d done  esc back") {
 		t.Errorf("footer = %q", lines[39])
 	}
 }
@@ -114,7 +114,7 @@ func TestDetailChecklistCursorAndToggle(t *testing.T) {
 	if !c.Checklist[1].Done {
 		t.Fatalf("x should toggle the second item: %+v", c.Checklist)
 	}
-	if right := rightPane(plainLines(m)); right[7] != "CHECKLIST 2/4" || right[9] != "▣ Fill in the form" {
+	if right := rightPane(plainLines(m)); right[7] != "CHECKLIST 2/4  ▰▰▱▱" || right[9] != "▣ Fill in the form" {
 		t.Errorf("progress/row not updated: %q %q", right[7], right[9])
 	}
 	data, _ := os.ReadFile(st.BoardPath())

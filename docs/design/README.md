@@ -12,6 +12,7 @@ kando is a personal kanban CLI that replaces a notepad todo list. This package s
 ## Chosen direction
 - **Board layout: `2a` / `2b`** (focus lane with bordered columns). Everything else in the file is exploration: `1a`–`1c` were alternatives; `1d`–`1f` show the *content and behavior* of the secondary screens but were drawn in a discarded theme (Slate) and borderless style — implement them with the tokens and bordered style below.
 - **Adaptive theme:** `2a` Paper on light terminals, `2b` Ember on dark. Use `lipgloss.AdaptiveColor{Light, Dark}` for every token. Truecolor.
+- **Ember redesign:** only the active lane keeps its box; the other lanes are open columns behind a rule, each row with one meta glyph. Footers are drawn in sections. Ember's `muted` is lifted for contrast. The sections below describe the current rendering, and the web renderer follows the same redesign.
 - Target terminal: 120×40. Must degrade gracefully (see Responsive).
 
 ## Design tokens
@@ -20,7 +21,7 @@ kando is a personal kanban CLI that replaces a notepad todo list. This package s
 |---|---|---|---|
 | bg | `#f6f1e8` | `#1a1512` | terminal background (do not paint; inherit) |
 | fg | `#2b2622` | `#ead9c8` | body text, key hints |
-| muted | `#8f8579` | `#7d6b5c` | inactive lane headers, meta, ages, help labels |
+| muted | `#8f8579` | `#9a8674` | inactive lane headers, meta, ages, help labels |
 | border | `#d9cfc0` | `#33291f` | inactive column and card borders |
 | accent | `#1f7a6d` | `#e0a458` | active lane header + border, selected card border, tags, ✓ marks, app name in dark theme |
 | accent2 | `#b5532b` | `#8fb98a` | blocked flag (⊘) |
@@ -28,7 +29,7 @@ kando is a personal kanban CLI that replaces a notepad todo list. This package s
 
 Typography: the terminal's monospace font; only styles used are **bold** (`Bold(true)`), muted color, strikethrough (done titles), and uppercase + letter-spacing for lane headers (render uppercase; Lip Gloss cannot letter-space, so join header letters with no spacing or accept plain uppercase).
 
-Borders: `lipgloss.RoundedBorder()` for columns and cards. Radius/shadows in the HTML are irrelevant in a terminal.
+Borders: `lipgloss.RoundedBorder()` for the active lane and cards. Radius/shadows in the HTML are irrelevant in a terminal.
 
 Glyphs: `•` bullet, `✓` done, `⊘` blocked, `▣` / `▢` checklist done/open, `▸` list cursor (detail left pane).
 
@@ -45,9 +46,9 @@ Vertical structure, 40 rows:
 Lanes: horizontal layout, gap 2 columns. Widths: three collapsed lanes fixed at **22 columns** each (including border); the active lane takes the remainder (`120 - 2 (padding) - 3×22 - 3×2 = 46` cols at 120 wide). Lane order is always Backlog, Todo, Doing, Done; the *active* one expands in place (it is not moved to the center).
 
 Collapsed lane (inactive):
-- Rounded border in `border`, 1-col inner padding.
+- No box: a `│` rule in `border` down the left edge, then 1-col padding. The rows a box would spend on its top and bottom edges stay blank, so every header and first row lines up with the active lane's.
 - Header row: lane name uppercase, muted; count right-aligned, muted. Then one blank row.
-- One row per card: `• Title` in fg (truncate with `…`); Done lane shows `✓ Title` with ✓ in accent and title muted.
+- One row per card: `• Title` in fg (truncate with `…`). Outside Done, one right-aligned glyph follows when it leaves the title at least 6 cells: `⊘` in accent2 when blocked, otherwise checklist progress muted (`1/4`). Done lane shows `✓ Title` with ✓ in accent and title muted.
 
 Active lane:
 - Rounded border in `accent`; header row in accent, bold, uppercase, count right-aligned; blank row.
@@ -58,14 +59,14 @@ Active lane:
 - Selected card: border `accent`, background `selectionBg`, title bold.
 - Done cards in the active Done lane: dashed border (`lipgloss.Border` with `╌`/`┆` or `NormalBorder` in `border` color), ✓ in accent, title struck through and muted, meta row shows tag + age only.
 
-Footer (muted labels, keys in fg, medium weight): `j/k move  h/l tab lane  a add  enter open  H/L move card  d done  / filter  ? help  q quit`. Two-space gap between groups.
+Footer (muted labels, keys in fg, medium weight): `j/k move  h/l tab lane  a add  enter open   │   H/L move card  d done   │   / filter  ? help  q quit`. Two-space gap between groups; a `│` in `border` with three spaces either side between sections. When the row is short, the rules go before any key does.
 
 ### 2. Card detail (`1d` content; restyle to chosen theme)
 Full-view swap, same header row with breadcrumb: `kando  life › Todo › Renew passport`.
 Two panes: left **30 cols**, gap 4 cols, right pane fills remainder with a left rule (`│` in `border`) and 3-col left padding.
 - Left: active lane name bold with accent count, underline in accent; then card titles, cursor row `▸ Title` bold on `selectionBg`, others `• Title` muted. `J`/`K` open the next/previous card of this list, wrapping. When a filter hides the open card, no row has the cursor, `J` starts from the top of the list and `K` from the bottom; when a reload moves the card to another lane, or restores an open archived card onto the board, the list follows it. An open archived card that is gone from both files closes the detail to the archive; an open board card that leaves the board closes to the board — the reverse (archived elsewhere) is not followed.
-- Right, top to bottom: title (bold); meta row muted: tag (accent), `created Mon 31 Aug`, `in Todo since Tue 1 Sep`; blank; `NOTES` label (muted uppercase); notes wrapped at 64 cols; blank; `CHECKLIST 1/4` (count in accent); items — done `▣ text` muted struck, focused `▢ text` on `selectionBg` with a block cursor after the text, open `▢ text`; blank; `BLOCKED` label; `— not blocked. b to set a reason` muted.
-Footer: `j/k item  x toggle  o new item  T title  e edit notes  t tag  m move  b block  esc back`.
+- Right, top to bottom: title (bold); meta row muted: tag (accent), `created Mon 31 Aug`, `in Todo since Tue 1 Sep`; blank; `NOTES` label (muted uppercase); notes wrapped at 64 cols; blank; `CHECKLIST 1/4  ▰▱▱▱` (count in accent; the bar is one cell per item up to 10 and scaled past that, `▰` done in accent, `▱` remaining in `border`); items — done `▣ text` muted struck, focused `▢ text` on `selectionBg` with a block cursor after the text, open `▢ text`; blank; `BLOCKED` label; `— not blocked. b to set a reason` muted.
+Footer: `j/k item  x toggle  o new item   │   T title  e edit notes  t tag  b block   │   m move  d done  esc back`, drawn without the rules when that does not fit. `d` moves the card to Done, as `m` then `4` would.
 Editing (notes, title, new item, tag) uses an inline `textinput`/`textarea` in place of the field, accent cursor.
 
 ### 3. Filter (`1e` content)

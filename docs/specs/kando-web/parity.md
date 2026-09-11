@@ -77,11 +77,14 @@ the TUI already does.
 The CLI is the remaining gap: `kando move` takes a lane and no position. It is
 tracked in `README.md`'s capability table, which audits all three surfaces.
 
-Two routes have no TUI counterpart because they are plumbing rather than
+Four routes have no TUI counterpart because they are plumbing rather than
 capabilities: `GET /static/live.js` serves the listener that turns an SSE
-event into a reload, and `GET /static/dnd.js` serves the drag handler, which
-ends in a form `POST` to `/move` rather than a write of its own. Both are in
-§5 for completeness.
+event into a reload; `GET /static/dnd.js` serves the drag handler, which ends
+in a form `POST` to `/move` rather than a write of its own; `GET
+/static/lanes.js` keeps the phone layout's lane tabs in step with the lane in
+view; and `GET /static/edit.js` submits the card page's existing forms when a
+field is left or a detail-screen key is pressed. None of them writes anything
+of its own. All four are in §5 for completeness.
 
 ## Where the surfaces deliberately differ
 

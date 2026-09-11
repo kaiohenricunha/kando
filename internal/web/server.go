@@ -46,7 +46,7 @@ type Options struct {
 //go:embed templates/*.html
 var templateFS embed.FS
 
-//go:embed static/live.js static/dnd.js
+//go:embed static/live.js static/dnd.js static/lanes.js static/edit.js
 var staticFS embed.FS
 
 type server struct {
@@ -121,7 +121,7 @@ func newServer(o Options) *server {
 	// GET /static/ with a directory listing and would depend on the embed
 	// layout for its prefix. This list is the pin — widening it to a
 	// pattern is what events_test.go guards against.
-	for _, name := range []string{"static/live.js", "static/dnd.js"} {
+	for _, name := range []string{"static/live.js", "static/dnd.js", "static/lanes.js", "static/edit.js"} {
 		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) {
 			http.ServeFileFS(w, r, staticFS, name)
 		})
@@ -246,7 +246,7 @@ func sameOrigin(port int, next http.Handler) http.Handler {
 }
 
 // secureHeaders is set on every response, errors and redirects included. The
-// scripts are /static/live.js and /static/dnd.js, both served from this
+// scripts are the /static/*.js files pinned in newServer, all served from this
 // origin; live.js is what opens the SSE stream connect-src allows. The
 // inline stylesheet in layout.html needs 'unsafe-inline' for styles only,
 // and no inline script is ever allowed. frame-ancestors

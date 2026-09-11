@@ -21,8 +21,9 @@ var (
 		{"type", "to filter title or #tag"}, {"enter", "keep filter"}, {"esc", "clear"},
 	}
 	detailFooterGroups = []keyGroup{
-		{"j/k", "item"}, {"x", "toggle"}, {"o", "new item"}, {"T", "title"},
-		{"e", "edit notes"}, {"t", "tag"}, {"m", "move"}, {"b", "block"}, {"esc", "back"},
+		{"j/k", "item"}, {"x", "toggle"}, {"o", "new item"},
+		{"T", "title"}, {"e", "edit notes"}, {"t", "tag"}, {"b", "block"},
+		{"m", "move"}, {"d", "done"}, {"esc", "back"},
 	}
 	archiveFooterGroups = []keyGroup{
 		{"j/k", "move"}, {"u", "undo (back to Doing)"}, {"enter", "open"}, {"/", "filter"}, {"esc", "board"},
@@ -44,14 +45,41 @@ func (m Model) groups(gs []keyGroup) string {
 	return strings.Join(parts, "  ")
 }
 
+// The board and detail footers are drawn in sections divided by a rule: moving
+// around, acting on the card, and the rest. Each list is the size of each
+// section in order. The footers stay flat lists because
+// TestHelpTablesCoverTheFooterAndFitTheBox checks them group by group against
+// the help tables; sections change only how they are drawn.
+var (
+	boardFullSections    = []int{4, 2, 3}
+	boardReducedSections = []int{4, 1, 3}
+	detailSections       = []int{3, 4, 3}
+)
+
+// sections renders gs in runs of the given sizes, each run as groups renders
+// it, joined by a border-coloured "│" with three spaces either side. The sizes
+// must add up to len(gs); TestFooterSectionsCoverTheirFooters checks that.
+func (m Model) sections(gs []keyGroup, sizes []int) string {
+	parts := make([]string, 0, len(sizes))
+	i := 0
+	for _, n := range sizes {
+		parts = append(parts, m.groups(gs[i:i+n]))
+		i += n
+	}
+	return strings.Join(parts, "   "+m.styles.Border.Render("│")+"   ")
+}
+
 // boardFooter applies the fallback chain: full+count, reduced+count, reduced,
-// truncated. With something to report — an error, or a refused key's notice —
+// reduced without its section rules, truncated. With something to report — an error, or a refused key's notice —
 // the message takes the count's place and is never the part dropped for lack
 // of room: the hints give way instead, as they do on the archive and detail
 // footers.
 func (m Model) boardFooter(cw int) string {
-	full := m.groups(boardFooterFull)
-	reduced := m.groups(boardFooterReduced)
+	full := m.sections(boardFooterFull, boardFullSections)
+	reduced := m.sections(boardFooterReduced, boardReducedSections)
+	// The rules cost ten cells; at 80 wide that is the difference between the
+	// row keeping "q quit" and losing it.
+	flat := m.groups(boardFooterReduced)
 	if m.hasReport() {
 		// A standing condition until the success that fixes it (see standing);
 		// a refused key until the next key. The old chain dropped a message that
@@ -59,8 +87,11 @@ func (m Model) boardFooter(cw int) string {
 		// a card with a title much over twenty characters.
 		e := m.reportPart(cw)
 		left := full
-		if width(full)+2+width(e) > cw {
-			left = reduced
+		for _, next := range []string{reduced, flat} {
+			if width(left)+2+width(e) <= cw {
+				break
+			}
+			left = next
 		}
 		return hsplit(left, e, cw)
 	}
@@ -70,8 +101,10 @@ func (m Model) boardFooter(cw int) string {
 		return hsplit(full, count, cw)
 	case width(reduced)+2+width(count) <= cw:
 		return hsplit(reduced, count, cw)
-	default:
+	case width(reduced) <= cw:
 		return fit(reduced, cw)
+	default:
+		return fit(flat, cw)
 	}
 }
 

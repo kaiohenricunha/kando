@@ -12,7 +12,7 @@ type Theme struct {
 var DefaultTheme = Theme{
 	Bg:          lipgloss.AdaptiveColor{Light: "#f6f1e8", Dark: "#1a1512"},
 	Fg:          lipgloss.AdaptiveColor{Light: "#2b2622", Dark: "#ead9c8"},
-	Muted:       lipgloss.AdaptiveColor{Light: "#8f8579", Dark: "#7d6b5c"},
+	Muted:       lipgloss.AdaptiveColor{Light: "#8f8579", Dark: "#9a8674"},
 	Border:      lipgloss.AdaptiveColor{Light: "#d9cfc0", Dark: "#33291f"},
 	Accent:      lipgloss.AdaptiveColor{Light: "#1f7a6d", Dark: "#e0a458"},
 	Accent2:     lipgloss.AdaptiveColor{Light: "#b5532b", Dark: "#8fb98a"},

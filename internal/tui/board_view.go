@@ -66,31 +66,37 @@ func (m Model) tabStrip(cw int) string {
 	return fit(strings.Join(tabs, "  "), cw)
 }
 
-// renderLane draws one lane box of the given outer size.
+// renderLane draws one lane of the given outer size: the active lane boxed in
+// the accent colour, every other lane an open column (openLane).
 func (m Model) renderLane(l board.Lane, outerW, outerH int) []string {
 	s := m.styles
-	active := l == m.lane
-	inner := outerW - 4
 	cards := m.visible(l)
 	name := strings.ToUpper(l.String())
 	count := fmt.Sprint(len(cards))
-	var header string
-	borderStyle := s.Border
-	if active {
-		header = hsplit(s.AccentBold.Render(name), s.AccentBold.Render(count), inner)
-		borderStyle = s.Accent
-	} else {
-		header = hsplit(s.Muted.Render(name), s.Muted.Render(count), inner)
+	if l != m.lane {
+		return m.openLane(l, cards, name, count, outerW, outerH)
 	}
-	R := outerH - 4
-	var content []string
-	if active {
-		content = m.activeRows(l, cards, inner, R)
-	} else {
-		content = m.collapsedRows(l, cards, inner, R)
+	inner := outerW - 4
+	header := hsplit(s.AccentBold.Render(name), s.AccentBold.Render(count), inner)
+	rows := append([]string{header, spaces(inner)}, m.activeRows(l, cards, inner, outerH-4)...)
+	return box(rows, outerW, lipgloss.RoundedBorder(), s.Accent, s.Plain, 1)
+}
+
+// openLane draws an inactive lane with no box: a rule and one padding cell down
+// its left edge. The rows where a box would draw its top and bottom edges stay
+// blank, so every lane's header and first row line up with the active lane's.
+func (m Model) openLane(l board.Lane, cards []*board.Card, name, count string, outerW, outerH int) []string {
+	s := m.styles
+	inner := outerW - 2
+	rows := make([]string, 0, outerH)
+	rows = append(rows, spaces(inner), hsplit(s.Muted.Render(name), s.Muted.Render(count), inner), spaces(inner))
+	rows = append(rows, m.collapsedRows(l, cards, inner, outerH-4)...)
+	rows = append(rows, spaces(inner))
+	rule := s.Border.Render("│") + " "
+	for i := range rows {
+		rows[i] = rule + rows[i]
 	}
-	rows := append([]string{header, spaces(inner)}, content...)
-	return box(rows, outerW, lipgloss.RoundedBorder(), borderStyle, s.Plain, 1)
+	return rows
 }
 
 func (m Model) emptyRow(inner int) string {
@@ -101,7 +107,15 @@ func (m Model) moreRow(n, inner int) string {
 	return fit(m.styles.Border.Render(fmt.Sprintf("… +%d", n)), inner)
 }
 
-// collapsedRows lists "• Title" (or "✓ Title" in Done) one per row.
+// minOpenTitle is the fewest title cells an open-lane row keeps before it drops
+// its glyph: a glyph beside a title cut to a letter or two says less than the
+// title would.
+const minOpenTitle = 6
+
+// collapsedRows lists "• Title" (or "✓ Title" in Done) one per row. A card
+// outside Done also shows, right-aligned, the one glyph worth a glance: ⊘ when
+// blocked, otherwise its checklist progress. The glyph is dropped when it
+// would leave the title fewer than minOpenTitle cells.
 func (m Model) collapsedRows(l board.Lane, cards []*board.Card, inner, R int) []string {
 	s := m.styles
 	rows := make([]string, R)
@@ -120,12 +134,22 @@ func (m Model) collapsedRows(l board.Lane, cards []*board.Card, inner, R int) []
 		show = R - 1
 	}
 	for i := 0; i < show; i++ {
-		title := fit(sanitize(cards[i].Title), inner-2)
+		c := cards[i]
+		tw := inner - 2
 		if l == board.Done {
-			rows[i] = s.Accent.Render("✓") + " " + s.Muted.Render(title)
-		} else {
-			rows[i] = s.Fg.Render("•") + " " + s.Fg.Render(title)
+			rows[i] = s.Accent.Render("✓") + " " + s.Muted.Render(fit(sanitize(c.Title), tw))
+			continue
 		}
+		glyph, glyphStyle := "⊘", s.Accent2
+		if c.BlockedLabel() == "" {
+			glyph, glyphStyle = c.ProgressLabel(), s.Muted
+		}
+		tail := ""
+		if glyph != "" && tw-2-width(glyph) >= minOpenTitle {
+			tw -= 2 + width(glyph)
+			tail = "  " + glyphStyle.Render(glyph)
+		}
+		rows[i] = s.Fg.Render("•") + " " + s.Fg.Render(fit(sanitize(c.Title), tw)) + tail
 	}
 	if hidden := len(cards) - show; hidden > 0 {
 		rows[show] = m.moreRow(hidden, inner)

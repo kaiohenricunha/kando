@@ -1,25 +1,43 @@
 {{template "head" .Page}}
-<h1>{{.Card.Title}}</h1>
-<div class="meta">{{if .Card.Tag}}<span class="tag">#{{.Card.Tag}}</span>  {{end}}{{if .Created}}<span>created {{.Created}}</span>  {{end}}{{if .Since}}<span>in {{.Lane}} since {{.Since}}</span>{{end}}</div>
-<div class="actions">
-  <form class="inline" method="post" action="{{.URL}}/move"><select name="lane" aria-label="lane">{{range .Lanes}}<option value="{{.Key}}"{{if eq .Key $.LaneKey}} selected{{end}}>{{.}}</option>{{end}}</select> <button type="submit">move</button></form>
-  {{if eq .LaneKey "done"}}<form class="inline" method="post" action="{{.URL}}/archive"><button type="submit">archive</button></form>{{end}}
-  <form class="inline" method="post" action="{{.URL}}/delete"><button type="submit" class="danger">delete</button></form>
+<a class="back" href="/b/{{urlpath .Board}}#lane-{{.LaneKey}}" data-key-back>← {{.Lane}}</a>
+<div class="detail" data-card-page>
+  <nav class="siblings" aria-label="{{.Lane}} cards">
+    <div class="list-head"><span>{{.Lane}}</span><span class="n">{{len .Siblings}}</span></div>
+    {{range .Siblings}}<a href="/b/{{urlpath $.Board}}/cards/{{urlpath .ID}}"{{if .Current}} aria-current="page"{{end}}><span class="mark" aria-hidden="true">{{if .Current}}▸{{else}}•{{end}}</span><span class="t">{{.Title}}</span></a>
+    {{end}}<div class="hint">J / K next · prev card</div>
+  </nav>
+  <div class="rule" aria-hidden="true"></div>
+  <div class="pane">
+    <section>
+      <form class="field" method="post" action="{{.URL}}" data-autosave><input class="flat title-input" type="text" name="title" value="{{.Card.Title}}" required aria-label="title" data-key-title><button type="submit" class="save">save</button></form>
+      <div class="meta-row">
+        <form class="inline-edit" method="post" action="{{.URL}}" data-autosave>{{if .Card.Tag}}<label class="tag" for="tag">#{{.Card.Tag}}</label>{{else}}<label class="muted" for="tag">+ tag</label>{{end}}<input class="flat" type="text" id="tag" name="tag" value="{{.Card.Tag}}" placeholder="no tag" data-key-tag><button type="submit" class="save">save</button></form>
+        {{if .Created}}<span>created {{.Created}}</span>{{end}}
+        {{if .Since}}<span>in {{.Lane}} since {{.Since}}</span>{{end}}
+      </div>
+    </section>
+    <div class="actions">
+      <form class="move" method="post" action="{{.URL}}/move" data-autosave><label for="lane">move to</label><select id="lane" name="lane" data-key-move>{{range .Lanes}}<option value="{{.Key}}"{{if eq .Key $.LaneKey}} selected{{end}}>{{.}}</option>{{end}}</select><button type="submit" class="save">move</button></form>
+      {{if eq .LaneKey "done"}}<form method="post" action="{{.URL}}/archive"><button type="submit" class="ghost">archive</button></form>{{else}}<form method="post" action="{{.URL}}/move" data-key-done><input type="hidden" name="lane" value="done"><button type="submit" class="ghost accent">✓ done</button></form>{{end}}
+      <form class="end" method="post" action="{{.URL}}/delete"><button type="submit" class="ghost danger">delete</button></form>
+    </div>
+    <section>
+      <h3><span>NOTES</span><span class="hint">click to edit · ⌘S or ctrl+s saves</span></h3>
+      <form method="post" action="{{.URL}}" data-autosave><textarea class="flat notes-input" name="notes" rows="6" placeholder="— no notes" aria-label="notes" data-key-notes>{{.Notes}}</textarea><button type="submit" class="save">save</button></form>
+    </section>
+    <section>
+      <h3><span>CHECKLIST{{if .Card.Progress}} <span class="check">{{.Card.Progress}}</span>{{end}}</span></h3>
+      {{if .Card.Progress}}<div class="meter wide" aria-hidden="true"><span style="width:{{.Card.Pct}}%"></span></div>{{end}}
+      <ul class="items">{{range $i, $it := .Checklist}}
+        <li{{if .Done}} class="done"{{end}}><form method="post" action="{{$.URL}}/checklist/{{$i}}/toggle"><input type="hidden" name="was" value="{{.Was}}"><button type="submit" class="box" aria-label="{{if .Done}}mark not done{{else}}mark done{{end}}">{{if .Done}}✓{{end}}</button></form><form class="grow" method="post" action="{{$.URL}}/checklist/{{$i}}" data-autosave><input type="hidden" name="was" value="{{.Was}}"><input class="flat" type="text" name="text" value="{{.Text}}" required aria-label="checklist item"><button type="submit" class="save">save</button></form></li>{{end}}
+      </ul>
+      <form class="new-item" method="post" action="{{.URL}}/checklist"><span class="box plus" aria-hidden="true">+</span><input class="flat" type="text" name="text" placeholder="new item" required aria-label="new checklist item" data-key-new><button type="submit" class="save">add</button></form>
+    </section>
+    <section>
+      <h3><span>BLOCKED</span></h3>
+      <form class="inline-edit block" method="post" action="{{.URL}}/block" data-autosave>{{if .Card.Blocked}}<label class="blocked" for="reason">⊘ {{.Card.Blocked}}</label>{{else}}<label class="muted" for="reason">— not blocked · <u>set a reason</u></label>{{end}}<input class="flat" type="text" id="reason" name="reason" value="{{.Reason}}" placeholder="reason (empty clears)" data-key-block><button type="submit" class="save">{{if .Card.Blocked}}update{{else}}block{{end}}</button></form>
+    </section>
+  </div>
 </div>
-<form class="edit" method="post" action="{{.URL}}">
-  <label for="title">TITLE</label><input type="text" id="title" name="title" value="{{.Card.Title}}" required>
-  <label for="tag">TAG</label><input type="text" id="tag" name="tag" value="{{.Card.Tag}}" placeholder="no tag">
-  <label for="notes">NOTES</label><textarea id="notes" name="notes" rows="6" placeholder="— no notes">{{.Notes}}</textarea>
-  <div class="row"><button type="submit">save</button></div>
-</form>
-<div class="section">CHECKLIST{{if .Card.Progress}} <span class="check">{{.Card.Progress}}</span>{{end}}</div>
-<ul class="items">{{range $i, $it := .Checklist}}<li{{if .Done}} class="done"{{end}}>
-  <form class="inline" method="post" action="{{$.URL}}/checklist/{{$i}}/toggle"><input type="hidden" name="was" value="{{.Was}}"><button type="submit" class="plain" aria-label="toggle">{{if .Done}}▣{{else}}▢{{end}}</button></form>
-  <form class="inline" method="post" action="{{$.URL}}/checklist/{{$i}}"><input type="hidden" name="was" value="{{.Was}}"><input type="text" name="text" value="{{.Text}}" required> <button type="submit" class="small">save</button></form>
-</li>{{end}}</ul>
-<form class="inline" method="post" action="{{.URL}}/checklist"><input type="text" name="text" placeholder="new item" required> <button type="submit" class="small">add</button></form>
-<div class="section">BLOCKED</div>
-{{if .Card.Blocked}}<div class="blocked">⊘ {{.Card.Blocked}}</div>{{else}}<div class="empty">— not blocked</div>{{end}}
-<form class="inline" method="post" action="{{.URL}}/block"><input type="text" name="reason" value="{{.Reason}}" placeholder="reason (empty clears)"> <button type="submit" class="small">{{if .Card.Blocked}}update{{else}}block{{end}}</button></form>
-<footer><a href="/b/{{urlpath .Board}}">← board</a><span></span></footer>
+<footer class="keys"><span><b>esc</b> board</span><span><b>T</b> title</span><span><b>t</b> tag</span><span><b>e</b> notes</span><span><b>o</b> new item</span><span><b>m</b> move</span><span><b>b</b> block</span>{{if ne .LaneKey "done"}}<span><b>d</b> done</span>{{end}}<span><b>J/K</b> next · prev card</span></footer>
 {{template "foot"}}

@@ -41,7 +41,31 @@ const (
 	detailLeftWidth = 30
 	detailGap       = 4 + 1 + 3 // gap, rule column, padding
 	notesWrap       = 64
+	progressBarMax  = 10 // checklist bar cells: one per item up to this, scaled past it
 )
+
+// progressCells splits a bar of min(total, max) cells into done and remaining
+// cells. The glyphs differ (▰ ▱) as well as the colours, so the bar still reads
+// with KANDO_THEME=none. A started checklist shows at least one done cell and
+// an unfinished one at least one remaining cell: rounding must never make the
+// bar claim nothing or everything early.
+func progressCells(done, total, max int) (on, off int) {
+	if total <= 0 {
+		return 0, 0
+	}
+	n := total
+	if n > max {
+		n = max
+	}
+	on = (done*n + total/2) / total
+	if done > 0 && on == 0 {
+		on = 1
+	}
+	if done < total && on == n {
+		on = n - 1
+	}
+	return on, n - on
+}
 
 func (m Model) rightPaneWidth() int {
 	w := m.w - 2 - detailLeftWidth - detailGap
@@ -195,7 +219,11 @@ func (m Model) renderDetail() []string {
 		picks := []keyGroup{{"1", "Backlog"}, {"2", "Todo"}, {"3", "Doing"}, {"4", "Done"}}
 		footer = fit(s.Muted.Render("move to:")+"  "+m.groups(picks), cw)
 	} else {
-		footer = m.footerWithReport(m.groups(detailFooterGroups), cw)
+		hints := m.sections(detailFooterGroups, detailSections)
+		if width(hints) > cw {
+			hints = m.groups(detailFooterGroups)
+		}
+		footer = m.footerWithReport(hints, cw)
 	}
 	return m.screenRows(header, body, footer)
 }
@@ -282,7 +310,10 @@ func (m Model) detailRight(c *board.Card, rp int) []string {
 
 	total := len(c.Checklist)
 	if pl := c.ProgressLabel(); pl != "" {
-		rows = append(rows, s.Muted.Render("CHECKLIST")+" "+s.Accent.Render(pl))
+		done, _ := c.ChecklistProgress()
+		on, off := progressCells(done, total, progressBarMax)
+		bar := render(s.Accent, strings.Repeat("▰", on)) + render(s.Border, strings.Repeat("▱", off))
+		rows = append(rows, s.Muted.Render("CHECKLIST")+" "+s.Accent.Render(pl)+"  "+bar)
 	} else {
 		rows = append(rows, s.Muted.Render("CHECKLIST"))
 	}
@@ -378,6 +409,10 @@ func (m Model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.startEdit(editBlock, board.SafeForDisplay(c.BlockedReason))
 	case "m":
 		m.mode = modeLanePick
+	case "d":
+		// m then 4 in one key, as d is on the board: an archived card is
+		// restored into Done under the same guard the picker applies.
+		m.moveDetailCard(board.Done)
 	case "A":
 		m.archiveDetailCard()
 	case "?":

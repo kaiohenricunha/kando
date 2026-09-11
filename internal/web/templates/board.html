@@ -1,24 +1,28 @@
 {{template "head" .Page}}
 <div class="bar">
-  <form method="get" action="/b/{{urlpath .Board}}"><input type="text" name="q" value="{{.Query}}" placeholder="filter: title, #tag, !blocked, age>7d"></form>
-  {{if .Query}}<span>{{.Matched}} of {{.Total}} match · <a href="/b/{{urlpath .Board}}">clear</a></span>{{end}}
-  <a href="/b/{{urlpath .Board}}/archive">archive</a>
-  <a href="/boards">boards</a>
+  <form class="filter" method="get" action="/b/{{urlpath .Board}}" role="search"><span class="slash" aria-hidden="true">/</span><input type="text" name="q" value="{{.Query}}" placeholder="filter title, #tag, !blocked, age>7d" aria-label="filter"></form>
+  {{if .Query}}<span class="match">{{.Matched}} of {{.Total}} match · <a href="/b/{{urlpath .Board}}">clear</a></span>{{end}}
+  <a class="nav" href="/b/{{urlpath .Board}}/archive">archive</a>
+  <a class="nav" href="/boards">boards</a>
+  <span class="count">{{.Matched}} cards</span>
 </div>
+<nav class="tabs" aria-label="lanes">{{range .Lanes}}<a href="#lane-{{.Key}}" data-tab="{{.Key}}">{{.Name}} {{.Count}}</a>{{end}}</nav>
 <div class="lanes">
 {{range .Lanes}}
-  <section class="lane" id="lane-{{.Key}}" data-lane="{{.Key}}">
+  <section class="lane" id="lane-{{.Key}}" data-lane="{{.Key}}" data-label="{{.Label}}">
     <h2><span>{{.Name}}</span><span class="count">{{.Count}}</span></h2>
-    {{range .Cards}}
-    <a class="card{{if .Done}} done{{end}}" href="/b/{{urlpath $.Board}}/cards/{{urlpath .ID}}" draggable="true" data-id="{{.ID}}">
-      <div class="title">{{if .Done}}<span><span class="check">✓</span> <span class="t">{{.Title}}</span></span>{{else}}<span>{{.Title}}</span><span class="age">{{.Age}}</span>{{end}}</div>
-      <div class="notes">{{.Notes}}</div>
-      <div class="meta">{{if .Tag}}<span class="tag">#{{.Tag}}</span>{{end}}{{if .Done}} <span class="age">{{.Age}}</span>{{else}}{{if .Progress}} <span>{{.Progress}}</span>{{end}}{{if .Blocked}} <span class="blocked">⊘ {{.Blocked}}</span>{{end}}{{end}}</div>
+    {{range .Cards}}{{if .Done}}
+    <a class="card done" href="/b/{{urlpath $.Board}}/cards/{{urlpath .ID}}" draggable="true" data-id="{{.ID}}"><span class="check">✓</span><span class="t">{{.Title}}</span><span class="age">{{.Age}}</span></a>
+    {{else}}
+    <a class="card" href="/b/{{urlpath $.Board}}/cards/{{urlpath .ID}}" draggable="true" data-id="{{.ID}}">
+      <span class="title"><span>{{.Title}}</span><span class="age">{{.Age}}</span></span>
+      {{if or .Tag .Progress .Blocked}}<span class="meta">{{if .Tag}}<span class="tag">#{{.Tag}}</span>{{end}}{{if .Progress}}<span class="progress"><span class="meter"><span style="width:{{.Pct}}%"></span></span>{{.Progress}}</span>{{end}}{{if .Blocked}}<span class="blocked">⊘ {{.Blocked}}</span>{{end}}</span>{{end}}
     </a>
-    {{else}}<div class="empty">· · ·</div>{{end}}
+    {{end}}{{else}}<div class="empty">· · ·</div>{{end}}
     <a class="add" href="/b/{{urlpath $.Board}}/cards/new?lane={{.Key}}">+ add</a>
+    {{if eq .Key "done"}}<a class="to-archive" href="/b/{{urlpath $.Board}}/archive">archive <span aria-hidden="true">→</span></a>{{end}}
   </section>
 {{end}}
 </div>
-<footer><span></span><span>{{.Matched}} cards</span></footer>
+<div class="dock"><a class="primary" data-dock-add href="/b/{{urlpath .Board}}/cards/new?lane=todo">+ add to Todo</a></div>
 {{template "foot"}}

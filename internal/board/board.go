@@ -71,17 +71,16 @@ type Card struct {
 // The name is the contract: callers get a preview, not the field. This is the
 // only read accessor in the package that bounds what it returns, so a consumer
 // that wanted the stored value — a JSON projection, an export — would be
-// getting a quietly shortened one. Nothing needs that today; both callers are
+// getting a quietly shortened one. Nothing needs that today; its caller is
 // presentation, and if one ever does need the full value it should read
 // c.Notes rather than this.
 //
-// It is a preview — the TUI puts it in one card row and the web in one
-// clipped div — so it is bounded to the single-line budget every other
-// one-line value already uses. Without that bound it would return the whole
+// It is a preview — the TUI puts it in one card row — so it is bounded to the
+// single-line budget every other one-line value already uses. Without that bound it would return the whole
 // body — and the real ceiling is not maxNotesBytes but nothing at all, since
 // store.parseSections assigns Notes verbatim with no cap, so a hand-edited
 // board.md can hold any size. That went into a row that renders a few dozen
-// cells, on every frame and in every board page.
+// cells, on every frame.
 func (c *Card) NotePreview() string {
 	if i := strings.IndexByte(c.Notes, '\n'); i >= 0 {
 		return clip(c.Notes[:i], maxFieldBytes)

@@ -1,8 +1,12 @@
 {{template "head" .}}
-<h1>boards</h1>
-<ul class="boards">{{range .Boards}}<li><a href="/b/{{urlpath .}}">{{.}}</a></li>{{else}}<li class="empty">no boards yet</li>{{end}}</ul>
-<form method="post" action="/boards">
-  <label for="name">new board</label>
-  <input type="text" id="name" name="name" required> <button type="submit">create</button>
-</form>
+<div class="boards">
+{{range .Boards}}  <a class="board-row" href="/b/{{urlpath .Name}}">
+    <span class="name">{{.Name}}</span>
+    <span class="stats">{{if .Unreadable}}cannot read this board{{else}}{{.Total}} {{if eq .Total 1}}card{{else}}cards{{end}}{{if .Doing}} · {{.Doing}} doing{{end}}{{if .Blocked}} · {{.Blocked}} blocked{{end}}{{end}}</span>
+    {{if .Total}}<span class="spread" aria-hidden="true">{{range $i, $n := .Lanes}}<span class="seg-{{$i}}" style="flex-grow:{{$n}}"></span>{{end}}</span>{{end}}
+  </a>
+{{else}}  <div class="empty">— no boards yet</div>
+{{end}}</div>
+<form class="create" method="post" action="/boards"><input class="boxed" type="text" id="name" name="name" required placeholder="new board name" aria-label="new board name"><button type="submit" class="primary">create</button></form>
+<div class="legend" aria-hidden="true"><span><i class="seg-0"></i>backlog</span><span><i class="seg-1"></i>todo</span><span><i class="seg-2"></i>doing</span><span><i class="seg-3"></i>done</span></div>
 {{template "foot"}}
