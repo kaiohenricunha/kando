@@ -317,9 +317,15 @@ exist too: `kando archive <card>` files it, `kando archive list` reads the
 archive, and `kando archive restore <card>` brings it back.
 
 Limits of the hand-editable format: note text after a checklist item is moved
-above the checklist on the next save. A note line that would otherwise read as
-structure — a `## ` heading or a `- [ ] ` item — is written with a leading
-backslash and read back without it, so notes can hold Markdown of their own.
+above the checklist on the next save. A line shaped like a key kando does not
+know — a lowercase letter, then lowercase letters, digits, `_` or `-`, a colon,
+and a space, a tab or nothing, such as `priority: high` — is kept as a note
+without ending the keys, and the next save moves it below them. A key line
+after it still counts if its value is valid and the card does not have that
+key yet; otherwise it stays a note too. A note line that would otherwise read
+as structure — a `## ` heading, a `- [ ] ` item or a line that starts with one
+of kando's own keys — is written with a leading backslash and read back without
+it, so notes can hold Markdown of their own.
 A card written without an `id` is given one derived from its contents, so it
 keeps the same id until the file is saved with the id in it. When cards share
 an `id`, every one but the card kando looks up first — lanes in their fixed

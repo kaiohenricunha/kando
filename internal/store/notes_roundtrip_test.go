@@ -34,6 +34,8 @@ func TestSetNotesSurvivesTheStoreRoundTrip(t *testing.T) {
 		{"a line separator at the front", "\u2028first"},
 		{"interior blank lines, which must survive", "first\n\nsecond"},
 		{"first-line indentation, which must survive", "  indented\nsecond"},
+		{"a bare checklist marker, which SetNotes leaves without its trailing space", "todo\n- [ ] "},
+		{"a checklist marker with no space before its text", "- [x]done"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := &board.Card{ID: "abcdefgh", Title: "Notes", CreatedAt: ts(2026, 9, 1), MovedAt: ts(2026, 9, 1)}
