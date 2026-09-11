@@ -180,6 +180,110 @@ func TestArchiveFilter(t *testing.T) {
 	}
 }
 
+// The archive list depends on the clock through the age operator. A later
+// frame can shrink it under a cursor no key touched, and u or enter then
+// indexed past the end.
+func TestArchiveCursorStaysOnTheListWhenTheClockShrinksIt(t *testing.T) {
+	clock := fixedNow
+	arch := &board.Archive{Cards: []*board.Card{
+		{ID: "aaaaaaaa", Title: "Fresh", DoneAt: fixedNow.Add(-10 * time.Minute)},
+		{ID: "bbbbbbbb", Title: "Older", DoneAt: fixedNow.Add(-2 * time.Hour)},
+	}}
+	m := New(Options{Board: sampleBoard(t), Archive: arch, Styles: testStyles, Now: func() time.Time { return clock }, Width: 120, Height: 40})
+	m = press(m, "D", "/")
+	m = typeText(m, "age<3h")
+	m = press(m, "enter", "j")
+	if n := len(m.visibleArchive()); n != 2 || m.arch.cursor != 1 {
+		t.Fatalf("setup: visible %d cursor %d", n, m.arch.cursor)
+	}
+
+	clock = clock.Add(2 * time.Hour)
+	m = press(m, "?") // any message: Update must clamp before this frame paints
+	if n := len(m.visibleArchive()); n != 1 || m.arch.cursor != 0 {
+		t.Fatalf("the cursor must move onto the last row left: visible %d cursor %d", n, m.arch.cursor)
+	}
+	m = press(m, "?")
+	if m2 := press(m, "enter"); m2.scr != screenDetail || m2.detail.id != "aaaaaaaa" {
+		t.Errorf("enter must open the card still on the list, got screen %v id %q", m2.scr, m2.detail.id)
+	}
+	m = press(m, "u")
+	if len(arch.Cards) != 1 || len(m.b.Lanes[board.Doing]) == 0 || m.b.Lanes[board.Doing][0].ID != "aaaaaaaa" {
+		t.Errorf("u must restore the card the clamped cursor points at: archive=%d doing=%v", len(arch.Cards), titles(m.b.Lanes[board.Doing]))
+	}
+
+	// Scenario 2 must not retype the filter after the cursor is set: typing
+	// resets the cursor on its own (applyFilter), which would mask a broken
+	// reset in clampArchive's own n==0 branch. So the filter is kept once,
+	// while both cards are still visible.
+	clock2 := fixedNow
+	arch2 := &board.Archive{Cards: []*board.Card{
+		{ID: "cccccccc", Title: "Fresh", DoneAt: fixedNow.Add(-10 * time.Minute)},
+		{ID: "dddddddd", Title: "Older", DoneAt: fixedNow.Add(-2 * time.Hour)},
+	}}
+	m2 := New(Options{Board: sampleBoard(t), Archive: arch2, Styles: testStyles, Now: func() time.Time { return clock2 }, Width: 120, Height: 40})
+	m2 = press(m2, "D", "/")
+	m2 = typeText(m2, "age<3h")
+	m2 = press(m2, "enter", "j")
+	if n := len(m2.visibleArchive()); n != 2 || m2.arch.cursor != 1 {
+		t.Fatalf("setup: visible %d cursor %d", n, m2.arch.cursor)
+	}
+
+	clock2 = clock2.Add(4 * time.Hour)
+	// "?" is the message whose Update call must see the list turn empty and
+	// clamp the cursor; a second "?" closes the help overlay it opens, so the
+	// keys below reach updateArchive instead of being swallowed by it.
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("a key on a list that just went empty must not panic: %v", r)
+			}
+		}()
+		m2 = press(m2, "?", "?", "enter", "u", "j", "k")
+	}()
+	if n := len(m2.visibleArchive()); n != 0 || m2.arch.cursor != 0 {
+		t.Errorf("the cursor must reset when the list it was on goes empty: visible %d cursor %d", n, m2.arch.cursor)
+	}
+	if m2.scr != screenArchive || len(arch2.Cards) != 2 {
+		t.Errorf("every key on an empty list must be a no-op: screen %v archive %d", m2.scr, len(arch2.Cards))
+	}
+}
+
+// age>Nd matches a suffix of the newest-first list. As the clock advances, a
+// newer card crosses the threshold and is prepended, shifting every later
+// index by one — the clamp cannot see this (the index stays in range), so an
+// index-only cursor would silently point at a different card.
+func TestArchiveCursorFollowsItsCardWhenAnOlderFilterShiftsTheList(t *testing.T) {
+	clock := fixedNow
+	arch := &board.Archive{Cards: []*board.Card{
+		{ID: "aaaaaaaa", Title: "NotYetOldEnough", DoneAt: fixedNow.Add(-23 * time.Hour)},
+		{ID: "bbbbbbbb", Title: "AlreadyOld", DoneAt: fixedNow.Add(-25 * time.Hour)},
+		{ID: "cccccccc", Title: "AlreadyOlder", DoneAt: fixedNow.Add(-26 * time.Hour)},
+	}}
+	m := New(Options{Board: sampleBoard(t), Archive: arch, Styles: testStyles, Now: func() time.Time { return clock }, Width: 120, Height: 40})
+	m = press(m, "D", "/")
+	m = typeText(m, "age>24h")
+	m = press(m, "enter")
+	if n := len(m.visibleArchive()); n != 2 || m.visibleArchive()[0].ID != "bbbbbbbb" {
+		t.Fatalf("setup: visible %d, first %v", n, m.visibleArchive())
+	}
+	m = press(m, "j") // cursor onto row 1, "cccccccc"
+	if m.arch.cursor != 1 || m.visibleArchive()[m.arch.cursor].ID != "cccccccc" {
+		t.Fatalf("setup: cursor %d", m.arch.cursor)
+	}
+
+	// "aaaaaaaa" crosses the 24h threshold and is prepended, so index 1 now
+	// holds "bbbbbbbb" — a different card than the cursor was on.
+	clock = clock.Add(2 * time.Hour)
+	m = press(m, "?")
+	if got := m.visibleArchive()[m.arch.cursor].ID; got != "cccccccc" {
+		t.Errorf("the cursor must stay on the card it was on, got %q at index %d", got, m.arch.cursor)
+	}
+	m = press(m, "?", "u")
+	if len(arch.Cards) != 2 || arch.Cards[0].ID != "aaaaaaaa" || arch.Cards[1].ID != "bbbbbbbb" {
+		t.Errorf("u must restore the card the cursor was actually on (cccccccc), not whatever now sits at its old index: %v", titles(arch.Cards))
+	}
+}
+
 var archiveStates = map[string][]string{
 	"archive":        {"D"},
 	"archive filter": {"D", "/", "#", "m"},
@@ -594,5 +698,24 @@ func TestARefusalClearsOnTheNextKey(t *testing.T) {
 	m = press(m, "j")
 	if footer := plainLines(m)[39]; strings.Contains(footer, "⊘") {
 		t.Errorf("a refusal is about the key that caused it; the next key clears it: %q", footer)
+	}
+}
+
+// selectedArchiveCard is a direct bounds check, kept as a second line of
+// defense should a future change let the cursor drift out of range between
+// Update's re-anchor and a key that reads it.
+func TestSelectedArchiveCardIsNilOutOfRange(t *testing.T) {
+	m := newTestModel(t, 120, 40)
+	m = press(m, "D")
+	n := len(m.visibleArchive())
+	for _, cursor := range []int{-1, n, n + 5} {
+		m.arch.cursor = cursor
+		if c := m.selectedArchiveCard(); c != nil {
+			t.Errorf("cursor %d (n=%d): want nil, got %v", cursor, n, c)
+		}
+	}
+	m.arch.cursor = 0
+	if c := m.selectedArchiveCard(); c == nil {
+		t.Errorf("cursor 0 with %d cards: want a card", n)
 	}
 }

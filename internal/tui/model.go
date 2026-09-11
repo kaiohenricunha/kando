@@ -197,10 +197,28 @@ func (m *Model) teardown() {
 // Update routes messages, then freezes the clock the next frame is evaluated
 // at. Keys are handled against the instant of the frame the user is looking
 // at, so a time-dependent filter cannot shift the selection between a paint
-// and the key that acts on it.
+// and the key that acts on it. The new instant can still move the archive
+// list under its cursor with no key pressed — shrinking it, or (for an age>
+// filter) prepending a card that just crossed the threshold — so the cursor
+// is re-anchored here, after the tick moves and the key's own cursor change
+// (if any) has already happened: by the card's identity when it is still
+// listed, so an insertion ahead of it cannot silently swap in a different
+// card at the same index, and by clampArchive's index-only rule otherwise, so
+// a card that drops off the list lands the cursor on the last row left. Doing
+// this at the top of updateArchive instead would let a key act on a card the
+// painted frame never highlighted.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.dispatch(msg)
+	var onID string
+	if cards := next.visibleArchive(); next.arch.cursor >= 0 && next.arch.cursor < len(cards) {
+		onID = cards[next.arch.cursor].ID
+	}
 	next.tick = next.now()
+	if onID != "" {
+		next.selectArchiveByID(onID)
+	} else {
+		next.clampArchive()
+	}
 	return next, cmd
 }
 
@@ -519,6 +537,23 @@ func (m *Model) reload() {
 		// archive.md can read fine again with bytes the store has already seen,
 		// after an undo, and then the check reports no change: load it to see.
 		m.ensureArchive()
+	}
+	// Another process restored the open archived card: follow it onto the
+	// board, as a lane change is followed above. Only a card that has left
+	// archive.md counts, and detailCard searches the whole archive, not the 50
+	// rows or the filter the pane lists. A restore caught between its two
+	// writes (store.SaveRestore writes board.md first) is followed on the
+	// reload that sees archive.md. A card in neither file closes to the
+	// archive.
+	if m.scr == screenDetail && m.detail.archived && m.detailCard() == nil {
+		if l, _, c := m.b.Find(m.detail.id); c != nil {
+			m.detail.archived = false
+			m.setLane(l)
+			m.selectByID(m.detail.id)
+			m.clampSel()
+		} else {
+			m.closeDetail()
+		}
 	}
 	// A reload can shorten the open card's checklist under the cursor.
 	if c := m.detailCard(); m.scr == screenDetail && c != nil && m.detail.cursor >= len(c.Checklist) {
