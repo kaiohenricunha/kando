@@ -21,10 +21,8 @@ Boards are plain Markdown files under `~/.kando`, so a text editor works too.
 go install github.com/kaiohenricunha/kando/cmd/kando@latest
 ```
 
-Needs Go 1.27 or later. The repository is private, so set
-`GOPRIVATE=github.com/kaiohenricunha/kando` and make sure `git` can
-authenticate to GitHub first. From a checkout, `make build` writes the binary
-to `bin/kando`.
+Needs Go 1.27 or later. From a checkout, `make build` writes the binary to
+`bin/kando`.
 
 ## Quick start
 
@@ -46,6 +44,11 @@ screen lists its own keys under `?`; they are also [below](#keys).
 
 The minimum terminal size is 60×16 and the design target is 120×40. Below 100
 columns the other lanes become a tab strip above the active one.
+
+Glyphs such as `…`, `✓`, `⊘`, `╌` and the arrows are East-Asian-ambiguous
+width; kando counts them as one cell, which matches most terminals. A
+terminal set to render ambiguous characters double-width will misalign the
+frame — check that setting first if borders look off.
 
 ## The web page
 
@@ -153,6 +156,9 @@ Filter: type to match titles; `#tag` matches tags; `!blocked`, `age>7d`, `age<3d
 
 Archive: `j/k` move · `u` back to Doing · `enter` open · `/` filter · `esc` board.
 
+Boards: `j/k` select board · `enter` open it · `n` create a new board · `esc`
+back · `?` help.
+
 ## Development
 
 ```sh
@@ -174,10 +180,6 @@ reviewed line by line (R-1 in
 [docs/specs/kando-web/spec/8-risks-alternatives.md](docs/specs/kando-web/spec/8-risks-alternatives.md)).
 The other goldens are refreshed with
 `go test ./internal/tui/ -run TestGoldenScreens -update`.
-
-Glyphs such as `…`, `✓`, `⊘`, `╌` and the arrows are East-Asian-ambiguous
-width; kando counts them as one cell, which matches most terminals. A terminal
-set to render ambiguous characters double-width will misalign the frame.
 
 Design notes: [docs/design/README.md](docs/design/README.md) (terminal tokens,
 copy, glyphs and keys) and [docs/specs/kando-web/](docs/specs/kando-web/) (the
