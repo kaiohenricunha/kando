@@ -21,10 +21,8 @@ Boards are plain Markdown files under `~/.kando`, so a text editor works too.
 go install github.com/kaiohenricunha/kando/cmd/kando@latest
 ```
 
-Needs Go 1.27 or later. The repository is private, so set
-`GOPRIVATE=github.com/kaiohenricunha/kando` and make sure `git` can
-authenticate to GitHub first. From a checkout, `make build` writes the binary
-to `bin/kando`.
+Needs Go 1.27 or later. From a checkout, `make build` writes the binary to
+`bin/kando`.
 
 ## Quick start
 
